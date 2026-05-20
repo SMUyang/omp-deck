@@ -12,6 +12,7 @@ import type { ServerFrame } from "@omp-deck/protocol";
 export type BroadcastFrame = Extract<
 	ServerFrame,
 	| { type: "tasks_changed" }
+	| { type: "skills_changed" }
 	| { type: "oauth_consent" }
 	| { type: "oauth_progress" }
 	| { type: "oauth_prompt" }

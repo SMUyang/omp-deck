@@ -36,6 +36,36 @@ export class MarketplaceService {
 		return this.manager;
 	}
 
+	/**
+	 * Cheap variant of {@link listCatalog} that returns only the installed-plugin
+	 * inventory. Skips `listAvailablePlugins` for each marketplace source (which
+	 * can hit the cache layer / refresh), so this is safe to call frequently
+	 * from SkillsService and watcher fan-outs.
+	 */
+	async listInstalled(): Promise<InstalledPluginInfo[]> {
+		const mgr = this.getManager();
+		const summaries = await mgr.listInstalledPlugins();
+		const installed: InstalledPluginInfo[] = [];
+		for (const summary of summaries) {
+			const parsed = parsePluginId(summary.id);
+			if (!parsed) continue;
+			for (const entry of summary.entries) {
+				installed.push({
+					id: summary.id,
+					name: parsed.name,
+					marketplace: parsed.marketplace,
+					scope: entry.scope,
+					version: entry.version,
+					installedAt: entry.installedAt,
+					installPath: entry.installPath,
+					...(entry.enabled !== undefined ? { enabled: entry.enabled } : {}),
+					...(summary.shadowedBy ? { shadowedBy: summary.shadowedBy } : {}),
+				});
+			}
+		}
+		return installed;
+	}
+
 	async listCatalog(): Promise<ListMarketplaceResponse> {
 		const mgr = this.getManager();
 		const [sources, installedSummaries] = await Promise.all([

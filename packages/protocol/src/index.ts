@@ -251,6 +251,49 @@ export interface UninstallPluginRequest {
 export interface AddMarketplaceRequest {
 	source: string; // url, github "owner/repo", git+url, or absolute local path
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Skills (skill-level enumeration over installed marketplace plugins)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parsed SKILL.md frontmatter. `name` falls back to the directory name when
+ * the file omits an explicit `name:` field, matching the omp SDK's loader.
+ */
+export interface SkillFrontmatter {
+	name: string;
+	description?: string;
+	model?: string;
+	triggers?: string[];
+	tags?: string[];
+}
+
+/**
+ * Skill enumerated from `<plugin>/skills/<dirName>/SKILL.md`. Owning plugin
+ * scope + enabled state are echoed onto each skill so the UI can render
+ * inheritance without a second lookup.
+ */
+export interface SkillSummary {
+	/** Composite ID stable across reads: `<pluginId>/<dirName>`. */
+	id: string;
+	pluginId: string;
+	pluginName: string;
+	marketplace: string;
+	scope: "user" | "project";
+	/** Absolute path to SKILL.md on disk. UI keeps this opaque. */
+	skillPath: string;
+	/** Directory under `<plugin>/skills/` (URL-safe segment for detail route). */
+	dirName: string;
+	frontmatter: SkillFrontmatter;
+	/** Inherited from the owning plugin; skills toggle with the plugin. */
+	enabled: boolean;
+}
+
+export interface ListSkillsResponse {
+	skills: SkillSummary[];
+	/** Echo of installed plugins so the UI can render plugin-level chrome. */
+	plugins: InstalledPluginInfo[];
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // WebSocket frames
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,6 +380,8 @@ export type ServerFrame =
 	| { type: "session_disposed"; sessionId: string }
 	/** Broadcast frame: any kanban-task mutation occurred. Clients refetch. */
 	| { type: "tasks_changed" }
+	/** Broadcast frame: skill catalog or enabled-state changed. Clients refetch. */
+	| { type: "skills_changed" }
 	/** OAuth: SDK has produced the consent URL; client opens it in a new tab. */
 	| {
 			type: "oauth_consent";
