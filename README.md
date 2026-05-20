@@ -16,12 +16,10 @@ Bun process, designed to run loopback-only behind Tailscale or an SSH tunnel.
 
 | | |
 |---|---|
-| ![Kanban — paper](./docs/screenshots/01-kanban-paper.png) | ![Kanban — slate](./docs/screenshots/02-kanban-slate.png) |
-| Kanban with `T-N` display IDs, paper theme | Same view in the slate theme |
-| ![Marketplace](./docs/screenshots/03-marketplace-slate.png) | ![Appearance settings](./docs/screenshots/04-settings-appearance-slate.png) |
-| Marketplace browser populated with `anthropics/claude-plugins-official` (202 plugins) | Settings → Appearance theme cards |
-| ![Messaging settings](./docs/screenshots/05-settings-messaging-slate.png) | ![Routines](./docs/screenshots/06-routines-paper.png) |
-| Settings → Messaging with the Telegram bridge supervisor | Routines (cron scheduler) |
+| ![Kanban](./docs/screenshots/01-kanban-paper.png) | ![Marketplace](./docs/screenshots/03-marketplace-slate.png) |
+| Kanban with `T-N` display IDs (paper theme) | Marketplace browser populated with `anthropics/claude-plugins-official` (slate theme) |
+| ![Appearance settings](./docs/screenshots/04-settings-appearance-slate.png) | ![Messaging settings](./docs/screenshots/05-settings-messaging-slate.png) |
+| Settings → Appearance theme cards | Settings → Messaging with the Telegram bridge supervisor |
 
 </details>
 

@@ -35,3 +35,6 @@ server.out.log
 # Local config the deck or bridges may write
 .env.*
 !.env.example
+
+# Dev-process screenshot scratch dir (the curated set lives in docs/screenshots/)
+/screenshots
