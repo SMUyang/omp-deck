@@ -24,7 +24,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -245,6 +245,7 @@ export class KbService {
 			absolutePath: abs,
 			frontmatter,
 			body,
+			rawContent: raw,
 			bodyForRender,
 			outgoingLinks,
 			size: st.size,
@@ -252,6 +253,90 @@ export class KbService {
 		};
 		if (frontmatterError) resp.frontmatterError = frontmatterError;
 		return resp;
+	}
+
+	/**
+	 * Atomic write at `subpath`. `mode` controls the create-vs-update
+	 * semantics:
+	 *  - "update" (PUT): destination must already exist. Returns
+	 *    `{ kind: "not-found" }` otherwise.
+	 *  - "create" (POST): destination must NOT exist. Returns
+	 *    `{ kind: "conflict" }` otherwise. Creates parent dirs.
+	 *
+	 * Frontmatter is validated by re-running parseFrontmatter on the incoming
+	 * content. Invalid YAML returns `{ kind: "invalid-frontmatter", message }`
+	 * so the editor can surface the parser's complaint. Writes go through a
+	 * temp + rename pair so concurrent reads never see a half-written file.
+	 */
+	async saveFile(
+		subpath: string,
+		content: string,
+		mode: "update" | "create",
+	): Promise<
+		| { kind: "ok"; response: KbFileResponse }
+		| { kind: "not-found" }
+		| { kind: "conflict" }
+		| { kind: "invalid-path" }
+		| { kind: "invalid-frontmatter"; message: string }
+	> {
+		await this.ensureIndex();
+		const cleanRel = normalizeRel(subpath);
+		if (!cleanRel) return { kind: "invalid-path" };
+		if (this.pathIsExcluded(cleanRel)) return { kind: "invalid-path" };
+		const abs = this.resolveAbs(cleanRel);
+		if (!abs) return { kind: "invalid-path" };
+		if (!cleanRel.toLowerCase().endsWith(".md")) return { kind: "invalid-path" };
+
+		// Frontmatter validation: if the content claims a frontmatter block,
+		// it has to be parseable YAML before we'll write.
+		const { frontmatterError } = parseFrontmatter(content);
+		if (frontmatterError) return { kind: "invalid-frontmatter", message: frontmatterError };
+
+		const exists = existsSync(abs);
+		if (mode === "update" && !exists) return { kind: "not-found" };
+		if (mode === "create" && exists) return { kind: "conflict" };
+
+		// Ensure parent dir exists for create. Update is a no-op since the
+		// existence check above guarantees the dir.
+		if (mode === "create") {
+			const parent = path.dirname(abs);
+			try {
+				await mkdir(parent, { recursive: true });
+			} catch (err) {
+				log.error(`mkdir failed at ${parent}`, err);
+				return { kind: "invalid-path" };
+			}
+		}
+
+		// Atomic write: temp file in the same dir, then rename. Single-drive
+		// assumption (kb-cockpit-proposal decision 4). Rename across drives
+		// would fail; we'd need a cp+rm fallback, which is out of v1.
+		const dir = path.dirname(abs);
+		const tmp = path.join(dir, `.${path.basename(abs)}.${process.pid}.${Date.now()}.tmp`);
+		try {
+			await writeFile(tmp, content, "utf8");
+			await rename(tmp, abs);
+		} catch (err) {
+			log.error(`atomic save failed at ${abs}`, err);
+			try {
+				await rm(tmp, { force: true });
+			} catch {
+				// best-effort
+			}
+			throw err;
+		}
+
+		// Force a fresh index next read so the new file (or new content)
+		// affects wikilink resolution everywhere. The watcher will also fire
+		// but we don't want to race it.
+		this.invalidate();
+
+		const response = await this.getFile(cleanRel);
+		if (!response) {
+			// Shouldn't happen — we just wrote it — but guard anyway.
+			return { kind: "invalid-path" };
+		}
+		return { kind: "ok", response };
 	}
 
 	// ─── internals ───────────────────────────────────────────────────────

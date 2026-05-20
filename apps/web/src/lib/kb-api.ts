@@ -30,4 +30,16 @@ export const kbApi = {
 	file(path: string): Promise<KbFileResponse> {
 		return req<KbFileResponse>(`/kb/file${qs({ path })}`);
 	},
+	put(path: string, content: string): Promise<KbFileResponse> {
+		return req<KbFileResponse>(`/kb/file${qs({ path })}`, {
+			method: "PUT",
+			body: JSON.stringify({ content }),
+		});
+	},
+	create(path: string, content: string): Promise<KbFileResponse> {
+		return req<KbFileResponse>(`/kb/file${qs({ path })}`, {
+			method: "POST",
+			body: JSON.stringify({ content }),
+		});
+	},
 };

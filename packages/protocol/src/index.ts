@@ -385,6 +385,8 @@ export interface KbFileResponse {
 	frontmatterError?: string;
 	/** SKILL.md / article body with frontmatter stripped. */
 	body: string;
+	/** Verbatim file content on disk (frontmatter + body) — used by the editor. */
+	rawContent: string;
 	/**
 	 * Body with wikilinks already substituted to in-app markdown links so the
 	 * web client can render directly through react-markdown without

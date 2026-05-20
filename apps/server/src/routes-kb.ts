@@ -40,5 +40,66 @@ export function buildKbRouter(service: KbService): Hono {
 		}
 	});
 
+	app.put("/kb/file", async (c) => {
+		const subpath = c.req.query("path");
+		if (!subpath) return c.json({ error: "path required" }, 400);
+		let body: { content?: unknown };
+		try {
+			body = (await c.req.json()) as { content?: unknown };
+		} catch {
+			return c.json({ error: "invalid json" }, 400);
+		}
+		if (typeof body.content !== "string") {
+			return c.json({ error: "content (string) required" }, 400);
+		}
+		try {
+			const result = await service.saveFile(subpath, body.content, "update");
+			return saveResultResponse(c, result);
+		} catch (err) {
+			log.error(`PUT /kb/file failed`, err);
+			return c.json({ error: String(err) }, 500);
+		}
+	});
+
+	app.post("/kb/file", async (c) => {
+		const subpath = c.req.query("path");
+		if (!subpath) return c.json({ error: "path required" }, 400);
+		let body: { content?: unknown };
+		try {
+			body = (await c.req.json()) as { content?: unknown };
+		} catch {
+			return c.json({ error: "invalid json" }, 400);
+		}
+		if (typeof body.content !== "string") {
+			return c.json({ error: "content (string) required" }, 400);
+		}
+		try {
+			const result = await service.saveFile(subpath, body.content, "create");
+			return saveResultResponse(c, result);
+		} catch (err) {
+			log.error(`POST /kb/file failed`, err);
+			return c.json({ error: String(err) }, 500);
+		}
+	});
+
 	return app;
+}
+
+/** Map a `KbService.saveFile` outcome to an HTTP response. */
+function saveResultResponse(
+	c: import("hono").Context,
+	result: Awaited<ReturnType<import("./kb-service.ts").KbService["saveFile"]>>,
+): Response {
+	switch (result.kind) {
+		case "ok":
+			return c.json(result.response);
+		case "not-found":
+			return c.json({ error: "not found" }, 404);
+		case "conflict":
+			return c.json({ error: "already exists" }, 409);
+		case "invalid-path":
+			return c.json({ error: "invalid path (escapes kb root, excluded, or not .md)" }, 400);
+		case "invalid-frontmatter":
+			return c.json({ error: `invalid frontmatter: ${result.message}` }, 400);
+	}
 }

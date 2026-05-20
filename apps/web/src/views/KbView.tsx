@@ -4,14 +4,19 @@ import {
 	BookOpen,
 	ChevronDown,
 	ChevronRight,
+	Eye,
 	File as FileIcon,
+	FilePlus,
 	FileText,
 	Folder,
 	FolderOpen,
 	Link2,
 	Link2Off,
 	Loader2,
+	Pencil,
+	Save,
 	Search,
+	X,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
@@ -357,7 +362,19 @@ function KbFilePane({
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | undefined>();
 
+	// Edit state. When `draft === null` we're in view mode; once the user
+	// hits Edit, we capture the rawContent into `draft` and switch.
+	const [draft, setDraft] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [saveError, setSaveError] = useState<string | undefined>();
+
+	const dirty = draft !== null && file !== null && draft !== file.rawContent;
+	const editing = draft !== null;
+
 	useEffect(() => {
+		// Don't blow away the user's buffer when the watcher fires for a
+		// file they're editing — defer the refetch until they exit edit mode.
+		if (editing) return;
 		let cancelled = false;
 		setLoading(true);
 		setError(undefined);
@@ -379,29 +396,67 @@ function KbFilePane({
 		return () => {
 			cancelled = true;
 		};
-	}, [path, kbChangeCounter]);
+	}, [path, kbChangeCounter, editing]);
+
+	const startEdit = useCallback(() => {
+		if (!file) return;
+		setDraft(file.rawContent);
+		setSaveError(undefined);
+	}, [file]);
+
+	const cancelEdit = useCallback(() => {
+		if (dirty && !window.confirm("Discard unsaved changes?")) return;
+		setDraft(null);
+		setSaveError(undefined);
+	}, [dirty]);
+
+	const save = useCallback(async () => {
+		if (draft === null || !file) return;
+		setSaving(true);
+		setSaveError(undefined);
+		try {
+			const next = await kbApi.put(file.path, draft);
+			setFile(next);
+			setDraft(null);
+		} catch (e) {
+			setSaveError(String((e as Error).message ?? e));
+		} finally {
+			setSaving(false);
+		}
+	}, [draft, file]);
+
+	// Ctrl/Cmd-S saves; Esc discards.
+	useEffect(() => {
+		if (!editing) return;
+		function onKey(e: KeyboardEvent): void {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+				e.preventDefault();
+				void save();
+			} else if (e.key === "Escape") {
+				e.preventDefault();
+				cancelEdit();
+			}
+		}
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [editing, save, cancelEdit]);
 
 	const handleWikilink = useCallback(
 		(href: string) => {
 			if (href.startsWith("kb-link:")) {
 				const raw = href.slice("kb-link:".length);
-				// Strip any `?anchor=...` for now; anchor scrolling lands later.
 				const [target] = raw.split("?", 1);
 				onNavigate(decodeURI(target));
 				return true;
 			}
 			if (href.startsWith("kb-unresolved:")) {
 				const target = decodeURIComponent(href.slice("kb-unresolved:".length));
-				// T-36 wires a create-on-confirm flow. For now, surface a no-op
-				// alert so the click is informative rather than silent.
-				window.alert(
-					`"${target}" doesn't match any kb file yet. Creating new files lands in T-36 (PUT /api/kb/file).`,
-				);
+				if (file) void createUnresolved(target, file.path, onNavigate);
 				return true;
 			}
 			return false;
 		},
-		[onNavigate],
+		[onNavigate, file],
 	);
 
 	if (loading && !file) {
@@ -423,23 +478,107 @@ function KbFilePane({
 	return (
 		<div className="flex h-full flex-col">
 			<div className="border-b border-line px-4 py-3">
-				<h1 className="text-base font-medium text-ink">
-					{typeof file.frontmatter?.name === "string" && (file.frontmatter.name as string).trim()
-						? (file.frontmatter.name as string)
-						: titleFromPath(file.path)}
-				</h1>
-				<div className="mt-1 font-mono text-2xs text-ink-3">{file.path}</div>
+				<div className="flex items-center gap-2">
+					<div className="min-w-0">
+						<h1 className="truncate text-base font-medium text-ink">
+							{typeof file.frontmatter?.name === "string" && (file.frontmatter.name as string).trim()
+								? (file.frontmatter.name as string)
+								: titleFromPath(file.path)}
+							{dirty ? <span className="ml-1 text-warn" title="unsaved changes">●</span> : null}
+						</h1>
+						<div className="mt-1 font-mono text-2xs text-ink-3">{file.path}</div>
+					</div>
+					<div className="ml-auto flex items-center gap-1">
+						{editing ? (
+							<>
+								<button
+									type="button"
+									onClick={() => void save()}
+									disabled={!dirty || saving}
+									className="btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs disabled:opacity-50"
+									title="Save (Ctrl-S)"
+								>
+									{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+									Save
+								</button>
+								<button
+									type="button"
+									onClick={cancelEdit}
+									className="btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs"
+									title="Discard (Esc)"
+								>
+									<X className="h-3.5 w-3.5" />
+									Cancel
+								</button>
+							</>
+						) : (
+							<button
+								type="button"
+								onClick={startEdit}
+								className="btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs"
+								title="Edit (or click anywhere in the body)"
+							>
+								<Pencil className="h-3.5 w-3.5" />
+								Edit
+							</button>
+						)}
+					</div>
+				</div>
 				{file.frontmatterError ? (
 					<div className="mt-2 rounded-md border border-warn/30 bg-warn/10 px-2 py-1 font-mono text-2xs text-warn">
 						frontmatter: {file.frontmatterError}
 					</div>
 				) : null}
+				{saveError ? (
+					<div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 font-mono text-2xs text-danger">
+						save failed: {saveError}
+					</div>
+				) : null}
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-				<KbMarkdown body={file.bodyForRender} onWikilink={handleWikilink} />
+				{editing ? (
+					<textarea
+						value={draft}
+						onChange={(e) => setDraft(e.target.value)}
+						spellCheck={false}
+						autoFocus
+						className="h-full min-h-[60vh] w-full resize-none whitespace-pre-wrap break-words rounded-md border border-line bg-paper-2 p-3 font-mono text-xs leading-relaxed text-ink focus:border-accent focus:outline-none"
+					/>
+				) : (
+					<KbMarkdown body={file.bodyForRender} onWikilink={handleWikilink} />
+				)}
 			</div>
 		</div>
 	);
+}
+
+/**
+ * Prompt the user to create a file for an unresolved wikilink target. The
+ * filename defaults to the bare target (cleaned for filesystem safety);
+ * directory defaults to the current file's parent. Cancel = no-op.
+ */
+async function createUnresolved(target: string, currentFilePath: string, onNavigate: (p: string) => void): Promise<void> {
+	const currentDir = currentFilePath.includes("/") ? currentFilePath.slice(0, currentFilePath.lastIndexOf("/")) : "";
+	const slug = target.replace(/[\\:*?"<>|]/g, "-").replace(/\.md$/i, "");
+	const defaultPath = currentDir ? `${currentDir}/${slug}.md` : `${slug}.md`;
+	const proposed = window.prompt(
+		`Create a new kb file for unresolved wikilink "${target}"?\nPath (relative to kb root):`,
+		defaultPath,
+	);
+	if (!proposed) return;
+	const normalized = proposed.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+	if (!normalized.toLowerCase().endsWith(".md")) {
+		window.alert("Path must end in .md");
+		return;
+	}
+	const today = new Date().toISOString().slice(0, 10);
+	const stub = `---\ntype: knowledge\ncreated: ${today}\nupdated: ${today}\ntags: []\n---\n\n# ${target}\n\n`;
+	try {
+		await kbApi.create(normalized, stub);
+		onNavigate(normalized);
+	} catch (e) {
+		window.alert(`create failed: ${(e as Error).message ?? e}`);
+	}
 }
 
 // ─── Inspector ───────────────────────────────────────────────────────────
