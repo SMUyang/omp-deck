@@ -9,7 +9,21 @@ Bun process, designed to run loopback-only behind Tailscale or an SSH tunnel.
 > Status: **v0.1 public release.** End-to-end verified against live omp turns.
 > See [CHANGELOG.md](./CHANGELOG.md) for the full feature inventory.
 
-![Hero placeholder — paper theme chat with tool cards](./docs/screenshots/.gitkeep)
+![omp-deck chat surface — live tool calls + orientation summary](./docs/screenshots/00-hero-chat-paper.png)
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![Kanban — paper](./docs/screenshots/01-kanban-paper.png) | ![Kanban — slate](./docs/screenshots/02-kanban-slate.png) |
+| Kanban with `T-N` display IDs, paper theme | Same view in the slate theme |
+| ![Marketplace](./docs/screenshots/03-marketplace-slate.png) | ![Appearance settings](./docs/screenshots/04-settings-appearance-slate.png) |
+| Marketplace browser populated with `anthropics/claude-plugins-official` (202 plugins) | Settings → Appearance theme cards |
+| ![Messaging settings](./docs/screenshots/05-settings-messaging-slate.png) | ![Routines](./docs/screenshots/06-routines-paper.png) |
+| Settings → Messaging with the Telegram bridge supervisor | Routines (cron scheduler) |
+
+</details>
 
 ## Why
 
