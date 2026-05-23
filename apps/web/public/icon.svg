@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="omp-deck">
+	<title>omp-deck</title>
+	<defs>
+		<!--
+			Vertical stack gradient: pink → purple → blue, anchored to the stack's
+			vertical extent in user space so every tile shares the same color
+			mapping (top tile is pink, bottom tile is blue, middle tiles get the
+			interpolated values for free).
+		-->
+		<linearGradient id="omp-deck-stack" x1="0" y1="50" x2="0" y2="206" gradientUnits="userSpaceOnUse">
+			<stop offset="0%" stop-color="#ff3acb" />
+			<stop offset="50%" stop-color="#9b3dd8" />
+			<stop offset="100%" stop-color="#3a8de8" />
+		</linearGradient>
+		<!-- Per-tile shine: light from upper-left → soft shadow on lower-right. -->
+		<linearGradient id="omp-deck-shine" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0%" stop-color="#ffffff" stop-opacity="0.22" />
+			<stop offset="55%" stop-color="#ffffff" stop-opacity="0" />
+			<stop offset="100%" stop-color="#000000" stop-opacity="0.14" />
+		</linearGradient>
+		<!-- Drop shadow under the whole stack to lift it off the surface. -->
+		<filter id="omp-deck-shadow" x="-20%" y="-10%" width="140%" height="130%">
+			<feGaussianBlur in="SourceAlpha" stdDeviation="3.4" />
+			<feOffset dx="0" dy="3" result="offsetblur" />
+			<feComponentTransfer>
+				<feFuncA type="linear" slope="0.32" />
+			</feComponentTransfer>
+			<feMerge>
+				<feMergeNode />
+				<feMergeNode in="SourceGraphic" />
+			</feMerge>
+		</filter>
+	</defs>
+
+	<!--
+		Five isometric tiles. Each is a rhombus with half-width 70 and half-height
+		35 (2:1 aspect, dimetric projection). The polygon's rounded corners come
+		from a same-color stroke with `stroke-linejoin="round"` — no path math
+		required. Rendered bottom-first so each upper tile's lower edge correctly
+		covers the tile below it.
+	-->
+	<g filter="url(#omp-deck-shadow)">
+		<!-- Tile 5 (bottom) — center y=164 -->
+		<polygon points="128,129 198,164 128,199 58,164"
+		         fill="url(#omp-deck-stack)" stroke="url(#omp-deck-stack)"
+		         stroke-width="6" stroke-linejoin="round" />
+		<polygon points="128,129 198,164 128,199 58,164"
+		         fill="url(#omp-deck-shine)" stroke="none" />
+		<!-- Tile 4 — center y=146 -->
+		<polygon points="128,111 198,146 128,181 58,146"
+		         fill="url(#omp-deck-stack)" stroke="url(#omp-deck-stack)"
+		         stroke-width="6" stroke-linejoin="round" />
+		<polygon points="128,111 198,146 128,181 58,146"
+		         fill="url(#omp-deck-shine)" stroke="none" />
+		<!-- Tile 3 — center y=128 -->
+		<polygon points="128,93 198,128 128,163 58,128"
+		         fill="url(#omp-deck-stack)" stroke="url(#omp-deck-stack)"
+		         stroke-width="6" stroke-linejoin="round" />
+		<polygon points="128,93 198,128 128,163 58,128"
+		         fill="url(#omp-deck-shine)" stroke="none" />
+		<!-- Tile 2 — center y=110 -->
+		<polygon points="128,75 198,110 128,145 58,110"
+		         fill="url(#omp-deck-stack)" stroke="url(#omp-deck-stack)"
+		         stroke-width="6" stroke-linejoin="round" />
+		<polygon points="128,75 198,110 128,145 58,110"
+		         fill="url(#omp-deck-shine)" stroke="none" />
+		<!-- Tile 1 (top) — center y=92 -->
+		<polygon points="128,57 198,92 128,127 58,92"
+		         fill="url(#omp-deck-stack)" stroke="url(#omp-deck-stack)"
+		         stroke-width="6" stroke-linejoin="round" />
+		<polygon points="128,57 198,92 128,127 58,92"
+		         fill="url(#omp-deck-shine)" stroke="none" />
+	</g>
+</svg>

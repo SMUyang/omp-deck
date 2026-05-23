@@ -4,6 +4,16 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 		<meta name="theme-color" content="#f7f4ee" />
+		<!--
+			Icon links. The SVG carries the canonical artwork; the PNGs are raster
+			fallbacks (legacy Firefox/Safari pre-15, Apple touch icon, OS app icon).
+			Order matters — browsers pick the first supported `link` they
+			understand, so SVG goes first for crisp scaling at any size.
+		-->
+		<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+		<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+		<link rel="shortcut icon" href="/favicon-32.png" />
 		<title>omp-deck</title>
 		<script>
 			// Apply the theme BEFORE React mounts so there is no flash of the
