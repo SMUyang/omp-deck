@@ -57,7 +57,7 @@ features instead of being shoehorned through a chat-side selector. See
 These are deck-only — the TUI doesn't have them:
 
 - **Kanban** with display IDs, drag-and-drop, configurable columns.
-- **Cron routines** with run history.
+- **Routines V1** — multi-step pipelines (`run` / `agent` / `http` / `write` / `deck` / `mcp` / `transform` / `wait` / `set_state`) with `cron` / `webhook` / `manual` / `event` triggers, a visual canvas builder, and per-step run observability.
 - **Inbox** quick-capture with promote-to-task.
 - **Settings → Env** with masked secret store and audit log.
 - **Messaging bridges** (Telegram now; Slack/Discord-shaped to come).

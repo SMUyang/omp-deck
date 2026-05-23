@@ -1,0 +1,61 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://omp-deck.app/schemas/routine-layout.json",
+	"title": "RoutineLayout (V1)",
+	"description": "Canvas-mode metadata for a routine: per-step node positions plus the edge graph between them. Carried inline in spec_yaml so canvas mode is fully round-trippable without a separate persistence layer. The V1 runtime engine ignores `layout` entirely.",
+	"type": "object",
+	"required": ["version"],
+	"properties": {
+		"version": {
+			"const": 1,
+			"description": "Schema version. Bump only on breaking layout-format changes."
+		},
+		"nodes": {
+			"type": "object",
+			"description": "Node positions keyed by the corresponding step id. Steps without an entry render at an inferred position.",
+			"additionalProperties": {
+				"type": "object",
+				"required": ["x", "y"],
+				"properties": {
+					"x": { "type": "number" },
+					"y": { "type": "number" },
+					"collapsed": {
+						"type": "boolean",
+						"description": "If true, the canvas renders the node in compact form (id + type only)."
+					}
+				},
+				"additionalProperties": false
+			}
+		},
+		"edges": {
+			"type": "array",
+			"description": "Directed edges between step nodes. The runtime engine still walks `steps:` in array order; this is purely the visual graph.",
+			"items": {
+				"type": "object",
+				"required": ["from", "to"],
+				"properties": {
+					"from": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Source step id."
+					},
+					"to": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Target step id."
+					},
+					"kind": {
+						"enum": ["success", "error", "true", "false", "manual"],
+						"description": "Edge semantics. `true`/`false` are the two branches leaving an `if`-flavored node and compile to `when:` gates on the target. `success` is the default sequential edge."
+					},
+					"label": {
+						"type": "string",
+						"description": "Optional human-readable label rendered on the edge."
+					}
+				},
+				"additionalProperties": false
+			}
+		}
+	},
+	"additionalProperties": false
+}

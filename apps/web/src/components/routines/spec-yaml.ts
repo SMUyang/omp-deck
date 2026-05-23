@@ -14,6 +14,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
 	validateRoutineSpec,
 	type RoutineDeckAction,
+	type RoutineLayout,
+	type RoutineLayoutNode,
 	type RoutineSpec,
 	type RoutineStep,
 	type RoutineTrigger,
@@ -73,6 +75,37 @@ function orderSpec(spec: RoutineSpec): Record<string, unknown> {
 	if (spec.state) out.state = spec.state;
 	if (spec.tags && spec.tags.length > 0) out.tags = spec.tags;
 	out.steps = spec.steps;
+	if (spec.layout) out.layout = orderLayout(spec.layout);
+	return out;
+}
+
+/**
+ * Stable serialization for the optional `layout` block. Node keys are sorted
+ * alphabetically by step id so diffs stay clean across saves; edges preserve
+ * authored order; integer coords are emitted as-is so the YAML reads cleanly.
+ */
+function orderLayout(layout: NonNullable<RoutineSpec["layout"]>): Record<string, unknown> {
+	const out: Record<string, unknown> = { version: layout.version };
+	if (layout.nodes && Object.keys(layout.nodes).length > 0) {
+		const sortedKeys = Object.keys(layout.nodes).sort();
+		const nodesOut: Record<string, unknown> = {};
+		for (const id of sortedKeys) {
+			const n = layout.nodes[id];
+			if (!n) continue;
+			const entry: Record<string, unknown> = { x: n.x, y: n.y };
+			if (n.collapsed) entry.collapsed = true;
+			nodesOut[id] = entry;
+		}
+		out.nodes = nodesOut;
+	}
+	if (layout.edges && layout.edges.length > 0) {
+		out.edges = layout.edges.map((e) => {
+			const entry: Record<string, unknown> = { from: e.from, to: e.to };
+			if (e.kind) entry.kind = e.kind;
+			if (e.label) entry.label = e.label;
+			return entry;
+		});
+	}
 	return out;
 }
 
@@ -86,13 +119,20 @@ export function emptyV1Spec(): RoutineSpec {
 	};
 }
 
-/** Scaffold a fresh step of the given type — every required field present. */
+/**
+ * Scaffold a fresh step of the given type — every required field present.
+ *
+ * The optional `presetKind` flavors the scaffold inside a type. Currently
+ * only `"if"` applies (with `type === "transform"`): the body becomes a
+ * boolean placeholder and the id base becomes `if`.
+ */
 export function scaffoldStep(
 	type: RoutineStep["type"],
 	existingIds: string[],
 	presetAction?: RoutineDeckAction,
+	presetKind?: "if",
 ): RoutineStep {
-	const id = pickUniqueId(pickBaseId(type, presetAction), existingIds);
+	const id = pickUniqueId(pickBaseId(type, presetAction, presetKind), existingIds);
 	switch (type) {
 		case "run":
 			return { id, type: "run", command: "echo hello" };
@@ -143,10 +183,45 @@ export function scaffoldStep(
 						action: "promote_inbox_item_to_task",
 						inbox_ref: "i_...",
 					};
+				case "list_tasks":
+					return {
+						id,
+						type: "deck",
+						action: "list_tasks",
+						state_ref: "active",
+					};
+				case "list_inbox":
+					return {
+						id,
+						type: "deck",
+						action: "list_inbox",
+						since_hours: 24,
+					};
+				case "get_task":
+					return {
+						id,
+						type: "deck",
+						action: "get_task",
+						task_ref: "T-1",
+					};
+				case "get_inbox_item":
+					return {
+						id,
+						type: "deck",
+						action: "get_inbox_item",
+						inbox_ref: "i_...",
+					};
 			}
 		case "mcp":
 			return { id, type: "mcp", server: "filesystem", tool: "read_text_file", args: {} };
 		case "transform":
+			if (presetKind === "if") {
+				return {
+					id,
+					type: "transform",
+					body: "// Set the branch condition. Return true/false to gate downstream nodes.\nreturn true;",
+				};
+			}
 			return { id, type: "transform", body: "return { ok: true };" };
 		case "wait":
 			return { id, type: "wait", duration_secs: 5 };
@@ -165,7 +240,12 @@ function pickUniqueId(base: string, existing: string[]): string {
 	return `${base}_${Date.now()}`;
 }
 
-function pickBaseId(type: RoutineStep["type"], presetAction?: RoutineDeckAction): string {
+function pickBaseId(
+	type: RoutineStep["type"],
+	presetAction?: RoutineDeckAction,
+	presetKind?: "if",
+): string {
+	if (presetKind === "if") return "if";
 	if (type !== "deck") return type;
 	switch (presetAction ?? "create_inbox_item") {
 		case "create_inbox_item":
@@ -176,19 +256,63 @@ function pickBaseId(type: RoutineStep["type"], presetAction?: RoutineDeckAction)
 			return "move_task";
 		case "promote_inbox_item_to_task":
 			return "promote_inbox_item_to_task";
+		case "list_tasks":
+			return "list_tasks";
+		case "list_inbox":
+			return "list_inbox";
+		case "get_task":
+			return "get_task";
+		case "get_inbox_item":
+			return "get_inbox_item";
 	}
 }
 
 
-/** Apply a partial patch to one step inside the spec, returning a new spec. */
+/**
+ * Apply a partial patch to one step inside the spec, returning a new spec.
+ *
+ * If `next.id` differs from the previous step's id, the rename cascades
+ * through `spec.layout.nodes` (key migration, preserving the position +
+ * collapsed flag) and `spec.layout.edges` (`from`/`to` endpoint rewrite) so
+ * canvas positions and authored edges survive a node rename. `when:`
+ * expressions referencing `steps.<oldId>` are NOT rewritten — those are
+ * author code and the renaming author updates them themselves.
+ */
 export function replaceStep(
 	spec: RoutineSpec,
 	index: number,
 	next: RoutineStep,
 ): RoutineSpec {
+	const prev = spec.steps[index];
 	const steps = spec.steps.slice();
 	steps[index] = next;
-	return { ...spec, steps };
+	if (!prev || prev.id === next.id || !spec.layout) {
+		return { ...spec, steps };
+	}
+	const prevNodes = spec.layout.nodes ?? {};
+	const nextNodes: Record<string, RoutineLayoutNode> = {};
+	for (const [id, entry] of Object.entries(prevNodes)) {
+		if (id === prev.id) {
+			nextNodes[next.id] = { ...entry };
+		} else {
+			nextNodes[id] = entry;
+		}
+	}
+	const nextEdges = spec.layout.edges?.map((e) =>
+		e.from === prev.id || e.to === prev.id
+			? {
+				...e,
+				from: e.from === prev.id ? next.id : e.from,
+				to: e.to === prev.id ? next.id : e.to,
+			}
+			: e,
+	);
+	const layout: RoutineLayout = {
+		...spec.layout,
+		nodes: nextNodes,
+		...(nextEdges ? { edges: nextEdges } : {}),
+	};
+	return { ...spec, steps, layout };
 }
 
 export function insertStep(spec: RoutineSpec, step: RoutineStep, at?: number): RoutineSpec {
@@ -243,6 +367,13 @@ export interface StepTemplateDescriptor {
 	label: string;
 	help: string;
 	presetAction?: RoutineDeckAction;
+	/**
+	 * Canvas-only flavor hint. Currently only `"if"` — paired with
+	 * `value: "transform"` to scaffold a transform step whose body is a boolean
+	 * condition placeholder. The runtime engine never sees this field; it lives
+	 * in the palette + scaffold path only.
+	 */
+	presetKind?: "if";
 }
 
 export const STEP_TYPE_DESCRIPTIONS: ReadonlyArray<StepTemplateDescriptor> = [
@@ -253,9 +384,14 @@ export const STEP_TYPE_DESCRIPTIONS: ReadonlyArray<StepTemplateDescriptor> = [
 	{ key: "create_task", value: "deck", label: "create task", help: "Create a kanban task using deck-native semantics.", presetAction: "create_task" },
 	{ key: "move_task", value: "deck", label: "move task", help: "Move an existing task to another state by T-id or task id.", presetAction: "move_task" },
 	{ key: "promote_inbox_item_to_task", value: "deck", label: "promote inbox item", help: "Promote an inbox item into a task with the standard provenance footer.", presetAction: "promote_inbox_item_to_task" },
+	{ key: "list_tasks", value: "deck", label: "list tasks", help: "Read tasks from the deck. Filter by state name, recency, archived.", presetAction: "list_tasks" },
+	{ key: "list_inbox", value: "deck", label: "list inbox", help: "Read inbox items. Filter by kind, recency, processed-or-not.", presetAction: "list_inbox" },
+	{ key: "get_task", value: "deck", label: "get task", help: "Fetch a single task by T-N or task id.", presetAction: "get_task" },
+	{ key: "get_inbox_item", value: "deck", label: "get inbox item", help: "Fetch a single inbox item by id.", presetAction: "get_inbox_item" },
 	{ key: "write", value: "write", label: "write", help: "Write a templated string to a file." },
 	{ key: "transform", value: "transform", label: "transform", help: "JS expression in a sandbox; sets context.steps.X.json." },
 	{ key: "set_state", value: "set_state", label: "set_state", help: "Upsert keys into the routine's persistent state." },
 	{ key: "wait", value: "wait", label: "wait", help: "Sleep N seconds. Useful between polling steps." },
 	{ key: "mcp", value: "mcp", label: "mcp", help: "Invoke an MCP server tool. V1.5 — currently stubbed." },
+	{ key: "if", value: "transform", label: "if", help: "Branch the graph on a boolean condition. Wire downstream nodes to the true/false outputs.", presetKind: "if" },
 ];

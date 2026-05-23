@@ -11,6 +11,11 @@ const SERVER_WS = `ws://${SERVER_HOST}:${SERVER_PORT}`;
 
 export default defineConfig({
 	plugins: [react()],
+	// Expose `OMP_DECK_*` env vars (in addition to Vite's default `VITE_*`) so
+	// power-user opt-outs like `OMP_DECK_CANVAS_SKIP_PREVIEW=1` are visible to
+	// the client via `import.meta.env` without bouncing through a localStorage
+	// shim.
+	envPrefix: ["VITE_", "OMP_DECK_"],
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),

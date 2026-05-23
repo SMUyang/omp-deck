@@ -81,6 +81,9 @@
           { "$ref": "https://omp-deck.app/schemas/step-set_state.json" }
         ]
       }
+    },
+    "layout": {
+      "$ref": "https://omp-deck.app/schemas/routine-layout.json"
     }
   },
   "additionalProperties": false

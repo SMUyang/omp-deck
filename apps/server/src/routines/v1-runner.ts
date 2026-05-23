@@ -22,6 +22,8 @@
  */
 
 import { parse as parseYaml } from "yaml";
+import { mkdir } from "node:fs/promises";
+import * as path from "node:path";
 
 import type {
 	Routine,
@@ -76,8 +78,16 @@ export async function runV1Pipeline(input: {
 	triggerPayload: Record<string, unknown>;
 	abortSignal: AbortSignal;
 	defaultCwd: string;
+	/**
+	 * Per-run sandbox root for `agent` steps. The runner creates
+	 * `<agentSandboxRoot>/<runId>/` lazily on the first `agent` step and uses
+	 * it as the cwd for that step's `omp -p` child process. Keeps agent steps
+	 * away from the user's home (where unrelated files may be inferred by
+	 * the coding agent as 'briefing material').
+	 */
+	agentSandboxRoot: string;
 }): Promise<{ status: "success" | "failed" | "aborted"; abortReason?: AbortReason }> {
-	const { routine, spec, runId, triggerKind, triggerPayload, abortSignal, defaultCwd } = input;
+	const { routine, spec, runId, triggerKind, triggerPayload, abortSignal, defaultCwd, agentSandboxRoot } = input;
 	const startedAt = new Date();
 	const startedAtIso = startedAt.toISOString();
 	const startedMs = Date.now();
@@ -115,6 +125,20 @@ export async function runV1Pipeline(input: {
 	let aggregateStdout = "";
 
 	const stepCwd = (routine.actionCwd && routine.actionCwd.trim()) || defaultCwd;
+
+	// Lazy mkdir for the per-run agent sandbox. Created the first time an
+	// `agent` step runs; left in place after the run finishes so the user can
+	// inspect whatever scratch files the coding agent dropped. Pure-deck-step
+	// runs (no `agent` step) never touch the filesystem.
+	const runSandboxDir = path.join(agentSandboxRoot, runId);
+	let runSandboxEnsured = false;
+	const ensureAgentSandbox = async (): Promise<string> => {
+		if (!runSandboxEnsured) {
+			await mkdir(runSandboxDir, { recursive: true });
+			runSandboxEnsured = true;
+		}
+		return runSandboxDir;
+	};
 
 	for (let i = 0; i < spec.steps.length; i++) {
 		if (abortSignal.aborted) {
@@ -181,7 +205,7 @@ export async function runV1Pipeline(input: {
 				startedAt: new Date().toISOString(),
 			});
 
-			const result = await dispatchStep(step, context, abortSignal, defaultCwd, stepCwd, runId, routine.id);
+			const result = await dispatchStep(step, context, abortSignal, defaultCwd, stepCwd, runId, routine.id, ensureAgentSandbox);
 			lastResult = result;
 			finishStepRun(stepRunId, {
 				status: result.status,
@@ -320,12 +344,19 @@ async function dispatchStep(
 	routineCwd: string,
 	runId: string,
 	routineId: string,
+	ensureAgentSandbox: () => Promise<string>,
 ): Promise<StepResult> {
 	switch (step.type) {
 		case "run":
 			return executeRunStep(step, context, signal, routineCwd);
-		case "agent":
-			return executeAgentStep(step, context, signal, routineCwd);
+		case "agent": {
+			// Agent steps shell out to `omp -p`, which is a full coding agent
+			// with read / bash / search / etc. Run it in a deck-owned per-run
+			// scratch dir so it can't latch onto unrelated files in the user's
+			// home and use them as 'input data' (daily-briefing drift case).
+			const sandbox = await ensureAgentSandbox();
+			return executeAgentStep(step, context, signal, sandbox);
+		}
 		case "write":
 			return executeWriteStep(step, context, signal, routineCwd);
 		case "http":

@@ -39,3 +39,6 @@ server.out.log
 
 # Dev-process screenshot scratch dir (the curated set lives in docs/screenshots/)
 /screenshots
+
+# TypeScript incremental build cache
+*.tsbuildinfo

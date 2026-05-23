@@ -22,6 +22,10 @@ import type {
 import { routinesApi } from "@/lib/routines-api";
 import { formatDurationMs } from "@/lib/utils";
 
+import { compileGraph } from "./canvas/graph-compile";
+import { RoutineCanvas } from "./canvas/RoutineCanvas";
+import { SavePreviewDialog, shouldSkipSavePreview } from "./canvas/SavePreviewDialog";
+import { useRunOverlay } from "./canvas/use-run-overlay";
 import { AddStepPicker } from "./AddStepPicker";
 import { SettingsForm } from "./SettingsForm";
 import { StepCard } from "./StepCard";
@@ -45,7 +49,18 @@ interface Props {
 	onError: (message: string) => void;
 }
 
-type Tab = "steps" | "triggers" | "settings" | "spec";
+type Tab = "steps" | "canvas" | "triggers" | "settings" | "spec";
+
+/**
+ * Initial tab to land on when (re)opening the editor:
+ * - Brand-new routine, or routine with a saved `layout` block -> Canvas.
+ * - Existing routine without a layout -> Steps (form mode, preserving prior UX).
+ */
+function pickInitialTab(routine: Routine | undefined, spec: RoutineSpec): Tab {
+	if (!routine) return "canvas";
+	if (spec.layout) return "canvas";
+	return "steps";
+}
 
 export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 	const initialSpec = useMemo<RoutineSpec>(() => {
@@ -63,12 +78,19 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 	const [yamlDirty, setYamlDirty] = useState(false);
 	const [yamlError, setYamlError] = useState<string | undefined>();
 	const [schemaErrors, setSchemaErrors] = useState<ValidationError[] | undefined>();
-	const [tab, setTab] = useState<Tab>("steps");
+	const [tab, setTab] = useState<Tab>(() => pickInitialTab(routine, initialSpec));
 	const [busy, setBusy] = useState(false);
 	const [enabled, setEnabled] = useState<boolean>(routine?.enabled ?? false);
 	const [webhookSecret, setWebhookSecret] = useState<string | undefined>();
 	const [runs, setRuns] = useState<RoutineRun[]>([]);
 	const [showRuns, setShowRuns] = useState(false);
+	// T-70: pre-save diff preview state. When non-null, the SavePreviewDialog is
+	// open and the contained `specToSave` + `specYaml` are what will be PATCHed
+	// or POSTed when the user confirms. Cancelling clears this back to null.
+	const [pendingSave, setPendingSave] = useState<{
+		specToSave: RoutineSpec;
+		specYaml: string;
+	} | null>(null);
 
 	// When the parent passes a different routine, reset everything.
 	const lastRoutineId = useRef<string | undefined>(routine?.id);
@@ -81,7 +103,7 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 		setYamlError(undefined);
 		setSchemaErrors(undefined);
 		setEnabled(routine?.enabled ?? false);
-		setTab("steps");
+		setTab(pickInitialTab(routine, initialSpec));
 	}, [routine, initialSpec]);
 
 	useEffect(() => {
@@ -125,6 +147,17 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 		setTab(next);
 	}
 
+	// Compile the canvas graph on every spec change. In the linear short-circuit
+	// path (no `layout.edges`), this is the identity function; it only does work
+	// when the user has wired explicit edges via the canvas. Errors gate Save
+	// and feed the canvas's red-ring overlay + bottom error strip.
+	const compile = useMemo(() => compileGraph(spec), [spec]);
+
+	// T-71: run-status overlay state. Shared between the canvas (ring colors
+	// + badges + last-run picker) and the inspector (per-step output preview
+	// in T-72). Subscribes to WS for live updates while the routine runs.
+	const runOverlay = useRunOverlay(routine?.id);
+
 	async function save(): Promise<void> {
 		// Make sure YAML changes are applied to the live spec first.
 		if (yamlDirty) {
@@ -134,21 +167,53 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 				return;
 			}
 		}
+		// Re-compile against the freshest spec (applyYaml may have mutated it
+		// since the memo snapshotted). Block save when any error is present;
+		// the canvas error strip already shows the user what is broken.
+		const finalCompile = compileGraph(spec);
+		if (finalCompile.errors.length > 0) {
+			const first = finalCompile.errors[0]!;
+			onError(`Cannot save: ${first.message}${finalCompile.errors.length > 1 ? ` (+${finalCompile.errors.length - 1} more)` : ""}`);
+			return;
+		}
+		// Apply the topo-sorted step order so the runtime engine walks the graph
+		// the user drew. No-op when compile was the identity.
+		const specToSave: RoutineSpec = finalCompile.steps === spec.steps
+			? spec
+			: { ...spec, steps: finalCompile.steps };
+		const specYaml = stringifySpec(specToSave);
+
+		// T-70: from canvas mode, route the save through a diff-preview dialog
+		// unless the user has explicitly opted out (env or localStorage). Other
+		// tabs save directly — the YAML editor on the Spec tab is already a
+		// preview of its own, and the Steps/Triggers/Settings forms never
+		// trigger branch compilation.
+		const previewable =
+			tab === "canvas" &&
+			!shouldSkipSavePreview() &&
+			specYaml !== (routine?.specYaml ?? "");
+		if (previewable) {
+			setPendingSave({ specToSave, specYaml });
+			return;
+		}
+		await commitSave(specToSave, specYaml);
+	}
+
+	async function commitSave(specToSave: RoutineSpec, specYaml: string): Promise<void> {
 		setBusy(true);
 		try {
-			const specYaml = stringifySpec(spec);
 			if (routine) {
 				const updated = await routinesApi.update(routine.id, {
-					name: spec.name,
-					description: spec.description ?? "",
+					name: specToSave.name,
+					description: specToSave.description ?? "",
 					specYaml,
 					enabled,
 				});
 				onSaved(updated);
 			} else {
 				const created = await routinesApi.create({
-					name: spec.name,
-					description: spec.description ?? "",
+					name: specToSave.name,
+					description: specToSave.description ?? "",
 					// V0 fields are ignored when specYaml is present.
 					cron: "",
 					actionKind: "bash",
@@ -158,6 +223,7 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 				});
 				onSaved(created);
 			}
+			setPendingSave(null);
 		} catch (e) {
 			onError(String(e));
 		} finally {
@@ -213,12 +279,30 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 	// ─── Render ────────────────────────────────────────────────────────────
 
 	const canSave =
-		spec.name.trim().length > 0 && spec.trigger.length > 0 && spec.steps.length > 0 && !busy;
+		spec.name.trim().length > 0 &&
+		spec.trigger.length > 0 &&
+		spec.steps.length > 0 &&
+		compile.errors.length === 0 &&
+		!busy;
 
 	return (
-		<div className="flex h-full flex-col">
+		<div
+			className={
+				// T-77: canvas tab claims the full viewport so the graph + inspector
+				// can spread out; form tabs stay capped at 5xl for readability.
+				tab === "canvas"
+					? "flex h-full flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-[0_1px_0_0_rgb(var(--ink)/0.03)]"
+					: "mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-[0_1px_0_0_rgb(var(--ink)/0.03)]"
+			}
+		>
 			<TabBar tab={tab} onChange={switchTab} stepCount={spec.steps.length} triggerCount={spec.trigger.length} />
-			<div className="flex-1 overflow-y-auto px-3 py-3">
+			<div
+				className={
+					tab === "canvas"
+						? "flex-1 min-h-0"
+						: "flex-1 overflow-y-auto px-3 py-3"
+				}
+			>
 				{tab === "steps" ? (
 					<div className="space-y-2">
 						{spec.steps.length === 0 ? (
@@ -242,6 +326,19 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 						)}
 						<AddStepPicker onAdd={onAddStep} />
 					</div>
+				) : null}
+
+				{tab === "canvas" ? (
+					<RoutineCanvas
+						spec={spec}
+						onChange={updateSpec}
+						compileErrors={compile.errors}
+						routineId={routine?.id}
+						runs={runOverlay.runs}
+						selectedRunId={runOverlay.selectedRunId}
+						onSelectRun={runOverlay.setSelectedRunId}
+						stepRunsByStepId={runOverlay.stepRunsByStepId}
+					/>
 				) : null}
 
 				{tab === "triggers" ? (
@@ -334,7 +431,7 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 					</div>
 				) : null}
 
-				{routine ? (
+				{routine && tab !== "canvas" ? (
 					<div className="mt-3 border-t border-line pt-2">
 						<button
 							type="button"
@@ -357,6 +454,19 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 				onSave={() => void save()}
 				onRunNow={() => void runNow()}
 			/>
+			{pendingSave ? (
+				<SavePreviewDialog
+					currentYaml={routine?.specYaml ?? ""}
+					newYaml={pendingSave.specYaml}
+					busy={busy}
+					onCancel={() => {
+						if (!busy) setPendingSave(null);
+					}}
+					onConfirm={() => {
+						void commitSave(pendingSave.specToSave, pendingSave.specYaml);
+					}}
+				/>
+			) : null}
 		</div>
 	);
 }
@@ -373,6 +483,7 @@ function TabBar({
 	triggerCount: number;
 }) {
 	const tabs: ReadonlyArray<{ id: Tab; label: string; badge?: number }> = [
+		{ id: "canvas", label: "Canvas" },
 		{ id: "steps", label: "Steps", badge: stepCount },
 		{ id: "triggers", label: "Triggers", badge: triggerCount },
 		{ id: "settings", label: "Settings" },

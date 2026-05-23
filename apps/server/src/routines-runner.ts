@@ -11,6 +11,7 @@
 
 import { Cron } from "croner";
 import { parse as parseYaml } from "yaml";
+import * as path from "node:path";
 
 import type { Routine, RoutineActionKind, RoutineSpec, RoutineTrigger } from "@omp-deck/protocol";
 
@@ -206,6 +207,10 @@ export class RoutinesRunner {
 				triggerPayload: payload,
 				abortSignal: decision.abort.signal,
 				defaultCwd: config.defaultCwd,
+				// Sandbox `agent` steps in <deck-data-dir>/routine-runs/<runId>/
+				// so the embedded coding agent can't reach into the user's home
+				// for "context" it wasn't asked about.
+				agentSandboxRoot: path.join(path.dirname(config.dbPath), "routine-runs"),
 			});
 		} catch (err) {
 			log.error(`V1 pipeline threw for ${routine.id}`, err);

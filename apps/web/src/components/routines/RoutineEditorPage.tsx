@@ -94,9 +94,7 @@ export function RoutineEditorPage({ routine, onBack, onSaved, onDeleted }: Props
 			<div className="min-h-0 flex-1 bg-paper">
 				{mode === "v1" ? (
 					<div className="h-full px-3 py-3">
-						<div className="mx-auto h-full max-w-5xl overflow-hidden rounded-lg border border-line bg-paper shadow-[0_1px_0_0_rgb(var(--ink)/0.03)]">
-							<RoutineBuilder routine={isNew ? undefined : routine} onSaved={onSaved} onError={setErr} />
-						</div>
+						<RoutineBuilder routine={isNew ? undefined : routine} onSaved={onSaved} onError={setErr} />
 					</div>
 				) : (
 					<V0EditorPage routine={routine} onSaved={onSaved} onError={setErr} />

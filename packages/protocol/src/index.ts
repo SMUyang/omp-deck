@@ -937,7 +937,11 @@ export type RoutineDeckAction =
 	| "create_inbox_item"
 	| "create_task"
 	| "move_task"
-	| "promote_inbox_item_to_task";
+	| "promote_inbox_item_to_task"
+	| "list_tasks"
+	| "list_inbox"
+	| "get_task"
+	| "get_inbox_item";
 
 
 /** Common fields every step type accepts. */
@@ -1019,6 +1023,42 @@ export type RoutineStep =
 						/** Defaults to true — promoted inbox items are marked processed. */
 						mark_processed?: boolean;
 				  }
+				| {
+						type: "deck";
+						action: "list_tasks";
+						/** Optional state filter — accepts a state id or a case-insensitive state-name substring (e.g. `"active"`). */
+						state_ref?: string;
+						/** Optional recency filter — only tasks whose `updatedAt` is within the last N hours. */
+						since_hours?: number;
+						/** Defaults to false; when true, archived tasks are included. */
+						include_archived?: boolean;
+						/** Cap on the number of tasks returned. Defaults to unlimited. */
+						limit?: number;
+				  }
+				| {
+						type: "deck";
+						action: "list_inbox";
+						/** Optional kind filter. */
+						kind?: InboxKind;
+						/** Optional recency filter — only items whose `createdAt` is within the last N hours. */
+						since_hours?: number;
+						/** Defaults to false; when true, already-processed inbox items are included. */
+						include_processed?: boolean;
+						/** Cap on the number of items returned. Defaults to unlimited. */
+						limit?: number;
+				  }
+				| {
+						type: "deck";
+						action: "get_task";
+						/** Accepts `T-58` or `t_01...`. */
+						task_ref: string;
+				  }
+				| {
+						type: "deck";
+						action: "get_inbox_item";
+						/** Inbox item id. */
+						inbox_ref: string;
+				  }
 			))
 	| (RoutineStepCommon & {
 			type: "mcp";
@@ -1060,6 +1100,49 @@ export interface RoutineSpec {
 	state?: { declared_keys?: string[] };
 	tags?: string[];
 	steps: RoutineStep[];
+	/**
+	 * OPTIONAL canvas-mode metadata: per-step node positions plus the edge graph
+	 * between them. Carried inline in spec_yaml so canvas mode is fully
+	 * round-trippable without a separate persistence layer. The V1 runtime engine
+	 * ignores `layout` entirely; the visual builder uses it to restore the graph.
+	 */
+	layout?: RoutineLayout;
+}
+
+/** Single node entry in a {@link RoutineLayout}. Keyed by the corresponding step id. */
+export interface RoutineLayoutNode {
+	x: number;
+	y: number;
+	/** If true, the canvas renders the node in compact form (id + type only). */
+	collapsed?: boolean;
+}
+
+/**
+ * Edge semantics:
+ * - `success` (default): sequential edge, no compilation effect.
+ * - `error`: reserved; future on_failure routing.
+ * - `true` / `false`: branches leaving an `if`-flavored node — compile to `when:` gates on the target.
+ * - `manual`: hand-drawn dependency edge that does not auto-compile.
+ */
+export type RoutineLayoutEdgeKind = "success" | "error" | "true" | "false" | "manual";
+
+/** Directed edge between two step nodes on the canvas. */
+export interface RoutineLayoutEdge {
+	from: string;
+	to: string;
+	kind?: RoutineLayoutEdgeKind;
+	label?: string;
+}
+
+/**
+ * Canvas-mode metadata for a routine. Optional everywhere; routines authored
+ * in form/spec mode never need a `layout` block. When present, `version` must
+ * be `1` (bumped only on breaking layout-format changes).
+ */
+export interface RoutineLayout {
+	version: 1;
+	nodes?: Record<string, RoutineLayoutNode>;
+	edges?: RoutineLayoutEdge[];
 }
 
 export type RoutineStepStatus =

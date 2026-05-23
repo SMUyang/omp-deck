@@ -1,12 +1,14 @@
 import type { RoutineStep } from "@omp-deck/protocol";
 
-import { createInbox, getInbox, updateInbox } from "../../db/inbox.ts";
+import { createInbox, getInbox, listInbox, updateInbox } from "../../db/inbox.ts";
 import {
 	createTask,
 	findStateByName,
 	findTaskByDisplayOrId,
 	getDefaultState,
 	getState,
+	getTask,
+	listTasks,
 	moveTask,
 } from "../../db/tasks.ts";
 import { renderString } from "../template.ts";
@@ -84,6 +86,77 @@ export async function executeDeckStep(
 				const shouldMark = step.mark_processed !== false;
 				const inbox = shouldMark ? updateInbox(item.id, { processed: true }) ?? item : item;
 				return ok(startedMs, `promoted inbox ${item.id} -> T-${task.displayId}`, { task, inbox });
+			}
+			case "list_tasks": {
+				const stateFilterId =
+					step.state_ref === undefined
+						? undefined
+						: resolveStateRef(
+								renderString(
+									step.state_ref,
+									context as unknown as Record<string, unknown>,
+								),
+						  );
+				const cutoffMs =
+					step.since_hours === undefined ? undefined : Date.now() - step.since_hours * 3_600_000;
+				let tasks = listTasks({ includeArchived: step.include_archived === true });
+				if (stateFilterId !== undefined) {
+					tasks = tasks.filter((t) => t.stateId === stateFilterId);
+				}
+				if (cutoffMs !== undefined) {
+					tasks = tasks.filter((t) => new Date(t.updatedAt).getTime() >= cutoffMs);
+				}
+				if (step.limit !== undefined) tasks = tasks.slice(0, step.limit);
+				const summaries = tasks.map((t) => ({
+					id: t.id,
+					displayId: t.displayId,
+					ref: `T-${t.displayId}`,
+					title: t.title,
+					stateId: t.stateId,
+					updatedAt: t.updatedAt,
+					createdAt: t.createdAt,
+				}));
+				return ok(startedMs, `listed ${summaries.length} task(s)`, summaries);
+			}
+			case "list_inbox": {
+				const cutoffMs =
+					step.since_hours === undefined ? undefined : Date.now() - step.since_hours * 3_600_000;
+				const opts: { kind?: typeof step.kind; includeProcessed?: boolean } = {
+					includeProcessed: step.include_processed === true,
+				};
+				if (step.kind !== undefined) opts.kind = step.kind;
+				let items = listInbox(opts);
+				if (cutoffMs !== undefined) {
+					items = items.filter((i) => new Date(i.createdAt).getTime() >= cutoffMs);
+				}
+				if (step.limit !== undefined) items = items.slice(0, step.limit);
+				const summaries = items.map((i) => ({
+					id: i.id,
+					kind: i.kind,
+					title: i.title,
+					source: i.source,
+					createdAt: i.createdAt,
+					processedAt: i.processedAt,
+				}));
+				return ok(startedMs, `listed ${summaries.length} inbox item(s)`, summaries);
+			}
+			case "get_task": {
+				const ref = renderString(
+					step.task_ref,
+					context as unknown as Record<string, unknown>,
+				);
+				const task = findTaskByDisplayOrId(ref) ?? getTask(ref);
+				if (!task) return fail(startedMs, `task not found: ${ref}`);
+				return ok(startedMs, `fetched task T-${task.displayId}: ${task.title}`, task);
+			}
+			case "get_inbox_item": {
+				const ref = renderString(
+					step.inbox_ref,
+					context as unknown as Record<string, unknown>,
+				);
+				const item = getInbox(ref);
+				if (!item) return fail(startedMs, `inbox item not found: ${ref}`);
+				return ok(startedMs, `fetched inbox ${item.id}: ${item.title}`, item);
 			}
 		}
 	} catch (err) {

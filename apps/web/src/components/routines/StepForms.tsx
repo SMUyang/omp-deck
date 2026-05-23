@@ -324,6 +324,41 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 					state_ref: step.action === action ? step.state_ref : undefined,
 					mark_processed: step.action === action ? step.mark_processed : undefined,
 				});
+				return;
+			case "list_tasks":
+				onChange({
+					...common,
+					action,
+					state_ref: step.action === action ? step.state_ref : "active",
+					since_hours: step.action === action ? step.since_hours : undefined,
+					include_archived: step.action === action ? step.include_archived : undefined,
+					limit: step.action === action ? step.limit : undefined,
+				});
+				return;
+			case "list_inbox":
+				onChange({
+					...common,
+					action,
+					kind: step.action === action ? step.kind : undefined,
+					since_hours: step.action === action ? step.since_hours : 24,
+					include_processed: step.action === action ? step.include_processed : undefined,
+					limit: step.action === action ? step.limit : undefined,
+				});
+				return;
+			case "get_task":
+				onChange({
+					...common,
+					action,
+					task_ref: step.action === action ? step.task_ref : "T-1",
+				});
+				return;
+			case "get_inbox_item":
+				onChange({
+					...common,
+					action,
+					inbox_ref: step.action === action ? step.inbox_ref : "i_...",
+				});
+				return;
 		}
 	}
 
@@ -339,6 +374,10 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 					<option value="create_task">create_task</option>
 					<option value="move_task">move_task</option>
 					<option value="promote_inbox_item_to_task">promote_inbox_item_to_task</option>
+					<option value="list_tasks">list_tasks</option>
+					<option value="list_inbox">list_inbox</option>
+					<option value="get_task">get_task</option>
+					<option value="get_inbox_item">get_inbox_item</option>
 				</select>
 			</Field>
 			{step.action === "create_inbox_item" ? (
@@ -418,6 +457,90 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 						/>
 						<span>mark inbox item processed after promotion</span>
 					</label>
+				</div>
+			) : null}
+			{step.action === "list_tasks" ? (
+				<div className="space-y-2">
+					<Field label="state_ref (optional — name like 'active' or id like 's_active')">
+						<TextInput value={step.state_ref ?? ""} onChange={(v) => onChange({ ...step, state_ref: v === "" ? undefined : v })} placeholder="active" mono />
+					</Field>
+					<Field label="since_hours (optional — only tasks updated in last N hours)">
+						<NumInput value={step.since_hours} onChange={(v) => onChange({ ...step, since_hours: v ?? undefined })} placeholder="24" />
+					</Field>
+					<Field label="limit (optional)">
+						<NumInput value={step.limit} onChange={(v) => onChange({ ...step, limit: v ?? undefined })} placeholder="50" />
+					</Field>
+					<label className="flex items-center gap-2 font-mono text-2xs text-ink-2">
+						<input
+							type="checkbox"
+							checked={step.include_archived === true}
+							onChange={(e) => {
+								const next = { ...step };
+								if (e.target.checked) next.include_archived = true;
+								else delete next.include_archived;
+								onChange(next);
+							}}
+						/>
+						<span>include archived tasks</span>
+					</label>
+				</div>
+			) : null}
+			{step.action === "list_inbox" ? (
+				<div className="space-y-2">
+					<Field label="kind (optional)">
+						<select
+							value={step.kind ?? ""}
+							onChange={(e) => {
+								const v = e.target.value;
+								const next = { ...step };
+								if (v === "") delete next.kind;
+								else next.kind = v as Extract<DeckStep, { action: "list_inbox" }>["kind"];
+								onChange(next);
+							}}
+							className="field h-7 w-full px-2 font-mono text-2xs"
+						>
+							<option value="">(any)</option>
+							<option value="capture">capture</option>
+							<option value="email">email</option>
+							<option value="ticket">ticket</option>
+							<option value="idea">idea</option>
+							<option value="decision">decision</option>
+							<option value="investigation">investigation</option>
+						</select>
+					</Field>
+					<Field label="since_hours (optional)">
+						<NumInput value={step.since_hours} onChange={(v) => onChange({ ...step, since_hours: v ?? undefined })} placeholder="24" />
+					</Field>
+					<Field label="limit (optional)">
+						<NumInput value={step.limit} onChange={(v) => onChange({ ...step, limit: v ?? undefined })} placeholder="50" />
+					</Field>
+					<label className="flex items-center gap-2 font-mono text-2xs text-ink-2">
+						<input
+							type="checkbox"
+							checked={step.include_processed === true}
+							onChange={(e) => {
+								const next = { ...step };
+								if (e.target.checked) next.include_processed = true;
+								else delete next.include_processed;
+								onChange(next);
+							}}
+						/>
+						<span>include already-processed items</span>
+					</label>
+				</div>
+			) : null}
+			{step.action === "get_task" ? (
+				<div className="space-y-2">
+					<Field label="task_ref">
+						<TextInput value={step.task_ref} onChange={(v) => onChange({ ...step, task_ref: v })} placeholder="T-58 or t_01..." mono />
+					</Field>
+				</div>
+			) : null}
+			{step.action === "get_inbox_item" ? (
+				<div className="space-y-2">
+					<Field label="inbox_ref">
+						<TextInput value={step.inbox_ref} onChange={(v) => onChange({ ...step, inbox_ref: v })} placeholder="i_..." mono />
+					</Field>
 				</div>
 			) : null}
 		</div>

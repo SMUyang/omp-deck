@@ -16,7 +16,11 @@
             "create_inbox_item",
             "create_task",
             "move_task",
-            "promote_inbox_item_to_task"
+            "promote_inbox_item_to_task",
+            "list_tasks",
+            "list_inbox",
+            "get_task",
+            "get_inbox_item"
           ]
         }
       },
@@ -59,6 +63,42 @@
             "inbox_ref": { "type": "string", "minLength": 1, "maxLength": 120 },
             "state_ref": { "type": "string", "minLength": 1, "maxLength": 120 },
             "mark_processed": { "type": "boolean", "default": true }
+          }
+        },
+        {
+          "required": ["action"],
+          "properties": {
+            "action": { "const": "list_tasks" },
+            "state_ref": { "type": "string", "minLength": 1, "maxLength": 120 },
+            "since_hours": { "type": "number", "minimum": 0 },
+            "include_archived": { "type": "boolean", "default": false },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 1000 }
+          }
+        },
+        {
+          "required": ["action"],
+          "properties": {
+            "action": { "const": "list_inbox" },
+            "kind": {
+              "enum": ["email", "ticket", "idea", "decision", "investigation", "capture"]
+            },
+            "since_hours": { "type": "number", "minimum": 0 },
+            "include_processed": { "type": "boolean", "default": false },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 1000 }
+          }
+        },
+        {
+          "required": ["action", "task_ref"],
+          "properties": {
+            "action": { "const": "get_task" },
+            "task_ref": { "type": "string", "minLength": 1, "maxLength": 120 }
+          }
+        },
+        {
+          "required": ["action", "inbox_ref"],
+          "properties": {
+            "action": { "const": "get_inbox_item" },
+            "inbox_ref": { "type": "string", "minLength": 1, "maxLength": 120 }
           }
         }
       ]

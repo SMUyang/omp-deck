@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, Play, RefreshCcw, X } from "lucide-react";
 import type { Routine, RoutineRun, RoutineStepRun, RoutineStepStatus } from "@omp-deck/protocol";
 
@@ -21,6 +21,15 @@ export function RunDetailView() {
 	const [steps, setSteps] = useState<RoutineStepRun[]>([]);
 	const [err, setErr] = useState<string | undefined>();
 	const [refreshing, setRefreshing] = useState(false);
+
+	// T-72: deep-link target. The inspector links to
+	// `/routines/:id/runs/:runId#step-<stepId>` so a node-click in canvas mode
+	// jumps straight to the matching step card. Re-read whenever `location.hash`
+	// changes so back/forward + manual hash edits keep working.
+	const location = useLocation();
+	const targetStepId = location.hash.startsWith("#step-")
+		? decodeURIComponent(location.hash.slice("#step-".length))
+		: null;
 
 	const refresh = useCallback(async () => {
 		if (!id || !runId) return;
@@ -149,7 +158,11 @@ export function RunDetailView() {
 						) : (
 							<ul className="space-y-2">
 								{steps.map((s) => (
-									<StepCard key={s.id} step={s} />
+									<StepCard
+										key={s.id}
+										step={s}
+										autoExpand={targetStepId === s.stepId}
+									/>
 								))}
 							</ul>
 						)}
@@ -189,11 +202,41 @@ function MetaCell({ label, value }: { label: string; value: string }) {
 	);
 }
 
-function StepCard({ step }: { step: RoutineStepRun }) {
+function StepCard({
+	step,
+	autoExpand,
+}: {
+	step: RoutineStepRun;
+	autoExpand?: boolean;
+}) {
 	const [open, setOpen] = useState(false);
-	const dur = step.durationMs !== undefined && step.durationMs !== null ? formatDurationMs(step.durationMs) : "—";
+	const dur =
+		step.durationMs !== undefined && step.durationMs !== null
+			? formatDurationMs(step.durationMs)
+			: "—";
+	// T-72: a deep-link arrival expands the card and scrolls it into view.
+	// Tracked by `autoExpand` so the user can still collapse it after scroll.
+	const rootRef = useRef<HTMLLIElement | null>(null);
+	const expandedFromHashRef = useRef(false);
+	useEffect(() => {
+		if (!autoExpand) return;
+		if (!expandedFromHashRef.current) {
+			setOpen(true);
+			expandedFromHashRef.current = true;
+		}
+		// Wait a tick for the layout to settle (parent list height grows when
+		// the card opens) before scrolling.
+		const handle = requestAnimationFrame(() => {
+			rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+		});
+		return () => cancelAnimationFrame(handle);
+	}, [autoExpand]);
 	return (
-		<li className="rounded border border-line bg-paper-2">
+		<li
+			ref={rootRef}
+			id={`step-${step.stepId}`}
+			className="rounded border border-line bg-paper-2"
+		>
 			<button
 				type="button"
 				onClick={() => setOpen((v) => !v)}

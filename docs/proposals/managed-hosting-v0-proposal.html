@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>omp-deck Managed Hosting V0 — Implementation Proposal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #faf9f6;
+      --panel: #ffffff;
+      --ink: #1a2438;
+      --muted: #6b7280;
+      --soft: #8a8b8c;
+      --accent: #9a3412;
+      --accent-2: #2e5d5b;
+      --border: #e5e3dd;
+      --rule: #d8d6cf;
+      --code-bg: #f1eeeb;
+      --hot: #b8463e;
+      --new: #2e7d4f;
+      --kbd-bg: #efece5;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      background: var(--bg);
+      color: var(--ink);
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 56px 32px 96px;
+    }
+    .doc-meta {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 30px;
+      letter-spacing: -0.015em;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+    h1 + .sub {
+      color: var(--muted);
+      font-size: 15px;
+      margin: 0 0 40px;
+    }
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin: 48px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+      color: var(--ink);
+    }
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 28px 0 10px;
+      color: var(--accent-2);
+    }
+    h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 18px 0 6px;
+      color: var(--ink);
+    }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0 0 14px; padding-left: 22px; }
+    li { margin-bottom: 6px; }
+    li > strong { color: var(--ink); }
+    code {
+      background: var(--code-bg);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 13px;
+      font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+      color: var(--accent-2);
+    }
+    .toc {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 24px;
+      margin: 0 0 36px;
+      font-size: 14px;
+    }
+    .toc h4 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .toc ol {
+      margin: 0;
+      padding-left: 18px;
+      columns: 2;
+      column-gap: 32px;
+    }
+    .toc a {
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .toc a:hover { color: var(--accent); }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 4px 0 20px;
+      font-size: 14px;
+      background: var(--panel);
+    }
+    th, td {
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #f5f2ec;
+      font-weight: 600;
+      color: var(--accent-2);
+    }
+    td code { font-size: 12px; }
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: #fbf5f1;
+      padding: 12px 16px;
+      margin: 16px 0 20px;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .callout strong { color: var(--accent); }
+    .callout-soft {
+      border-left-color: var(--accent-2);
+      background: #f1f6f5;
+    }
+    .callout-soft strong { color: var(--accent-2); }
+    .diagram {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0;
+      overflow: hidden;
+      position: relative;
+      height: 540px;
+      max-height: 80vh;
+      resize: vertical;
+      margin: 0 0 20px;
+    }
+    .diagram .mermaid {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      display: block;
+    }
+    .diagram .mermaid:active { cursor: grabbing; }
+    .diagram .mermaid svg {
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      display: block;
+    }
+    .diagram-hint {
+      position: absolute; top: 8px; right: 12px;
+      font-size: 11px; color: var(--muted);
+      background: rgba(255,255,255,0.85);
+      border: 1px solid var(--border);
+      padding: 3px 8px; border-radius: 4px;
+      pointer-events: none; z-index: 2;
+    }
+    .mermaid { font-size: 13px; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #eef3f2;
+      color: var(--accent-2);
+      vertical-align: middle;
+      margin-left: 6px;
+      font-weight: 600;
+    }
+    .badge.hot { background: #faecea; color: var(--hot); }
+    .badge.new { background: #ecf5ef; color: var(--new); }
+    .badge.delta { background: #fbf0e8; color: var(--accent); }
+    .question {
+      background: #fdfbf7;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      margin: 10px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 14px;
+    }
+    .question-label {
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .ref {
+      background: #f5f2ec;
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      margin: 10px 0;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .ref strong { color: var(--accent-2); }
+    footer {
+      margin-top: 64px;
+      padding-top: 20px;
+      border-top: 1px solid var(--rule);
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="doc-meta">Architecture proposal · v0.1 · companion to AgentVolt V0</div>
+    <h1>omp-deck Managed Hosting — V0 Implementation Proposal</h1>
+    <p class="sub">Hosted, per-tenant omp-deck on Hetzner. BYOK + flat subscription. MIT source, exit-path-friendly. Same chassis as AgentVolt V0 minus the inference gateway and billing ledger. Designed to scale to 1000 customers without rework. Different audience than AgentVolt: developers who want their omp-deck always-on, on a tier of compute they don't have to maintain.</p>
+
+    <div class="toc">
+      <h4>Contents</h4>
+      <ol>
+        <li><a href="#summary">Summary</a></li>
+        <li><a href="#goals">Goals &amp; constraints</a></li>
+        <li><a href="#diagram">System architecture</a></li>
+        <li><a href="#components">Component breakdown</a></li>
+        <li><a href="#flows">Critical flows</a></li>
+        <li><a href="#invariants">Operational invariants</a></li>
+        <li><a href="#networking">Networking &amp; isolation</a></li>
+        <li><a href="#observability">Observability &amp; alerts</a></li>
+        <li><a href="#secrets">Secrets management</a></li>
+        <li><a href="#image">Tenant image strategy</a></li>
+        <li><a href="#sla">V0 SLA, residency &amp; status</a></li>
+        <li><a href="#deferred">What's deferred and why</a></li>
+        <li><a href="#questions">Open questions for review</a></li>
+      </ol>
+    </div>
+
+    <div class="ref">
+      <strong>Companion reference:</strong> AgentVolt V0 proposal (<code>agentvolt-ac/docs/v0-proposal.html</code>) is the chassis design. This doc captures only the deltas. Section numbering in this doc maps 1:1 with AgentVolt's where the content carries over; in those cases the body is one paragraph plus a back-reference. New material (BYOK provider UI, exit-path snapshot download, the absent gateway) gets full treatment.
+    </div>
+
+    <h2 id="summary">1. Summary</h2>
+    <p>omp-deck Managed Hosting sells a turnkey, always-on omp-deck to developers who would rather pay $12–49/mo than self-host the same MIT-licensed stack. Each customer gets a dedicated VM running the deck (Bun + Hono server, React + Vite web, Telegram bridge supervised in-tenant), plus the AgentVolt V0 chassis (control plane, proxy farm, snapshot pipeline, networking posture) underneath.</p>
+    <p>V0 deliberately ships <strong>without</strong> an inference gateway. Customers bring their own Anthropic / OpenRouter / OpenAI key; the tenant VM calls vendors directly. This removes the largest single subsystem from AgentVolt's V0, removes all metered-billing complexity, and aligns the product with what developers actually want (their own vendor account, predictable subscription, no markup ambiguity).</p>
+    <p>The exit path is part of the product, not a Phase-1 backlog item. A "Download Volume Snapshot" button in the dashboard, paired with a documented self-host runbook, makes the switching cost from hosted-to-self-host genuinely low. That is the convenience-pricing thesis: we earn the subscription every month or the customer leaves with their data intact.</p>
+
+    <div class="callout">
+      <strong>Key decisions:</strong> No inference gateway in V0; BYOK is default-not-opt-in. Per-tenant Hetzner VMs with the AgentVolt V0 isolation posture (Cloud Firewall + Tailscale ACLs + cgroups). Flat subscription tiers LITE $12 / PRO $25 / POWER $49. MIT-licensed source + dashboard snapshot export + documented self-host runbook constitute a first-class exit path. Auth-bridge sidecar pattern reused verbatim from AgentVolt §5.2.
+    </div>
+
+    <h2 id="goals">2. Goals &amp; constraints</h2>
+
+    <h3>Functional</h3>
+    <ul>
+      <li>Customer signs up via dashboard, pays via Stripe, lands in a live omp-deck in &lt;60s</li>
+      <li>Customer brings their own Anthropic / OR / OpenAI key during onboarding; dashboard validates with a test call</li>
+      <li>Customer opens deck via single dashboard click; never types a deck password</li>
+      <li>Tasks DB, routines, inbox, sessions, skills, knowledge base, marketplace state, Telegram bridge state survive any infrastructure event (restart, upgrade, repair, force-push)</li>
+      <li>Telegram (and future Discord/Slack) bridges configurable from dashboard; supervised in-tenant by the deck's <code>BridgeSupervisor</code></li>
+      <li>"Download Volume Snapshot" works end-to-end: encrypted tar + customer-password-wrapped DEK + runbook for <code>docker compose up</code></li>
+    </ul>
+
+    <h3>Operational</h3>
+    <ul>
+      <li>Once provisioned, ops does not touch a customer's VM. Auto-repair handles failures unattended.</li>
+      <li>Customer-pinned versions respected indefinitely. Force-push reserved for CVE-class events, audit-logged.</li>
+      <li>Repair flow: &lt;90s recovery (realistic 60–90s for VM recreate; matches AgentVolt §5.5)</li>
+      <li>Daily R2 snapshot per tenant; pre-upgrade snapshot before any version change.</li>
+    </ul>
+
+    <h3>Economic</h3>
+    <ul>
+      <li>Three tiers: LITE $12 / PRO $25 / POWER $49, all net-profitable from customer #1</li>
+      <li>Per-tenant infra cost: ~$5.62 LITE / ~$6.55 PRO / ~$12.10 POWER (VM + sized volume, no IPv4) — identical to AgentVolt</li>
+      <li>Fixed ops cost target: ~$110–130/mo at 1000 customers (excluding R2 storage), down from AgentVolt's $160 because no gateway pair, no reconciler</li>
+      <li>Floor case (1000 customers, 50/40/10 LITE/PRO/POWER split): ARR ~$251k, gross ~$171k, net ~$170k/yr</li>
+      <li>Realistic case (30/50/20 split as devs upgrade): ARR ~$300k, gross ~$210k</li>
+    </ul>
+
+    <h3>Hard constraints</h3>
+    <ul>
+      <li><strong>MIT-licensed source.</strong> omp-deck is open source under MIT. The dashboard and control plane are not — only the tenant-image source. The product is the hosting, not the bits.</li>
+      <li><strong>Exit path is first-class.</strong> Volume snapshot download in V0. If customers cannot leave, the convenience pitch is dishonest.</li>
+      <li><strong>No inference gateway in V0.</strong> Tenant VMs call vendors directly with customer's BYOK key. Observability-as-paid-feature is Phase 1+.</li>
+      <li><strong>Solo+AI build capacity.</strong> ~4–5 weeks of pacing-pace work on top of inheriting AgentVolt's chassis. Sequencing matters: AgentVolt V0 ships first, omp-deck V0 starts after Hermes has operated for ~1 quarter on the chassis.</li>
+    </ul>
+
+    <h3>Trust model — agent VM is RCE-by-design</h3>
+    <p>omp's skills can shell out, install packages, and invoke arbitrary tools; the agent VM is a controlled remote-code-execution surface from boot. Identical posture to AgentVolt's Hermes VM. §7 reuses AgentVolt's three-boundary defense (Cloud Firewall + Tailscale ACLs + per-container cgroups) verbatim.</p>
+    <p><strong>BYOK-specific implication:</strong> the customer's vendor key lives in the tenant <code>.env</code> on the encrypted Cloud Volume. A sufficiently-prompted agent on its own VM can read its own <code>.env</code>; blast radius equals the customer's vendor account. This is disclosed at signup and on the dashboard's BYOK page; it is the cost of giving the customer their own vendor relationship instead of a managed key. See §9.2.</p>
+
+    <h2 id="diagram">3. System architecture</h2>
+    <p>Same chassis as AgentVolt V0; the inference gateway, ledger, and reconciler are absent. Scroll to zoom, drag to pan, drag the bottom edge to resize.</p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+  subgraph Users["Users"]
+    Browser["Browser · PWA"]
+  end
+
+  subgraph Msg["Messaging platforms"]
+    TG["Telegram · Discord · Slack · ...<br/>inbound webhook OR outbound long-poll<br/>handled in-tenant by BridgeSupervisor"]
+  end
+
+  subgraph Vendors["Inference vendors (customer's account)"]
+    Anthropic["Anthropic"]
+    OR["OpenRouter"]
+    OAI["OpenAI"]
+  end
+
+  subgraph Vercel["Vercel — Next.js dashboard"]
+    direction TB
+    Marketing["Marketing site (MIT story)"]
+    Dashboard["Dashboard<br/>/decks · /billing · /providers<br/>/integrations · /snapshots"]
+    Launch["/decks/[id]/launch<br/>mint signed JWT (30s TTL)<br/>302 to {tenant}.ompdeck.app"]
+    ProvAPI["/api/decks/provision<br/>mTLS to control plane<br/>idempotency-key = stripe_event_id"]
+    OpsAPI["/api/decks/[id]/<br/>restart · restore · upgrade<br/>force-push · export-snapshot"]
+    StripeWH["Stripe webhook → sub state<br/>idempotent on event.id"]
+    NextAuth["NextAuth"]
+  end
+
+  subgraph CtrlPlane["Control plane — Hetzner (2 hosts)"]
+    direction TB
+    ProxyFarm["Caddy proxy farm — 2× CX23 + HCLB<br/>multi-SAN wildcard TLS<br/>verifies JWT presence · holds no per-tenant secrets<br/>dynamic upstreams from Redis"]
+    RepairD["Auto-repair daemon (host A)<br/>dep-free /health probe · 30s<br/>sanity ceiling · per-tenant rate limit<br/>daemon heartbeat to PG"]
+    ProvWorker["Provisioning + decommission worker (host B)<br/>state machine on Hetzner Action IDs<br/>resumable · periodic reconciler over stuck states"]
+    ExportSvc["Snapshot export service (host B)<br/>signs R2 GET URL · re-wraps DEK<br/>with customer-supplied password"]
+  end
+
+  subgraph Redis["Upstash Redis"]
+    direction TB
+    TenantCache[("tenant cache · 60s TTL")]
+    TenantMap[("tenant → internal_ip<br/>read by Caddy dynamic upstreams")]
+    BootstrapTokens[("5-min single-use bootstrap tokens")]
+  end
+
+  subgraph Fleet["Customer fleet — Hetzner CX23/CX33 · 1 per tenant · IPv6-only · sharded across N Networks"]
+    direction TB
+    M1["customer-1<br/>omp-deck container (Bun server + web bundle)<br/>+ Telegram bridge subprocess (supervised)<br/>+ cgroup limits (cpu/mem/pids)<br/>+ auth-bridge sidecar (private-net + Tailscale debug)<br/>+ Cloud Volume (state)<br/>+ reserved private IP"]
+    M2["customer-2 (...)"]
+    Mn["customer-N · up to 1000<br/>Cloud Firewall: default-deny lateral<br/>egress allowlist: vendor APIs + messaging + Tailscale + GHCR + Hetzner metadata"]
+  end
+
+  subgraph PG["Neon Postgres (paid)"]
+    direction TB
+    TenantsT[("tenants — plan_tier, version_pinned,<br/>volume_id, network_id, internal_ip,<br/>provisioning_state, decommission_state,<br/>dek_wrapped, subscription_state")]
+    Alerts[("alert + runbook surface")]
+  end
+
+  subgraph R2["Cloudflare R2"]
+    direction TB
+    DailySnaps[("daily snapshots · client-side-encrypted")]
+    PreUp[("pre-upgrade snapshots")]
+    Checksums[("Merkle checksums · sampled restore canary")]
+  end
+
+  subgraph Ext["External services"]
+    Stripe["Stripe (subscription only)"]
+    CF["Cloudflare DNS (Pro)<br/>*.ompdeck.app + *.webhook.ompdeck.app<br/>multi-SAN cert"]
+    KMS["Master-key escrow<br/>(1Password vault)"]
+    Email["Email transport<br/>(Postmark/Resend)"]
+    Status["External status page"]
+  end
+
+  Browser --> Dashboard
+  Dashboard -. login .-> NextAuth
+  Browser -- "Open deck" --> Launch
+  Launch -. "verify ownership" .-> TenantsT
+  Launch -- "302 + signed JWT" --> Browser
+  Browser -- "{tenant}.ompdeck.app" --> CF
+  CF -- "wildcard → HCLB" --> ProxyFarm
+  ProxyFarm -- "forward JWT in header<br/>route by Host via TenantMap" --> M1
+  M1 -. "sidecar verifies JWT<br/>mints session cookie locally" .-> M1
+
+  TG -- "webhook → {tenant}.webhook.ompdeck.app" --> CF
+  CF --> ProxyFarm
+  ProxyFarm --> Fleet
+  Fleet -. "outbound long-poll" .-> TG
+
+  M1 -- "direct vendor calls<br/>customer's BYOK key" --> Anthropic
+  M1 --> OR
+  M1 --> OAI
+
+  Browser -- subscribe --> Stripe
+  Stripe -. "webhook · idempotent on event.id" .-> StripeWH
+  StripeWH --> TenantsT
+  TenantsT -. trigger .-> ProvAPI
+  ProvAPI -- "mTLS · 202 accepted" --> ProvWorker
+  ProvWorker --> Fleet
+  ProvWorker --> TenantMap
+  ProvWorker --> BootstrapTokens
+
+  RepairD -. "dep-free probe · 30s" .-> Fleet
+  RepairD -. "gated recreate" .-> Fleet
+  RepairD -. heartbeat .-> Alerts
+
+  Fleet -. "daily · pull by control plane" .-> DailySnaps
+  DailySnaps -. checksum .-> Checksums
+  OpsAPI -. pre-upgrade .-> PreUp
+  OpsAPI -. "export-snapshot: re-wrap DEK" .-> ExportSvc
+  ExportSvc -. "signed GET URL + wrapped DEK" .-> Browser
+  OpsAPI -. notice .-> Email
+
+  KMS -. "wraps DEKs" .-> DailySnaps
+  Status -. "external surface" .-> Browser
+
+  TenantsT --> Dashboard
+  Alerts --> Dashboard
+
+  classDef new fill:#e0f0e4,stroke:#2e7d4f,color:#1a2438
+  classDef vendor fill:#f5f0e8,stroke:#8a8b8c,color:#1a2438
+  classDef reuse fill:#e0eae8,stroke:#7a9a98,color:#1a2438
+  class Launch,ProvAPI,OpsAPI,ProxyFarm,RepairD,ProvWorker,ExportSvc,TenantCache,TenantMap,BootstrapTokens,TenantsT,Alerts,DailySnaps,PreUp,Checksums,M1,M2,Mn new
+  class Stripe,Anthropic,OR,OAI,CF,KMS,Email,Status vendor
+  class Marketing,Dashboard,StripeWH,NextAuth reuse
+      </pre>
+    </div>
+
+    <p><strong>Deltas vs AgentVolt V0 diagram:</strong> no Gateway box (and no HCLB pair behind it), no Reconciler, no LedgerT in Postgres, no RateBucket or Revoked cache in Redis. Tenant VMs connect to vendor APIs directly (egress allowlist, §7). New: a Snapshot Export service on host B that serves the exit path.</p>
+
+    <h2 id="components">4. Component breakdown</h2>
+
+    <table>
+      <thead>
+        <tr><th>Component</th><th>What it does</th><th>Where it runs</th><th>Cost</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Tenant VM</strong> <span class="badge delta">delta</span></td>
+          <td>Runs omp-deck container: Bun + Hono server (REST + WS hub), built React+Vite web bundle, Telegram bridge subprocess supervised by the deck's <code>BridgeSupervisor</code>, embedded <code>@oh-my-pi/pi-coding-agent</code> SDK via <code>InProcessAgentBridge</code>. Auth-bridge sidecar with hybrid listener (private-net + Tailscale). cgroup limits, mounted Cloud Volume, reserved private IP, IPv6-only public side.</td>
+          <td>Hetzner CX23 (LITE/PRO) or CX33 (POWER), 1 per tenant, sharded across N Cloud Networks</td>
+          <td>~$5 / ~$9 per tenant/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Cloud Volume</strong></td>
+          <td>Persists SQLite DB (<code>tasks</code>, <code>routines</code>, <code>routine_runs</code>, <code>inbox_items</code>, <code>task_states</code>, <code>sequences</code>, <code>schema_migrations</code>), <code>~/.omp/agent/</code> (sessions JSONL, <code>auth.db</code>, marketplaces, plugins), Telegram bridge SQLite, knowledge base, memories, attachments, tenant <code>.env</code>. Detached/reattached during VM recreation; never destroyed by repair flow.</td>
+          <td>Hetzner Cloud Volume, 1 per tenant</td>
+          <td>€0.0572/GB/mo (≈ $0.62 / $1.55 / $3.10 per tier)</td>
+        </tr>
+        <tr>
+          <td><strong>Caddy proxy farm</strong></td>
+          <td>Identical to AgentVolt V0 §4. Public entry point. Dynamic upstreams from Redis <code>tenant → internal_ip</code> with 60s in-process cache. Forwards JWT to tenant sidecar in <code>X-OmpDeck-Launch</code> header; holds no per-tenant secrets.</td>
+          <td>2× Hetzner CX23 behind Hetzner Cloud Load Balancer</td>
+          <td>~$18/mo (2× CX23 + LB11)</td>
+        </tr>
+        <tr>
+          <td><strong>Auth-bridge sidecar</strong></td>
+          <td>Verifies JWT against ompdeck pubkey, POSTs static per-VM <code>DECK_SESSION_PASSWORD</code> to local deck server <code>/auth/launch</code>, returns <code>Set-Cookie</code> upstream. Two listeners: private-net (data plane, proxy-farm-only) + Tailscale (operator debug). Not internet-reachable.</td>
+          <td>Co-located container on each tenant VM</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td><strong>Provisioning + decommission worker</strong></td>
+          <td>HTTP service on host B. <code>POST /provision</code> idempotent on <code>stripe_event_id</code>. State machine on Hetzner Action IDs (<code>pending → volume_created → vm_created → attached → ip_registered → live</code>). Symmetric decommission. Periodic reconciler over stuck states.</td>
+          <td>Hetzner CX23 (host B)</td>
+          <td>~$5/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Auto-repair daemon</strong></td>
+          <td>Identical to AgentVolt V0 §4. Dep-free <code>/health</code> every 30s, 2-in-2min → restart, 3-in-5min → recreate, sanity ceiling at 5% fleet, per-tenant 1 recreate/hr, daemon heartbeat to PG.</td>
+          <td>Hetzner CX23 (host A)</td>
+          <td>~$5/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Snapshot export service</strong> <span class="badge new">new</span></td>
+          <td>Serves the V0 exit path. Customer submits export password (PBKDF2/Argon2-id, one-time, never stored). Service unwraps tenant DEK with master key, re-wraps with password-derived key, returns wrapped-DEK blob + signed R2 GET URL (15-min TTL). Audit-logged. Rate-limited per tenant.</td>
+          <td>Cron on host B</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td><strong>Upstash Redis</strong></td>
+          <td>Tenant cache (60s TTL), <code>tenant → internal_ip</code> map, bootstrap-token TTL store. No rate-limit buckets (no gateway), no revocation cache (BYOK customer keys are not held centrally).</td>
+          <td>Managed service</td>
+          <td>~$10/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Neon Postgres</strong></td>
+          <td>Users, tenants (incl. <code>network_id</code>, <code>provisioning_state</code>, <code>decommission_state</code>, master-key-wrapped DEK), subscription state mirror, alert + runbook surface, control-plane state. No <code>usage_events</code> ledger.</td>
+          <td>Managed paid tier (encrypted at rest)</td>
+          <td>~$15–20/mo</td>
+        </tr>
+        <tr>
+          <td><strong>R2 snapshots + Merkle checksums</strong></td>
+          <td>Identical to AgentVolt V0 §4. Daily per-tenant snapshot (client-side-encrypted with per-tenant DEK), pre-upgrade snapshots, weekly sampled restore canary, retention 7 daily + 4 weekly + 6 monthly.</td>
+          <td>Cloudflare R2, single-region</td>
+          <td>~$130/mo at 1000 tenants + bandwidth</td>
+        </tr>
+        <tr>
+          <td><strong>Cloudflare DNS (Pro)</strong></td>
+          <td>Two wildcard zones — <code>*.ompdeck.app</code> + <code>*.webhook.ompdeck.app</code> — covered by a single multi-SAN cert (two SANs, two DNS-01 challenges; see AgentVolt V0 §7.5).</td>
+          <td>Managed</td>
+          <td>$20/mo (Pro)</td>
+        </tr>
+        <tr>
+          <td><strong>Hetzner Cloud Firewall</strong></td>
+          <td>Default-deny lateral. Egress allowlist: Anthropic, OpenRouter, OpenAI, R2, Tailscale, Hetzner metadata, GHCR, configured messaging endpoints, configured customer webhook destinations.</td>
+          <td>Managed by Hetzner</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td><strong>Tailscale</strong></td>
+          <td>Operator overlay only. ACL: <code>tag:ops → tag:tenant</code>. Identical to AgentVolt V0 §7.3.</td>
+          <td>tailscaled on every tenant VM</td>
+          <td>~$5/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Master-key escrow</strong></td>
+          <td>Off-VM in 1Password vault. Two-key rotation procedure tested in canary. Identical to AgentVolt V0 §9.2.</td>
+          <td>1Password vault (V0); KMS escrow optional</td>
+          <td>~$3/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Email transport</strong></td>
+          <td>Postmark / Resend for force-push notices, provisioning emails, subscription receipts, export-snapshot ready notifications. Bounce tracking surfaced to dashboard.</td>
+          <td>Managed</td>
+          <td>~$10/mo</td>
+        </tr>
+        <tr>
+          <td><strong>External status page</strong></td>
+          <td>Out-of-band from Vercel + PG. Statuspage.io or static page on Cloudflare Workers.</td>
+          <td>Managed</td>
+          <td>~$0–29/mo</td>
+        </tr>
+        <tr>
+          <td><strong>Dashboard (Vercel)</strong></td>
+          <td>Marketing, signup, Stripe subscription, provider key config + test-call validation, integrations setup (Telegram/Discord/Slack OAuth), snapshot/restore UI, export-snapshot UI, audit log, alert + runbook surface. mTLS to control plane.</td>
+          <td>Existing Vercel deployment</td>
+          <td>~$20/mo</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p><strong>Total fixed cost at 1000 customers: ~$110–130/mo</strong> (excluding R2, which scales with tenants). Per-customer cost identical to AgentVolt V0: $5.62 LITE / $6.55 PRO / $12.10 POWER. No inference passthrough or markup — subscription is the entire revenue line.</p>
+
+    <h2 id="flows">5. Critical flows</h2>
+
+    <p>Five flows carry over from AgentVolt V0 mechanically. Two are new for omp-deck. The carry-overs get one-paragraph summaries; references point at the AgentVolt §X for the full detail.</p>
+
+    <h3>5.1 New tenant provisioning <span class="badge">inherited</span></h3>
+    <p>Same state machine and Hetzner Action ID flow as AgentVolt V0 §5.1: <code>pending → volume_created → vm_created → attached → ip_registered → live</code>, idempotent on <code>stripe_event_id</code>, Cloud Network assignment, single-use Tailscale auth key minting, bootstrap-token-based first-boot config exchange. Total signup → live: ~45–60s.</p>
+    <p><strong>omp-deck-specific:</strong> bootstrap exchange populates tenant <code>.env</code> with deck-specific keys (<code>DECK_SESSION_PASSWORD</code>, theme, <code>OMP_AGENT_DIR=/var/lib/omp-deck/agent</code>, initial messaging-bridge config if the customer entered Telegram tokens at signup). Customer's BYOK vendor key is <em>not</em> in the bootstrap payload — it's set post-provision via the dashboard's Providers page (§5.X below).</p>
+
+    <h3>5.2 Browser launch — auth-bridge sidecar <span class="badge">inherited</span></h3>
+    <p>Identical to AgentVolt V0 §5.2. Dashboard mints 30s-TTL JWT, 302 to <code>{tenant}.ompdeck.app/auth/launch?t=&lt;jwt&gt;</code>, Caddy forwards in <code>X-OmpDeck-Launch</code> header, sidecar verifies against ompdeck pubkey + tenant match, POSTs <code>DECK_SESSION_PASSWORD</code> to local deck <code>/auth/launch</code>, extracts session cookie, returns <code>Set-Cookie</code> upstream. Caddy holds no per-tenant secrets; blast radius of one compromised tenant VM is one tenant.</p>
+    <p><strong>What omp-deck has to build:</strong> the <code>/auth/launch</code> route in <code>apps/server</code>. Today the deck assumes localhost trust; this route accepts a sidecar-minted session POST, sets the deck session cookie, and 302s to <code>/</code>. Maps to AgentVolt's <code>/api/auth/login</code> in shape; deck-specific in implementation.</p>
+
+    <h3>5.3 Provider key configuration <span class="badge new">new</span></h3>
+    <p>The product surface that replaces AgentVolt's inference gateway. Customer adds their vendor keys through the dashboard; the dashboard validates them with a test call, then writes the key to the tenant <code>.env</code> via the control plane.</p>
+    <ol>
+      <li>Customer clicks <strong>Providers → Add Anthropic key</strong> in the dashboard</li>
+      <li>Customer pastes API key. Dashboard sends <code>POST /providers/test</code> over mTLS to control plane with <code>{provider, key, tenant_id}</code>; control plane proxies a minimal test call (<code>messages.create</code> with <code>max_tokens=1</code>) to verify the key. Response includes rate-limit headers (<code>anthropic-ratelimit-requests-limit</code>, <code>anthropic-ratelimit-tokens-limit</code>) parsed and stored for dashboard display.</li>
+      <li>On success: control plane writes the key into the tenant's <code>.env</code> over Tailscale operator path, sends <code>SIGHUP</code> to the deck process; the deck reloads config without restart.</li>
+      <li>Dashboard shows "Anthropic connected · 1M ITPM · 50 RPM" with vendor-side limits visible to the customer.</li>
+      <li>Customer can swap providers (Anthropic → OR → OpenAI) without VM restart. The deck's model picker honors whichever provider is configured.</li>
+    </ol>
+    <p><strong>Vendor-side rate-limit surfacing:</strong> when the tenant agent receives a 429 from a vendor, the deck surfaces the response headers into the dashboard's Providers page ("Anthropic returned 429 at 14:32, retry-after 60s, current usage 92% of TPM"). This is the customer's problem — their key, their cap — but the dashboard is where they'll look for the diagnosis. Build the surface; don't paper over the 429.</p>
+
+    <h3>5.4 Messaging webhook <span class="badge">inherited</span></h3>
+    <p>Same shape as AgentVolt V0 §5.4. Webhook hostnames under <code>*.webhook.ompdeck.app</code> (separate zone from launch, both on the multi-SAN cert). Platform → CF → proxy farm → backend VM. Webui verifies platform signature, processes message, agent responds. Outbound long-poll dialed from tenant VM via egress allowlist.</p>
+    <p><strong>omp-deck-specific:</strong> the Telegram bridge runs as a supervised subprocess inside the tenant VM (<code>apps/bridges/telegram</code>, standalone Bun process). It talks to the deck like any other REST + WS client. The dashboard form for Telegram setup writes <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_ALLOWED_USER_IDS</code> to the tenant <code>.env</code>; <code>BridgeSupervisor</code> starts the subprocess on next deck restart (or on SIGHUP if hot-reload is wired).</p>
+
+    <h3>5.5 Auto-repair <span class="badge">inherited</span></h3>
+    <p>Identical to AgentVolt V0 §5.5. Dependency-free <code>/health</code> endpoint on the deck server returns 200 if the Bun process is up and the SQLite DB is reachable (does NOT touch Redis, PG, or vendor APIs — that's the dep-free contract). Same stampede guards (sanity ceiling at 5% fleet, per-tenant 1 recreate/hr, daemon heartbeat).</p>
+    <p>The deck's existing dev-mode idle reaper for stale sessions stays; it's orthogonal to the daemon-level repair.</p>
+
+    <h3>5.6 Force-update (CVE-class only) <span class="badge">inherited</span></h3>
+    <p>Identical to AgentVolt V0 §5.6. Audit-logged, 24h email notice (bounce-aware), opt-out via signed-token link, N=20 concurrent paced push, pre-upgrade snapshot, restart-old-on-failure fallback. Total downtime per tenant: ~15s clean, ~2–3min with snapshot restore.</p>
+    <p><strong>omp-deck-specific:</strong> "current-minor-minus-2" advisory emails go out every 90 days for non-CVE updates (AgentVolt V0 Q6 RESOLVED pattern). Customers pin deck versions in the dashboard.</p>
+
+    <h3>5.7 Decommission flow (Stripe cancellation) <span class="badge">inherited</span></h3>
+    <p>Identical to AgentVolt V0 §5.7. 30-day grace, snapshot at grace end, VM deleted, Tailscale node revoked, volume retained 60 days after VM delete (= day 90 post-cancellation, aligned with R2 final-snapshot retention), volume + R2 prefix wiped at day 90, GDPR right-to-deletion collapses the schedule to immediate.</p>
+    <p><strong>omp-deck-specific:</strong> at cancellation, the dashboard surfaces a "Download your snapshot before day 90" banner with one click to the §5.8 export flow. The exit path is most relevant exactly at cancellation.</p>
+
+    <h3>5.8 Exit-path snapshot download <span class="badge new">new</span></h3>
+    <p>The flow that makes "MIT + hosted for convenience" honest. Anyone can leave with their data intact and run the same MIT-licensed deck against the downloaded volume.</p>
+    <ol>
+      <li>Customer clicks <strong>Account → Export → Download Snapshot</strong></li>
+      <li>Customer enters an <strong>export password</strong> (chosen in-the-moment; never stored anywhere — Argon2-id parameters surfaced for transparency)</li>
+      <li>Dashboard <code>POST /api/decks/[id]/export</code> to control plane (mTLS, idempotent on <code>export_request_id</code>)</li>
+      <li>Snapshot Export service on host B:
+        <ul>
+          <li>Fetches tenant's master-key-wrapped DEK from PG</li>
+          <li>Unwraps DEK with the control-plane master key</li>
+          <li>Derives a key from the export password via Argon2-id (parameters: <code>m=64MiB, t=3, p=1</code>; salt persisted alongside ciphertext)</li>
+          <li>Re-wraps the DEK with the password-derived key, produces a <code>wrapped-dek.bin</code> blob</li>
+          <li>Signs a 15-minute-TTL R2 GET URL for the most recent daily snapshot tar</li>
+          <li>Returns <code>{snapshot_url, wrapped_dek_blob, dek_format_version}</code> to the dashboard</li>
+        </ul>
+      </li>
+      <li>Browser downloads both files (snapshot tar + wrapped DEK)</li>
+      <li>Dashboard surfaces a one-click link to the self-host runbook at <code>docs.ompdeck.app/self-host-from-snapshot</code></li>
+    </ol>
+    <p><strong>The runbook</strong> (<code>docs/self-host-from-snapshot.md</code> in the public MIT repo) walks through: install Docker → derive the DEK with the export password → decrypt the snapshot tar to a host volume → <code>docker compose up</code> against the deck image with the volume mounted → set BYOK keys in <code>.env</code> → done. ~10 minutes if the customer follows it.</p>
+    <p><strong>The runbook is V0, not Phase 1.</strong> Without it the download button is theater. Customers will judge the convenience pitch by how hard it is to leave; making it easy is the credibility move.</p>
+    <p><strong>Audit + rate-limit:</strong> exports logged with customer ID, request ID, timestamp. Rate-limited to 5 exports per tenant per 24h (covers password fat-finger; prevents a compromised dashboard session from exfiltrating snapshot URLs at industrial pace).</p>
+
+    <h2 id="invariants">6. Operational invariants</h2>
+    <p>Same shape as AgentVolt V0 §6, minus the billing-exactly-once invariant. Verifying each is a V0 ship gate.</p>
+    <ul>
+      <li><strong>Customer data preservation across any infrastructure event.</strong> State on the Cloud Volume persists independently of VM lifecycle. End-to-end verified by §5.7 restore dress rehearsal.</li>
+      <li><strong>Exit path is real.</strong> The §5.8 export flow + self-host runbook is exercised by a canary on the same cadence as the restore drill — a synthetic tenant exports their volume, decrypts it with the export password, runs <code>docker compose up</code> against the resulting state, and confirms the deck boots with tasks/routines/sessions intact. Weekly. <span class="badge new">new vs AgentVolt</span></li>
+      <li><strong>Stable URL across VM rebuilds.</strong> Same internal-IP-survival sequencing and IP-collision canary as AgentVolt V0 §6. Realistic recreate time 60–90s.</li>
+      <li><strong>Repair completes in &lt;90s, unattended, with stampede guards.</strong> Same dep-free probe, sanity ceiling, per-tenant rate limit, daemon heartbeat.</li>
+      <li><strong>No customer secret in cloud-init.</strong> 5-minute single-use bootstrap token; customer's BYOK vendor key set post-provision via the §5.3 flow, never via cloud-init.</li>
+      <li><strong>Blast radius is one tenant.</strong> Cloud Firewall default-deny lateral + egress allowlist + Tailscale ACLs. A compromised tenant VM reaches one customer's vendor account (per the BYOK blast-radius disclosure in §2 / §9).</li>
+      <li><strong>Master key is recoverable.</strong> Off-VM 1Password escrow + two-key rotation procedure, identical to AgentVolt V0 §9.2.</li>
+      <li><strong>Subscription state matches Stripe webhook delivery.</strong> Stripe events are idempotent on <code>event.id</code>; failed deliveries retry with exponential backoff via Stripe's own machinery. PG mirrors subscription state but is not the source of truth. <span class="badge delta">replaces billing-exactly-once</span></li>
+      <li><strong>Customer can pin a version forever.</strong> Image registry retains every shipped version with ≥1 active pin (auto-archive at 0 pins after 6 months). Force-push reserved for CVE-class, audit-logged, customer-emailed, opt-out via signed link.</li>
+      <li><strong>Every alert has a runbook.</strong> Same discipline as AgentVolt V0 §8.2.</li>
+    </ul>
+
+    <h2 id="networking">7. Networking &amp; isolation</h2>
+    <p>Identical to AgentVolt V0 §7. The agent VM is RCE-by-design; containment lives at the network layer.</p>
+    <ul>
+      <li><strong>Cloud Network sharding</strong> across N Networks; <code>tenants.network_id</code> records the assignment (§7.1).</li>
+      <li><strong>Cloud Firewall</strong> default-deny lateral + egress allowlist (§7.2). omp-deck's allowlist: <code>api.anthropic.com</code>, <code>openrouter.ai</code>, <code>api.openai.com</code>, Tailscale, Hetzner metadata, GHCR, R2, configured messaging endpoints, configured customer webhooks.</li>
+      <li><strong>Tailscale operator overlay</strong> (§7.3). Tags: <code>tag:tenant</code>, <code>tag:ops</code>. ACL: <code>tag:ops → tag:tenant</code> only. Ephemeral single-use auth keys per provision.</li>
+      <li><strong>cgroups + container hardening</strong> (§7.4). <code>--memory=3g --memory-swap=3g --cpus=1.5 --pids-limit=512 --read-only</code> on CX23; proportional on CX33. Tenant state on mounted Cloud Volume only.</li>
+      <li><strong>Wildcard cert mechanics</strong> (§7.5). Two SANs (<code>*.ompdeck.app</code> + <code>*.webhook.ompdeck.app</code>) on one multi-SAN cert, two DNS-01 challenges, dedicated cert-renewal host.</li>
+      <li><strong>Vercel → control-plane mTLS</strong> (§7.6). Same client-cert-per-deployment posture.</li>
+    </ul>
+
+    <h2 id="observability">8. Observability &amp; alerts</h2>
+    <p>Same chassis as AgentVolt V0 §8 with two alerts removed (no gateway → no gateway 5xx-rate; no ledger → no ledger ↔ Stripe variance). Same vendor stack: Grafana Cloud free tier (metrics), Better Stack (uptime + paging) Phase 1.</p>
+
+    <h3>8.1 V0 alert taxonomy</h3>
+    <table>
+      <thead><tr><th>Signal</th><th>Threshold</th><th>Why it matters</th></tr></thead>
+      <tbody>
+        <tr><td>Wildcard cert expiry</td><td>T-30 days</td><td>Silent fleet-wide failure if it lapses</td></tr>
+        <tr><td>Auto-repair daemon heartbeat</td><td>absent &gt; 5 min</td><td>Daemon is itself a SPOF</td></tr>
+        <tr><td>Provisioning success rate</td><td>&lt; 95% over 1 hour</td><td>Silent quality drop</td></tr>
+        <tr><td>Snapshot success rate</td><td>&lt; 99% over 24h</td><td>Silent backup loss</td></tr>
+        <tr><td>Restore canary (weekly)</td><td>failure</td><td>Restore path regression</td></tr>
+        <tr><td>Export canary (weekly) <span class="badge new">new</span></td><td>failure</td><td>Exit-path regression breaks the convenience-pricing thesis</td></tr>
+        <tr><td>Upstash Redis p99 latency</td><td>&gt; 50ms</td><td>Hot-path degradation</td></tr>
+        <tr><td>Provisioning queue depth</td><td>&gt; 50 sustained &gt; 10 min</td><td>Falling behind</td></tr>
+        <tr><td>Hetzner API 429 rate</td><td>&gt; 1% over 5 min</td><td>Provisioning + repair affected</td></tr>
+        <tr><td>Per-tenant disk</td><td>&gt; 90% used</td><td>Preventable customer outage</td></tr>
+        <tr><td>Master-key file checksum</td><td>drift detected</td><td>Tamper detection</td></tr>
+        <tr><td>Cloud Firewall rule drift</td><td>any deviation from declared</td><td>Containment posture eroded</td></tr>
+        <tr><td>Tailscale ACL audit</td><td>any rule change</td><td>Operator-overlay integrity</td></tr>
+        <tr><td>Stripe webhook delivery lag</td><td>&gt; 5 min behind</td><td>Subscription state divergence</td></tr>
+      </tbody>
+    </table>
+
+    <h3>8.2 Canary cadence</h3>
+    <ul>
+      <li><strong>Daily</strong> auto-repair canary — synthetic test tenant, deliberate deck container kill, assert repair within 90s with file-on-volume preserved</li>
+      <li><strong>Weekly</strong> R2 restore canary — synthetic tenant, full destruction, restore from R2, byte-checksum match</li>
+      <li><strong>Weekly</strong> export canary <span class="badge new">new</span> — synthetic tenant exports their snapshot, the canary downloads it with a known password, decrypts the DEK, runs the self-host runbook against a clean host, asserts the deck boots and the tasks DB matches pre-export state</li>
+      <li><strong>Monthly</strong> migration sandbox canary — exercises the major-version-migration flow against a frozen tenant clone</li>
+    </ul>
+
+    <h2 id="secrets">9. Secrets management</h2>
+    <p>Same three populations as AgentVolt V0 §9: provisioning-time, at-rest, customer-introduced. The notable shift is that <strong>customer-introduced secrets include the vendor API key by default</strong>, not opt-in.</p>
+
+    <h3>9.1 Provisioning-time — no secrets in user-data <span class="badge">inherited</span></h3>
+    <p>Identical to AgentVolt V0 §9.1. 5-minute single-use bootstrap token in cloud-init; real config fetched at first boot from the control plane.</p>
+
+    <h3>9.2 At rest <span class="badge">inherited</span></h3>
+    <p>Identical to AgentVolt V0 §9.2. Volume encrypted at rest by Hetzner. R2 snapshots client-side-encrypted with per-tenant DEK wrapped by master key. Master key off-VM in 1Password escrow with tested two-key rotation. Tenant <code>.env</code> file mode <code>0600</code>, owned by the deck user.</p>
+
+    <h3>9.3 Customer-introduced secrets — BYOK is default</h3>
+    <p>Anthropic / OpenRouter / OpenAI keys live in the tenant <code>.env</code> on the encrypted Cloud Volume, set via the §5.3 dashboard flow. Same as Telegram tokens and other integration secrets: in <code>.env</code>, mode-protected, encrypted at rest.</p>
+    <p><strong>Blast-radius disclosure (verbatim language for the dashboard's Providers page):</strong></p>
+    <div class="callout">
+      <em>"Your vendor API key lives in your VM's encrypted .env file. omp-deck's agent has shell access to its own VM by design — that's how skills install dependencies and run tools. A sufficiently-prompted agent on your own VM can read your own .env. The blast radius is your vendor account (Anthropic / OpenAI / etc.); it cannot reach other customers' keys or accounts. We never see your key in plaintext after the initial test call. If you want a different posture, you can deny the egress allowlist for skills you don't trust, or run a more restricted skill set."</em>
+    </div>
+    <p>This is the cost of giving the customer their own vendor relationship instead of a managed key. AgentVolt's customers pay for the comfort of "we hold the keys"; omp-deck's customers pay for the comfort of "managed compute, your account, your spend." Different deals; both honest.</p>
+
+    <h3>9.4 What's deferred past V0 <span class="badge">inherited</span></h3>
+    <p>Same list as AgentVolt V0 §9.4: KMS as primary master-key store (Phase 2 / SOC2), HSM-backed master key (Phase 3+), just-in-time secret fetching (closes BYOK blast radius on secrets-at-rest), customer-supplied DEK for snapshot encryption, hardware-backed attestation.</p>
+
+    <div class="callout callout-soft">
+      <strong>Honest posture:</strong> V0 is "credible for solo+1 hosting an MIT-licensed deck for tens-to-hundreds of developer customers." Enterprise procurement asks (SOC2, FedRAMP-aligned) are explicitly out of scope; the deferred items above land when those requests come in.
+    </div>
+
+    <h2 id="image">10. Tenant image strategy</h2>
+    <p>The biggest single simplification vs AgentVolt V0. omp-deck source is MIT and authored by the same team that operates the hosting. There is no upstream-fork constraint and no "no upstream PRs in the critical path" rule — the tenant image is the project's own Dockerfile.</p>
+
+    <h3>10.1 Build &amp; distribution</h3>
+    <ul>
+      <li>Tenant image built by GitHub Actions on tag push to the omp-deck repo. Tagged <code>ghcr.io/ompdeck/deck:&lt;deck-version&gt;-&lt;sdk-version&gt;-&lt;rev&gt;</code>.</li>
+      <li>The compound version captures the tuple <code>(deck rev, @oh-my-pi/pi-coding-agent version)</code>; both matter for pinning because the deck embeds the SDK in-process.</li>
+      <li>Images signed with cosign; bootstrap verifies signature before container start.</li>
+      <li>Version retention: every image with ≥1 active pin retained indefinitely; 0-pin images auto-archive after 6 months. Same as AgentVolt V0 §10.1.</li>
+      <li><strong>No upstream mirror needed</strong> (vs AgentVolt's <code>ghcr.io/agentvolt/upstream-mirror</code>) — we ARE the upstream.</li>
+    </ul>
+
+    <h3>10.2 Migration sandbox</h3>
+    <p>Same pattern as AgentVolt V0 §10.2. Major-version migrations run on an ephemeral CX23 against a clone of the tenant's volume. Same Cloud Firewall + egress allowlist.</p>
+
+    <h3>10.3 Route audit (pre-V0 gate)</h3>
+    <p>Lighter than AgentVolt's because we control the source, but not absent. Before V0 ships, every route in <code>apps/server/src/routes-*.ts</code> is classified:</p>
+    <ul>
+      <li><strong>safe-as-is</strong> — most surface (tasks, routines, inbox, sessions, marketplace UI)</li>
+      <li><strong>auth-required</strong> — anything that mutates state; deck already enforces session-cookie</li>
+      <li><strong>deny-at-proxy</strong> — none currently, but the audit may identify some (e.g. arbitrary fs operations not scoped to the workspace)</li>
+      <li><strong>customer-visible config only</strong> — <code>/api/settings</code>, <code>/api/providers</code> (new for V0)</li>
+    </ul>
+    <p>Findings recorded in <code>docs/proposals/route-audit.md</code>, replayed against each release.</p>
+
+    <h3>10.4 Customizations relative to OSS deck</h3>
+    <p>Hosted-only deltas above the MIT deck image. The OSS deck doesn't ship these; hosted does.</p>
+    <table>
+      <thead><tr><th>Customization</th><th>Mechanism</th></tr></thead>
+      <tbody>
+        <tr><td>Auth-bridge sidecar</td><td>Co-located container on the tenant VM. JWT verification → POST to <code>/auth/launch</code> on the deck. Private-net + Tailscale debug listeners. Not internet-reachable.</td></tr>
+        <tr><td>Container resource limits</td><td><code>--memory=3g --cpus=1.5 --pids-limit=512 --read-only</code> at <code>docker run</code> time</td></tr>
+        <tr><td>Boot-time config consumer</td><td>First-boot script in image fetches <code>.env</code> from control plane using bootstrap token; populates <code>DECK_SESSION_PASSWORD</code>, <code>OMP_AGENT_DIR</code>, theme, optional messaging tokens</td></tr>
+        <tr><td>Tailscale daemon</td><td><code>tailscaled</code> in the image; auth-key fetched from bootstrap exchange, used once for node join</td></tr>
+        <tr><td>Default routines</td><td>Hosted-only: pre-installed daily-snapshot-verify routine, weekly-restore-canary marker. OSS deck doesn't ship these (they assume hosting infra).</td></tr>
+        <tr><td>Health endpoint</td><td>Dep-free <code>/health</code> on the deck server (Bun process up + SQLite reachable). OSS deck has it too; hosted contracts on its dep-free property explicitly.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="sla">11. V0 SLA, residency &amp; status</h2>
+
+    <h3>11.1 V0 region</h3>
+    <p>Region target: <strong>NBG (Nuremberg, EU)</strong> by default, same rationale as AgentVolt V0 §11.1. Open to revisit if the customer pipeline turns out to be majority US (see §13 Q4) — for omp-deck specifically, the developer audience may pipeline more US-heavy than AgentVolt's, since omp adoption is likely US-skewed.</p>
+
+    <h3>11.2 V0 SLA language (for ToS)</h3>
+    <div class="callout">
+      <em>"omp-deck Managed Hosting V0 is a single-region, best-effort hosted service. We do not commit to a formal uptime percentage during V0. Multi-region failover is committed by tenant #2000 or [date], whichever comes first. Inference availability depends on the customer's own vendor account (Anthropic / OpenRouter / OpenAI) — we do not proxy or buffer inference; vendor outages on the customer's chosen provider are visible to the customer directly. omp-deck source is MIT-licensed; customers may export their data and self-host at any time without our involvement (see Export Snapshot)."</em>
+    </div>
+    <p>The MIT + exit-path language is load-bearing for the convenience-pricing thesis. Stating it in the ToS removes the ambiguity that would otherwise surface as churn after the first customer-facing outage.</p>
+
+    <h3>11.3 Status surface</h3>
+    <p>Same out-of-band posture as AgentVolt V0 §11.3 (Statuspage.io or Cloudflare Workers static page). Independent of Vercel + PG so customers can see incidents during their failure modes.</p>
+
+    <h3>11.4 DNS posture</h3>
+    <p>Single Cloudflare account holding both wildcard zones. Documented account-lockout recovery runbook. Secondary nameserver via NS1 / DNSimple deferred to Phase 1 — same as AgentVolt V0.</p>
+
+    <h2 id="deferred">12. What's deferred and why</h2>
+    <table>
+      <thead><tr><th>Component</th><th>Trigger to build</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Inference observability</strong> as paid feature (Phase 1+)</td><td>Customer demand for "show me my agent's traffic" exceeds a threshold; would require an opt-in passthrough proxy that captures customer's vendor key — meaningful UX + privacy work to do honestly</td></tr>
+        <tr><td><strong>Multi-region fleet</strong> (US PoP for latency)</td><td>Tenant #2000 OR &gt;5% of active US tenants report regional-latency complaints</td></tr>
+        <tr><td><strong>Postgres read replicas</strong></td><td>Dashboard analytics queries interfere with control-plane writes</td></tr>
+        <tr><td><strong>R2 cross-region replication</strong></td><td>Single-region R2 outage blocks customer restore</td></tr>
+        <tr><td><strong>Secondary DNS nameserver</strong> (NS1 / DNSimple)</td><td>~$10/mo; ship after Cloudflare-account-lockout runbook is exercised once</td></tr>
+        <tr><td><strong>KMS as primary master-key store</strong></td><td>SOC2 / FedRAMP procurement ask lands</td></tr>
+        <tr><td><strong>Self-service restore UI</strong> (currently operator-CLI)</td><td>Operator-driven restore load exceeds ~2/week sustained</td></tr>
+        <tr><td><strong>Hourly snapshots for POWER tier</strong></td><td>POWER tenants average &gt;1 restore-request per month</td></tr>
+        <tr><td><strong>Just-in-time vendor-key fetching</strong></td><td>Closes BYOK blast radius on secrets-at-rest. Requires deck SDK changes to fetch keys on demand vs from <code>.env</code>.</td></tr>
+        <tr><td><strong>BYOK for snapshot encryption</strong></td><td>Customer supplies the DEK so even we can't decrypt their snapshots. POWER tier perk candidate.</td></tr>
+        <tr><td><strong>PWA push notifications for mobile</strong></td><td>Currently desktop PWA only at V0; mobile push (OneSignal / Firebase / native APNs+FCM) is a fast-follow within Phase 1 if mobile usage looks real</td></tr>
+        <tr><td><strong>Free tier</strong> for OSS visibility</td><td>If conversion from OSS-curious to paid is the bottleneck, a time-limited or rate-limited free tier may help. Adds anti-abuse complexity; defer until the conversion problem is empirically demonstrated.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="questions">13. Open questions for review</h2>
+
+    <div class="question">
+      <div class="question-label">Q1 · Dashboard ownership of provider keys at-rest</div>
+      Today's design has the control plane store nothing about the customer's vendor key after the §5.3 test call (write-through to tenant <code>.env</code>, forget). Alternative: store a per-tenant fingerprint (last-4-chars, hash) for dashboard display so the customer can see which key is active without us reading the key. The fingerprint approach is friendlier UX; confirm we want it before locking the write-through-and-forget posture.
+    </div>
+
+    <div class="question">
+      <div class="question-label">Q2 · Telegram bridge supervision under cgroup limits</div>
+      The Telegram bridge is a separate Bun subprocess (<code>apps/bridges/telegram</code>) supervised by the deck's <code>BridgeSupervisor</code>. Under <code>--pids-limit=512</code> + <code>--memory=3g</code>, two concurrent bridges (Telegram + Discord when that ships) plus the deck server plus the omp SDK process plus skills' subprocess shells — does that fit? Worth measuring against a real workload before shipping POWER-tier "unlimited bridges."
+    </div>
+
+    <div class="question">
+      <div class="question-label">Q3 · PWA scope at V0 vs Phase 1</div>
+      Desktop PWA (installable, offline shell, push from browser) is one week of work and unlocks the "always-on agent" pitch. Mobile push (real iOS / Android notifications) is a second week and requires a push vendor (OneSignal / Firebase). V0 = desktop PWA only, or both?
+    </div>
+
+    <div class="question">
+      <div class="question-label">Q4 · Customer pipeline geography</div>
+      Same question AgentVolt's §13 Q12 raises. omp-deck's audience (developers using omp) likely skews more US than AgentVolt's audience. If pipeline is majority US, ASH should be the V0 default and EU triggers Phase 2 — opposite of AgentVolt's default.
+    </div>
+
+    <div class="question">
+      <div class="question-label">Q5 · Brand and domain</div>
+      Working assumption is <code>ompdeck.app</code> + <code>webhook.ompdeck.app</code>. Confirm the brand name before cert provisioning — DNS-01 wildcards take a few hours to provision and the domain choice is sticky. Alternatives considered: <code>deck.omp.app</code>, <code>hosted.omp.app</code>, <code>app.ompdeck.com</code>.
+    </div>
+
+    <div class="question">
+      <div class="question-label">Q6 · Volume layout authoritative spec</div>
+      Before snapshot tooling can target the right paths, every persistent location the deck writes to has to be enumerated. From <code>docs/architecture.md</code>: SQLite DB (<code>tasks</code>, <code>routines</code>, <code>routine_runs</code>, <code>inbox_items</code>, ...), <code>~/.omp/agent/</code> (sessions JSONL, <code>auth.db</code>, marketplaces.json, installed_plugins.json), Telegram bridge SQLite (per-chat session map), workspace dir, tenant <code>.env</code>. Anything else the deck or its skills can write? Worth a one-pass inventory before V0 freezes the volume layout.
+    </div>
+
+    <div class="question">
+      <div class="question-label">Q7 · OSS deck divergence over time</div>
+      The hosted tenant image diverges slightly from the OSS deck (auth-bridge sidecar contract, dep-free <code>/health</code> guarantees, boot-time config consumer). Are those changes upstreamed to the OSS deck so any self-hoster gets them, or do they live only in the hosted image overlay? Upstreaming keeps the MIT story honest (the same code runs hosted and self-hosted); overlay-only keeps hosted-specific complexity out of the OSS surface. I'd vote upstream — the auth-bridge route in particular is useful to any self-hoster who wants to put the deck behind their own JWT-minting auth proxy.
+    </div>
+
+    <footer>
+      Companion docs: <code>agentvolt-ac/docs/v0-proposal.html</code> (chassis design) · <code>omp-deck/docs/architecture.md</code> (deck internals) · <code>omp-deck/docs/telegram.md</code> (bridge spec)
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        background: '#ffffff',
+        primaryColor: '#e0eae8',
+        primaryTextColor: '#1a2438',
+        primaryBorderColor: '#7a9a98',
+        lineColor: '#6b7280',
+        secondaryColor: '#f5e6d8',
+        tertiaryColor: '#fafaf7',
+        fontFamily: '-apple-system, "Segoe UI", Inter, sans-serif',
+        fontSize: '13px',
+      },
+      flowchart: { htmlLabels: true, curve: 'basis' },
+    });
+
+    function initDiagramPanZoom(container) {
+      const svg = container.querySelector('.mermaid svg');
+      if (!svg) return;
+      svg.style.maxWidth = '';
+      svg.style.height = '';
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+      if (!container.querySelector('.diagram-hint')) {
+        const hint = document.createElement('div');
+        hint.className = 'diagram-hint';
+        hint.textContent = 'scroll = zoom · drag = pan · drag bottom edge = resize';
+        container.appendChild(hint);
+      }
+
+      requestAnimationFrame(() => {
+        try {
+          const pz = window.svgPanZoom(svg, {
+            controlIconsEnabled: true,
+            fit: true,
+            center: true,
+            minZoom: 0.2,
+            maxZoom: 25,
+            zoomScaleSensitivity: 0.35,
+            dblClickZoomEnabled: false,
+          });
+          requestAnimationFrame(() => { pz.resize(); pz.fit(); pz.center(); });
+          const ro = new ResizeObserver(() => { pz.resize(); pz.fit(); pz.center(); });
+          ro.observe(container);
+        } catch (e) { console.warn('pan-zoom init failed', e); }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.querySelectorAll('.diagram').forEach(initDiagramPanZoom);
+    });
+  </script>
+</body>
+</html>

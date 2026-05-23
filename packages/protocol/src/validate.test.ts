@@ -257,6 +257,71 @@ test("deck step variants validate clean", () => {
 	expect(result.errors).toBeUndefined();
 });
 
+test("deck read variants validate clean", () => {
+	const spec: RoutineSpec = {
+		name: "deck-read-smoke",
+		trigger: [{ manual: {} }],
+		steps: [
+			{
+				id: "list_active_tasks",
+				type: "deck",
+				action: "list_tasks",
+				state_ref: "active",
+				since_hours: 24,
+				limit: 50,
+			},
+			{
+				id: "list_unfiltered",
+				type: "deck",
+				action: "list_tasks",
+			},
+			{
+				id: "list_unread_inbox",
+				type: "deck",
+				action: "list_inbox",
+				kind: "email",
+				since_hours: 12,
+				include_processed: false,
+				limit: 100,
+			},
+			{
+				id: "fetch_t1",
+				type: "deck",
+				action: "get_task",
+				task_ref: "T-1",
+			},
+			{
+				id: "fetch_inbox_item",
+				type: "deck",
+				action: "get_inbox_item",
+				inbox_ref: "i_01abcdef",
+			},
+		],
+	};
+	const result = validateRoutineSpec(spec);
+	if (!result.valid) {
+		console.log("deck-read errors:", JSON.stringify(result.errors, null, 2));
+	}
+	expect(result.valid).toBe(true);
+	expect(result.errors).toBeUndefined();
+});
+
+test("deck get_task without task_ref is rejected", () => {
+	const malformed = {
+		name: "missing-ref",
+		trigger: [{ manual: {} }],
+		steps: [{ id: "x", type: "deck", action: "get_task" }],
+	};
+	const result = validateRoutineSpec(malformed);
+	expect(result.valid).toBe(false);
+	const hasMissingRef = result.errors!.some(
+		(e) =>
+			e.keyword === "required" &&
+			(e.params as { missingProperty?: string }).missingProperty === "task_ref",
+	);
+	expect(hasMissingRef).toBe(true);
+});
+
 
 describe("validateRoutineSpec — rejects malformed specs with clear errors", () => {
 	test("step missing required `id` produces a required-keyword error pointing at the offending step", () => {
@@ -315,5 +380,99 @@ describe("validateRoutineSpec — rejects malformed specs with clear errors", ()
 				(e.params as { missingProperty?: string }).missingProperty === "secret_env",
 		);
 		expect(hasSecretEnvError).toBe(true);
+	});
+});
+
+// ─── layout (V2 canvas authoring) ────────────────────────────────────────
+
+describe("validateRoutineSpec — layout (V2 canvas)", () => {
+	test("routine without layout still validates (backwards compatible)", () => {
+		const result = validateRoutineSpec(dailyBriefing);
+		expect(result.valid).toBe(true);
+		expect(result.errors).toBeUndefined();
+	});
+
+	test("routine with a valid layout block validates", () => {
+		const spec: RoutineSpec = {
+			...dailyBriefing,
+			layout: {
+				version: 1,
+				nodes: {
+					should_run: { x: 280, y: 0 },
+					fetch_completed: { x: 280, y: 220 },
+					fetch_active: { x: 280, y: 440 },
+					fetch_inbox: { x: 280, y: 660 },
+					fetch_failed_runs: { x: 280, y: 880 },
+					write_briefing: { x: 280, y: 1100, collapsed: false },
+					write_to_inbox: { x: 280, y: 1320 },
+					persist_state: { x: 280, y: 1540 },
+				},
+				edges: [
+					{ from: "should_run", to: "fetch_completed", kind: "success" },
+					{ from: "fetch_completed", to: "write_briefing" },
+					{ from: "fetch_active", to: "write_briefing", kind: "manual" },
+				],
+			},
+		};
+		const result = validateRoutineSpec(spec);
+		if (!result.valid) {
+			console.log("layout errors:", JSON.stringify(result.errors, null, 2));
+		}
+		expect(result.valid).toBe(true);
+		expect(result.errors).toBeUndefined();
+	});
+
+	test("layout edge referencing a nonexistent step id fails with crossRef error", () => {
+		const spec: RoutineSpec = {
+			...dailyBriefing,
+			layout: {
+				version: 1,
+				edges: [
+					{ from: "should_run", to: "ghost_step", kind: "success" },
+				],
+			},
+		};
+		const result = validateRoutineSpec(spec);
+		expect(result.valid).toBe(false);
+		expect(result.errors).toBeDefined();
+		const hasCrossRef = result.errors!.some(
+			(e) =>
+				e.keyword === "crossRef" &&
+				e.path === "/layout/edges/0/to" &&
+				(e.params as { missingStepId?: string }).missingStepId === "ghost_step",
+		);
+		expect(hasCrossRef).toBe(true);
+	});
+
+	test("layout.nodes key referencing a nonexistent step id fails with crossRef error", () => {
+		const spec: RoutineSpec = {
+			...dailyBriefing,
+			layout: {
+				version: 1,
+				nodes: { phantom: { x: 0, y: 0 } },
+			},
+		};
+		const result = validateRoutineSpec(spec);
+		expect(result.valid).toBe(false);
+		const hasCrossRef = result.errors!.some(
+			(e) =>
+				e.keyword === "crossRef" &&
+				e.path === "/layout/nodes/phantom" &&
+				(e.params as { missingStepId?: string }).missingStepId === "phantom",
+		);
+		expect(hasCrossRef).toBe(true);
+	});
+
+	test("layout with version != 1 fails with const error", () => {
+		const spec = {
+			...dailyBriefing,
+			layout: { version: 2 },
+		};
+		const result = validateRoutineSpec(spec);
+		expect(result.valid).toBe(false);
+		const hasVersionError = result.errors!.some(
+			(e) => e.keyword === "const" && e.path.startsWith("/layout/version"),
+		);
+		expect(hasVersionError).toBe(true);
 	});
 });

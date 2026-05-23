@@ -20,6 +20,8 @@ Bun process, designed to run loopback-only behind Tailscale or an SSH tunnel.
 | Kanban with `T-N` display IDs (paper theme) | Marketplace browser populated with `anthropics/claude-plugins-official` (slate theme) |
 | ![Appearance settings](./docs/screenshots/04-settings-appearance-slate.png) | ![Messaging settings](./docs/screenshots/05-settings-messaging-slate.png) |
 | Settings → Appearance theme cards | Settings → Messaging with the Telegram bridge supervisor |
+| ![Routines builder](./docs/screenshots/06-routines-builder-paper.png) | ![Routines canvas](./docs/screenshots/06-routines-canvas-paper.png) |
+| V1 routines builder editing `daily-briefing` in form mode | The same routine in canvas mode — every step is a node |
 
 </details>
 
@@ -69,8 +71,17 @@ shares its session + auth store. Run both; they coexist.
 - **Kanban** with Jira-style display IDs (`T-1`, `T-2`, ...), drag-and-drop,
   configurable columns, and live WebSocket broadcasts — agent or external
   scripts mutating tasks refresh every open kanban without polling.
-- **Routines** — cron scheduler for `bash` / `prompt` / `script` actions with
-  run history.
+- **Routines V1** — multi-step pipelines, not single-action cron jobs. A
+  routine is a typed YAML spec with `run` / `agent` / `http` / `write` / `deck`
+  / `mcp` / `transform` / `wait` / `set_state` steps plus four trigger kinds
+  (`cron`, `webhook`, `manual`, `event`). Author them visually in the new
+  **canvas builder** (drag, drop, wire branches with `if`-flavored nodes),
+  in form mode, or directly as YAML — all three round-trip the same spec.
+  Live run observability paints per-step status rings, durations, and model
+  / cost badges on the canvas; node-click opens the captured `stdout` /
+  `stderr` / structured JSON. Ships with a `daily-briefing` template that
+  hits the deck's own kanban + inbox and writes a morning summary back via
+  the `deck` action steps.
 - **Inbox** — quick capture surface with promote-to-task.
 - **Settings** — masked secret store with atomic `.env` writes + audit log,
   hot-applied env updates where possible, a one-click server restart for the
@@ -128,6 +139,11 @@ bun run dev
 
 Open <http://127.0.0.1:5173>. Your existing `~/.omp/agent` is picked up
 automatically — no re-auth.
+
+On Windows, you can also double-click `Start-OMP-Deck.cmd` from the repo root.
+It starts the background API server on <http://127.0.0.1:8787>, starts the
+Vite web app on <http://127.0.0.1:5173>, opens the deck in your browser, and
+writes process logs under `.logs/`.
 
 ### If you don't have omp yet
 

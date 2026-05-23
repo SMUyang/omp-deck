@@ -341,3 +341,40 @@
 		visibility: hidden;
 	}
 }
+
+/* ─── React Flow / canvas overrides ─────────────────────────────────────────
+   The V2 routine canvas builder uses `@xyflow/react`. Its CSS exposes the
+   token names below; we re-bind them to deck paper/ink/line/accent so the
+   canvas inherits whichever theme is active. Scoped under .routine-canvas so
+   nothing else on the page is affected. */
+.routine-canvas .react-flow {
+	--xy-background-color-default: rgb(var(--paper));
+	--xy-background-pattern-color-default: rgb(var(--ink-4) / 0.35);
+	--xy-background-pattern-dots-color-default: rgb(var(--ink-4) / 0.4);
+	--xy-edge-stroke-default: rgb(var(--line-strong));
+	--xy-edge-stroke-selected-default: rgb(var(--accent));
+	--xy-edge-stroke-width-default: 1;
+	--xy-connectionline-stroke-default: rgb(var(--accent));
+	--xy-handle-background-color-default: rgb(var(--paper-2));
+	--xy-handle-border-color-default: rgb(var(--line-strong));
+	--xy-controls-button-background-color-default: rgb(var(--paper-2));
+	--xy-controls-button-background-color-hover-default: rgb(var(--paper-3));
+	--xy-controls-button-color-default: rgb(var(--ink-2));
+	--xy-controls-button-color-hover-default: rgb(var(--ink));
+	--xy-controls-button-border-color-default: rgb(var(--line));
+	--xy-minimap-background-color-default: rgb(var(--paper-2));
+	--xy-minimap-mask-background-color-default: rgb(var(--paper) / 0.7);
+	--xy-node-color-default: rgb(var(--ink));
+	--xy-node-background-color-default: rgb(var(--paper-2));
+	--xy-node-border-default: 1px solid rgb(var(--line));
+	--xy-attribution-background-color-default: transparent;
+}
+/* React Flow's default Controls icons are SVG <path>s with currentColor;
+   the wrapper's text-ink class on the parent doesn't propagate, so set it
+   explicitly on the buttons. */
+.routine-canvas .react-flow__controls-button svg {
+	fill: rgb(var(--ink-2));
+}
+.routine-canvas .react-flow__controls-button:hover svg {
+	fill: rgb(var(--ink));
+}

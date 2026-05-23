@@ -21,43 +21,38 @@ steps:
       const today = new Date().toISOString().slice(0, 10);
       return context.state.last_briefing_date !== today;
 
-  - id: fetch_tasks
-    type: http
+  # The four deck reads below return slim summaries (id, ref, title,
+  # stateId, updatedAt for tasks; id, kind, title, source for inbox).
+  # No bodies — keeps the agent prompt well under Windows' 32k arg cap.
+
+  - id: fetch_completed
+    type: deck
     when: steps.should_run.json === true
-    method: GET
-    url: http://127.0.0.1:8787/api/tasks
-    expect_json: true
-    timeout_secs: 15
-    on_failure: abort
+    action: list_tasks
+    state_ref: done
+    since_hours: 24
+    limit: 20
+
+  - id: fetch_active
+    type: deck
+    when: steps.should_run.json === true
+    action: list_tasks
+    state_ref: active
+    limit: 20
+
+  - id: fetch_blocked
+    type: deck
+    when: steps.should_run.json === true
+    action: list_tasks
+    state_ref: blocked
+    limit: 20
 
   - id: fetch_inbox
-    type: http
+    type: deck
     when: steps.should_run.json === true
-    method: GET
-    url: http://127.0.0.1:8787/api/inbox
-    expect_json: true
-    timeout_secs: 15
-    on_failure: abort
-
-  # Pre-digest. The raw /api/tasks payload can be 30KB+ on a busy deck which
-  # blows the agent step's prompt budget; this distills the data to a slim
-  # summary the LLM can chew on without drowning in JSON.
-  - id: digest
-    type: transform
-    when: steps.should_run.json === true
-    body: |
-      const tasks = context.steps.fetch_tasks.json.tasks || [];
-      const inbox = context.steps.fetch_inbox.json.items || context.steps.fetch_inbox.json || [];
-      const stateById = {};
-      for (const s of (context.steps.fetch_tasks.json.states || [])) stateById[s.id] = s.name;
-      const since = Date.now() - 24 * 60 * 60 * 1000;
-      const recent = tasks.filter(t => new Date(t.updatedAt).getTime() >= since);
-      const completed = recent.filter(t => stateById[t.stateId] === 'done').map(t => ({ id: 'T-' + t.displayId, title: t.title }));
-      const active = tasks.filter(t => stateById[t.stateId] === 'active').slice(0, 20).map(t => ({ id: 'T-' + t.displayId, title: t.title }));
-      const blocked = tasks.filter(t => stateById[t.stateId] === 'blocked').map(t => ({ id: 'T-' + t.displayId, title: t.title }));
-      const inboxArr = Array.isArray(inbox) ? inbox : (inbox.items || []);
-      const freshInbox = inboxArr.filter(i => new Date(i.createdAt).getTime() >= since).slice(0, 15).map(i => ({ kind: i.kind, title: i.title }));
-      return { completed, active, blocked, freshInbox };
+    action: list_inbox
+    since_hours: 24
+    limit: 15
 
   - id: write_briefing
     type: agent
@@ -67,10 +62,10 @@ steps:
     prompt: |
       Generate a morning briefing in markdown. Keep it tight - 6 to 10 bullets total.
 
-      Yesterday's completed: {{ steps.digest.json.completed | json }}
-      Active right now: {{ steps.digest.json.active | json }}
-      Blocked: {{ steps.digest.json.blocked | json }}
-      Fresh inbox: {{ steps.digest.json.freshInbox | json }}
+      Yesterday's completed ({{ steps.fetch_completed.json.length }}): {{ steps.fetch_completed.json | json }}
+      Active right now ({{ steps.fetch_active.json.length }}): {{ steps.fetch_active.json | json }}
+      Blocked ({{ steps.fetch_blocked.json.length }}): {{ steps.fetch_blocked.json | json }}
+      Fresh inbox ({{ steps.fetch_inbox.json.length }}): {{ steps.fetch_inbox.json | json }}
 
       Structure exactly:
 
