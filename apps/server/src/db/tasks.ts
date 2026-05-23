@@ -20,6 +20,7 @@ interface TaskRow {
 	cwd: string | null;
 	created_at: string;
 	updated_at: string;
+	state_entered_at: string;
 	archived_at: string | null;
 }
 
@@ -41,6 +42,7 @@ function rowToTask(r: TaskRow): Task {
 		orderInState: r.order_in_state,
 		createdAt: r.created_at,
 		updatedAt: r.updated_at,
+		stateEnteredAt: r.state_entered_at,
 	};
 	if (r.cwd !== null) t.cwd = r.cwd;
 	if (r.archived_at !== null) t.archivedAt = r.archived_at;
@@ -200,10 +202,10 @@ export function listTasks(opts: { includeArchived?: boolean } = {}): Task[] {
 	const where = opts.includeArchived ? "" : "WHERE archived_at IS NULL";
 	const rows = getDb()
 		.query<TaskRow, []>(
-			`SELECT id, display_id, title, body, state_id, order_in_state, cwd, created_at, updated_at, archived_at
+			`SELECT id, display_id, title, body, state_id, order_in_state, cwd, created_at, updated_at, state_entered_at, archived_at
 			 FROM tasks
 			 ${where}
-			 ORDER BY state_id, order_in_state ASC`,
+			 ORDER BY state_id, state_entered_at DESC, order_in_state ASC`,
 		)
 		.all() as TaskRow[];
 	return rows.map(rowToTask);
@@ -212,7 +214,7 @@ export function listTasks(opts: { includeArchived?: boolean } = {}): Task[] {
 export function getTask(taskId: string): Task | undefined {
 	const row = getDb()
 		.query<TaskRow, [string]>(
-			`SELECT id, display_id, title, body, state_id, order_in_state, cwd, created_at, updated_at, archived_at
+			`SELECT id, display_id, title, body, state_id, order_in_state, cwd, created_at, updated_at, state_entered_at, archived_at
 			 FROM tasks WHERE id = ?`,
 		)
 		.get(taskId) as TaskRow | null;
@@ -246,10 +248,10 @@ export function createTask(input: {
 			.get() as { value: number } | null;
 		if (!seqRow) throw new Error("tasks sequence missing — migration 002 not applied");
 		displayId = seqRow.value;
-		db.prepare<unknown, [string, number, string, string, string, number, string | null, string, string]>(
-			`INSERT INTO tasks (id, display_id, title, body, state_id, order_in_state, cwd, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		).run(taskId, displayId, input.title, input.body ?? "", state.id, maxOrder + 1000, input.cwd ?? null, now, now);
+		db.prepare<unknown, [string, number, string, string, string, number, string | null, string, string, string]>(
+			`INSERT INTO tasks (id, display_id, title, body, state_id, order_in_state, cwd, created_at, updated_at, state_entered_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(taskId, displayId, input.title, input.body ?? "", state.id, maxOrder + 1000, input.cwd ?? null, now, now, now);
 	})();
 	const out = getTask(taskId);
 	if (!out) throw new Error("createTask failed");
@@ -273,13 +275,18 @@ export function updateTask(
 	const next = { ...existing, ...patch };
 	const archivedAt =
 		patch.archived === true ? nowIso() : patch.archived === false ? null : existing.archivedAt ?? null;
+	// State change via patch (rare — UI normally uses moveTask) is the only
+	// case where updateTask should bump state_entered_at. Title / body / cwd
+	// edits must NOT reset the per-column recency sort.
+	const stateChanged = patch.stateId !== undefined && patch.stateId !== existing.stateId;
+	const stateEnteredAt = stateChanged ? nowIso() : existing.stateEnteredAt;
 	db.prepare<
 		unknown,
-		[string, string, string, number, string | null, string, string | null, string]
+		[string, string, string, number, string | null, string, string, string | null, string]
 	>(
 		`UPDATE tasks
 		   SET title = ?, body = ?, state_id = ?, order_in_state = ?, cwd = ?,
-		       updated_at = ?, archived_at = ?
+		       updated_at = ?, state_entered_at = ?, archived_at = ?
 		 WHERE id = ?`,
 	).run(
 		next.title,
@@ -288,6 +295,7 @@ export function updateTask(
 		next.orderInState,
 		next.cwd ?? null,
 		nowIso(),
+		stateEnteredAt,
 		archivedAt,
 		taskId,
 	);
@@ -302,6 +310,10 @@ export function deleteTask(taskId: string): boolean {
 /**
  * Move a task to a new state at a target index. Renumbers the destination
  * column with 1000-unit gaps for stable future inserts.
+ *
+ * Bumps `state_entered_at` for the moved row only when it actually changed
+ * columns. Peers — and same-column reorders — keep their entry timestamps so
+ * the per-column recency sort remains stable.
  */
 export function moveTask(taskId: string, stateId: string, index: number): Task | undefined {
 	const db = getDb();
@@ -309,6 +321,8 @@ export function moveTask(taskId: string, stateId: string, index: number): Task |
 	if (!existing) return undefined;
 	const targetState = getState(stateId);
 	if (!targetState) throw new Error(`unknown state: ${stateId}`);
+
+	const crossColumn = existing.stateId !== stateId;
 
 	db.transaction(() => {
 		// Pull current ordering of destination column, excluding the task being moved.
@@ -329,6 +343,12 @@ export function moveTask(taskId: string, stateId: string, index: number): Task |
 		const now = nowIso();
 		for (let i = 0; i < ids.length; i++) {
 			update.run(stateId, (i + 1) * 1000, now, ids[i]!);
+		}
+
+		if (crossColumn) {
+			db.prepare<unknown, [string, string]>(
+				"UPDATE tasks SET state_entered_at = ? WHERE id = ?",
+			).run(now, taskId);
 		}
 	})();
 

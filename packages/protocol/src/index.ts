@@ -791,6 +791,15 @@ export interface Task {
 	cwd?: string;
 	createdAt: string;
 	updatedAt: string;
+	/**
+	 * ISO timestamp of when this task last entered its current `stateId`.
+	 * Bumps on cross-column moves; left untouched by body edits, title edits,
+	 * or same-column drag reorders. Drives the per-column recency sort.
+	 *
+	 * Backfilled to `updated_at` for pre-004 rows on migration; values may not
+	 * be perfectly accurate before the first post-deploy move.
+	 */
+	stateEnteredAt: string;
 	archivedAt?: string;
 }
 
