@@ -111,10 +111,12 @@ neighbors in the agentic-coding space:
 | Auth                           | OAuth, API key, or provider key — shared with the omp CLI                         | Anthropic OAuth / API key                                    | Per-provider keys                                                | Per-provider keys + profile rotation                                       |
 | Multi-session chat             | First-class sidebar in the deck                                                   | Single session at a time                                     | Single agent across channels                                     | Per-channel sessions                                                       |
 | Kanban / task board            | Built-in, WS-synced, `T-N` display IDs                                            | —                                                            | —                                                                | —                                                                          |
-| Scheduled routines             | Cron via `croner` (`bash` / `prompt` / `script`)                                  | —                                                            | —                                                                | Heartbeat scheduler (~30 min)                                              |
+| Routines / scheduled work      | V1 multi-step pipelines (`run`/`agent`/`http`/`write`/`deck`/`mcp`/`transform`/`wait`/`set_state`); cron / webhook / manual / event triggers | — | — | Heartbeat scheduler (~30 min)  |
+| Visual builder & observability | React Flow canvas: graph authoring with branch compilation, drag-position persistence, per-step run status rings + duration / model / cost badges, click-to-output preview | — | — | — |
+| Knowledge base                 | `/kb` cockpit over local `~/kb` markdown wiki: tree + viewer + editor, `[[wikilink]]` resolution + backlinks, force-directed graph, full-text + Ctrl-P search | —                                                            | "Deepening user model" (internal, not a markdown wiki)           | —                                                                          |
 | Inbox + promote-to-task        | Built-in                                                                          | —                                                            | —                                                                | —                                                                          |
 | Plugins / skills               | SDK loader + in-app marketplace (Anthropic plugin format)                         | `claude plugins` registry                                    | Skills with autonomous creation + refinement                     | Skills installed from ClawHub; skills can write skills                     |
-| Self-improving over time       | — (skills are user/marketplace-authored)                                          | —                                                            | ✅ learning loop, deepening user model                            | Skills can self-install                                                    |
+| Self-improving over time       | Maintenance-gate extension nudges the agent to capture reusable output into `knowledge/` / `tasks/` / `inbox/` each turn; skills themselves are user/marketplace-authored | — | ✅ learning loop, deepening user model | Skills can self-install |
 | Messenger bridges              | Telegram (Slack / Discord / Matrix on the roadmap)                                | —                                                            | Telegram, Discord, Slack, WhatsApp, Signal                       | 20+ (WhatsApp, Telegram, Slack, Discord, iMessage, Matrix, Teams, …)       |
 | License                        | MIT                                                                               | Proprietary (Anthropic Commercial Terms)                     | Open source (Nous Research)                                      | Open source                                                                |
 
@@ -123,8 +125,9 @@ experience for Claude. **Hermes** is the self-improving agent that compounds
 skills over time and supports serverless backends. **OpenClaw** is the
 multi-channel personal assistant that lives wherever you message from.
 **omp + omp-deck** is the cockpit shape — a model-agnostic coding agent in
-your terminal *plus* a kanban / routines / inbox / marketplace / Telegram-bridge
-web surface to drive it.
+your terminal *plus* a kanban / multi-step routines with a visual builder /
+inbox / knowledge-base cockpit / marketplace / Telegram-bridge web surface
+to drive it.
 
 ## Quickstart
 
