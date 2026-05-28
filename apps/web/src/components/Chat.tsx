@@ -9,6 +9,7 @@ import { CompactionLine } from "./messages/CompactionLine";
 import { TtsrLine } from "./messages/TtsrLine";
 import { IrcLine } from "./messages/IrcLine";
 import { QueuedMessage } from "./messages/QueuedMessage";
+import { PlanApproval } from "./messages/PlanApproval";
 
 export function Chat() {
 	const session = useStore(selectActiveSession);
@@ -73,6 +74,9 @@ export function Chat() {
 					{queuedPrompts.map((q) => (
 						<QueuedMessage key={q.id} msg={q} />
 					))}
+					{session.pendingPlanApproval ? (
+						<PlanApproval session={session} />
+					) : null}
 				</div>
 			</div>
 		</div>
