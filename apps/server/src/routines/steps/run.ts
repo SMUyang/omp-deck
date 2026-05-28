@@ -82,20 +82,24 @@ async function readClipped(stream: ReadableStream<Uint8Array> | null): Promise<s
 	const reader = stream.getReader();
 	const decoder = new TextDecoder("utf-8");
 	let acc = "";
+	let capped = false;
+	// Drain-and-discard once capped. We MUST NOT cancel the reader: doing so
+	// closes the consumer end of the OS pipe, and the child's next write
+	// raises EPIPE (Windows: OSError errno 22) which propagates through
+	// Python's `print(flush=True)` and crashes long-output processes like
+	// run_daily.py mid-fetch. Quietly consume the remainder, keep the first
+	// MAX_EXCERPT bytes plus a truncation marker.
 	while (true) {
 		const { value, done } = await reader.read();
 		if (done) break;
-		acc += decoder.decode(value, { stream: true });
-		if (acc.length > MAX_EXCERPT) {
-			acc = acc.slice(0, MAX_EXCERPT) + "\n…(truncated)";
-			try {
-				await reader.cancel();
-			} catch {
-				/* ignore */
+		if (!capped) {
+			acc += decoder.decode(value, { stream: true });
+			if (acc.length > MAX_EXCERPT) {
+				acc = acc.slice(0, MAX_EXCERPT) + "\n…(truncated)";
+				capped = true;
 			}
-			break;
 		}
 	}
-	acc += decoder.decode();
+	if (!capped) acc += decoder.decode();
 	return acc;
 }
