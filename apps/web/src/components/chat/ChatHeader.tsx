@@ -29,6 +29,7 @@ function Inner({ session }: { session: SessionUi }) {
 
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState(session.sessionName ?? "");
+	const [renameError, setRenameError] = useState<string | undefined>(undefined);
 	const [switcherOpen, setSwitcherOpen] = useState(false);
 	const [modelOpen, setModelOpen] = useState(false);
 	const switcherRef = useRef<HTMLDivElement>(null);
@@ -49,9 +50,27 @@ function Inner({ session }: { session: SessionUi }) {
 
 	function commit(): void {
 		const trimmed = draft.trim();
-		setEditing(false);
-		if (!trimmed || trimmed === session.sessionName) return;
-		void renameSession(session.sessionId, trimmed);
+		if (!trimmed || trimmed === session.sessionName) {
+			setEditing(false);
+			setRenameError(undefined);
+			return;
+		}
+		// Keep the input open until the API succeeds — otherwise a failure
+		// (Windows-EPERM from the SDK's atomic-rename, server 404 on a
+		// reaped session, etc.) silently reverts the visible name without
+		// telling the user the rename never landed.
+		renameSession(session.sessionId, trimmed).then(
+			() => {
+				setRenameError(undefined);
+				setEditing(false);
+			},
+			(err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				// Trim the long HTTP prefix the api helper prepends.
+				const compact = message.replace(/^HTTP \d+ \/sessions\/[^:]+:\s*/, "");
+				setRenameError(compact || "Rename failed");
+			},
+		);
 	}
 
 	const otherSessions = Object.values(sessionsById).filter((s) => s.sessionId !== session.sessionId);
@@ -69,24 +88,45 @@ function Inner({ session }: { session: SessionUi }) {
 				</span>
 			) : null}
 			{editing ? (
-				<input
-					autoFocus
-					value={draft}
-					onChange={(e) => setDraft(e.target.value)}
-					onBlur={commit}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") {
-							e.preventDefault();
-							(e.target as HTMLInputElement).blur();
-						}
-						if (e.key === "Escape") {
-							setDraft(session.sessionName ?? "");
-							setEditing(false);
-						}
-					}}
-					placeholder="Untitled session"
-					className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink placeholder:text-ink-4 focus:outline-none"
-				/>
+				<>
+					<input
+						autoFocus
+						value={draft}
+						onChange={(e) => {
+							setDraft(e.target.value);
+							if (renameError) setRenameError(undefined);
+						}}
+						onBlur={commit}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") {
+								e.preventDefault();
+								(e.target as HTMLInputElement).blur();
+							}
+							if (e.key === "Escape") {
+								setDraft(session.sessionName ?? "");
+								setRenameError(undefined);
+								setEditing(false);
+							}
+						}}
+						placeholder="Untitled session"
+						aria-invalid={renameError ? true : undefined}
+						aria-describedby={renameError ? "rename-error" : undefined}
+						className={cn(
+							"min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink placeholder:text-ink-4 focus:outline-none",
+							renameError && "text-danger placeholder:text-danger/60",
+						)}
+					/>
+					{renameError ? (
+						<span
+							id="rename-error"
+							role="alert"
+							title={renameError}
+							className="shrink-0 truncate font-mono text-2xs text-danger"
+						>
+							✕ {renameError.length > 80 ? `${renameError.slice(0, 77)}…` : renameError}
+						</span>
+					) : null}
+				</>
 			) : (
 				<button
 					type="button"

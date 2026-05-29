@@ -320,15 +320,17 @@ export const useStore = create<StoreState>()(
 		},
 
 		async renameSession(id, name) {
-			try {
-				await api.renameSession(id, name);
-			} catch (err) {
-				console.warn("rename failed", err);
-				return;
-			}
+			// Re-throw on failure so the caller (ChatHeader) can keep the input
+			// open + surface the error. Silently swallowing makes Windows-EPERM
+			// failures from the SDK's atomic-rename journal save look like the
+			// UI is broken when it's actually the FS rejecting the rename
+			// because the journal file is held open by the live session.
+			await api.renameSession(id, name);
 			set((s) => {
 				const existing = s.sessionsById[id];
-				const next = existing ? { ...s.sessionsById, [id]: { ...existing, sessionName: name } } : s.sessionsById;
+				const next = existing
+					? { ...s.sessionsById, [id]: { ...existing, sessionName: name } }
+					: s.sessionsById;
 				const sessions = s.sessions.map((r) => (r.id === id ? { ...r, title: name } : r));
 				return { sessionsById: next, sessions };
 			});
