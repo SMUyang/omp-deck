@@ -55,31 +55,48 @@ sessions-related flows through `AgentBridge` or `SessionHandle`.
 The WS hub maintains:
 
 - **Per-connection subscriptions** — `Set<sessionId>` per WS. Used to
-  forward `session_event` frames.
+  forward `session_event` frames + per-session bridge frames (UI dialog,
+  plan-mode).
 - **A global connection set** — `Set<ServerWebSocket>`. Used for broadcast
-  frames (`tasks_changed`) sent to every open client.
+  frames (`tasks_changed`, `skills_changed`, `kb_changed`, `heartbeat`,
+  `notification`) sent to every open client.
 
 The `BroadcastBus` singleton (`apps/server/src/broadcast-bus.ts`) is the
-producer side. Routes (`routes-tasks.ts`) and deck slash commands
-(`deck-slash-commands.ts`) call `broadcastBus.broadcast(frame)`. The hub
-subscribes once at construction and relays to every open connection.
+producer side. Routes (`routes-tasks.ts`, `routes-skills.ts`, …) and deck
+slash commands (`deck-slash-commands.ts`) call
+`broadcastBus.broadcast(frame)`. The hub subscribes once at construction
+and relays to every open connection.
 
 ## Synthetic events
 
-Three "synthetic" event flavors flow over the same WS as the SDK's own
-events, dispatched by the deck-side bridge code so the UI can react without
+"Synthetic" event flavors flow over the same WS as the SDK's own events,
+dispatched by the deck-side bridge code so the UI can react without
 custom plumbing per feature:
 
 - **`context_usage`** — emitted after every turn-end or compaction so the
   context indicator updates without a re-snapshot.
 - **`session_updated`** — emitted after `session.setModel()` so the chat
   header's model label flips immediately.
+- **`todo_phases_set`** — emitted after every `todo_write` tool result so
+  the Inspector TodoPanel reflects intra-turn changes (the SDK's own
+  `todo_reminder` only fires on reminder ticks — typically at turn
+  boundaries — leaving the panel stale between cycles).
+- **`prompt_queued`** + **`queue_state`** — emitted by the bridge's shadow
+  queue when the user sends a prompt while streaming. `queue_state`
+  re-broadcasts the canonical queue after every queue mutation (queue,
+  cancel, edit, drain) so clients replace `queuedPrompts` wholesale.
+- **`plan_mode_changed`**, **`plan_proposed`**, **`plan_proposal_resolved`**
+  — plan-mode lifecycle. Pending proposals are replayed to late
+  subscribers so a page reload during approval re-renders the card.
+- **`ext_ui_dialog_open`** + **`ext_ui_dialog_cancel`** — `ask` tool +
+  arbitrary `ctx.ui.*` extension calls. Replayed to late subscribers
+  similarly.
 - **`message_start` with `synthetic: true`** — emitted by both the SDK
-  slash dispatcher and the deck slash dispatcher to inject the user's typed
-  command + the handler's output into the transcript. The reducer ingests
-  these as regular messages; the UI shows a `SYNTHETIC` badge.
+  slash dispatcher and the deck slash dispatcher to inject the user's
+  typed command + the handler's output into the transcript. The reducer
+  ingests these as regular messages; the UI shows a `SYNTHETIC` badge.
 
-The reducer (`apps/web/src/lib/reducer.ts`) handles all three from a single
+The reducer (`apps/web/src/lib/reducer.ts`) handles each from a single
 union case. No special protocol fork.
 
 ## Database
@@ -92,13 +109,17 @@ which ones have been applied.
 
 Tables:
 
-- `task_states` — kanban columns. Configurable.
-- `tasks` — backlog/active/blocked/done items. `display_id` for human IDs
-  (`T-1`, ...).
-- `inbox_items` — quick captures.
-- `routines` + `routine_runs` — cron jobs and their history.
-- `sequences` — monotonic counters (currently just `tasks`).
 - `schema_migrations` — applied migrations.
+- `task_states` — kanban columns. Configurable.
+- `tasks` — backlog/active/blocked/done items. `display_id` for human IDs (`T-1`, ...).
+- `inbox_items` — quick captures + promote-to-task records.
+- `routines` — cron / webhook / manual / event routine definitions (V0 single-action + V1 multi-step pipelines via `spec_yaml`).
+- `routine_runs` — per-run history with status, duration, total cost.
+- `routine_step_runs` — per-step records inside a V1 run (stdout / stderr excerpts, JSON output, model, tokens, cost, retry attempt).
+- `routine_state` — cross-run persistent state per routine, addressable from the templating engine.
+- `bridge_state` — supervised bridge process records (currently Telegram).
+- `env_settings` — masked secret store backing Settings → Env (atomic writes paired with `env-audit.log`).
+- `sequences` — monotonic counters (currently just `tasks`).
 
 On first boot against an empty `tasks` table the deck seeds a single
 "Welcome to omp-deck" backlog task — see `apps/server/src/db/index.ts`
@@ -126,8 +147,9 @@ Chat is fully store-driven because it needs cross-session state.
 
 - `apps/web/dist/` — production static bundle. Served by the deck server
   when `OMP_DECK_WEB_DIST` resolves to it (auto-detected).
-- `apps/server/dist/` — bundled server (currently has a SDK-bundling caveat;
-  dev mode is the supported path for v0.1).
+- `apps/server/dist/` — bundled server (`bun build --target=bun`). Dev
+  mode (`bun run dev` with `bun --hot`) is the supported workflow during
+  iteration; production deployments run the bundle via `bun start`.
 
 ## Where omp lives
 

@@ -1,11 +1,13 @@
 # Themes
 
-omp-deck ships with two themes:
+omp-deck ships with three themes:
 
 - **Paper** — warm cream surfaces, rust accent, near-black ink. Engineer's
   notebook aesthetic. Light mode.
 - **Slate** — deep slate surfaces, brighter rust accent, calm syntax colors.
   Dark mode.
+- **Horizon** — purple-ink dark mode ported from
+  [opus-extensions/omp-themes](https://github.com/vincitamore/misc/tree/main/opus-extensions/omp-themes).
 
 Switch in **Settings → Appearance**. Click a card to apply. The whole UI
 flips instantly — chat surface, kanban cards, settings tables, badges, code
@@ -74,7 +76,7 @@ readable on dark.
 
 ## Adding a third theme
 
-The architecture supports N themes — v1 ships two.
+The architecture supports N themes — v1 ships three.
 
 1. Append a `ThemeDefinition` entry to `THEMES` in
    `apps/web/src/lib/theme.ts`.

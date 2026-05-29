@@ -101,15 +101,26 @@ now" deck only restarts when **you** decide to merge and bounce it.
 
 ## Testing changes
 
-Right now the project has no unit-test harness — verification is end-to-end
-via:
+Bun test runs across server + web + protocol workspaces:
 
-1. `bun run typecheck`
-2. Manual browser smoke against `http://127.0.0.1:5173`
-3. API smokes — small PowerShell or curl scripts under `.logs/` (gitignored)
+```sh
+bun test                  # all workspaces
+cd apps/server && bun test
+cd apps/web && bun test
+```
 
-If you add a feature with non-trivial state, ship a short script in `.logs/`
-that exercises it. Long-term we will introduce `bun test` for the bridge layer.
+Coverage is partial — heavy on the bridge layer (plan-mode, queue shadow,
+todo synthesis, ext-ui dialogs, reducer event handling) and DB layer
+(tasks, routines, notifications, deck-action steps). UI components +
+routes are still primarily verified end-to-end via:
+
+1. `bun run typecheck` across every workspace.
+2. Manual browser smoke against `http://127.0.0.1:5173`.
+3. API smokes — small PowerShell or curl scripts under `.logs/` (gitignored).
+
+When you add a feature with non-trivial state, ship at least the
+bridge-side test alongside it. Reducer cases want a unit test apiece —
+look at `apps/web/src/lib/reducer.test.ts` for the pattern.
 
 ## Style
 

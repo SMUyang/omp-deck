@@ -4,7 +4,7 @@ Type `/` in any composer to open the picker. Commands come from four scopes:
 
 | Scope | Source | Dispatch | Example |
 |---|---|---|---|
-| **deck** | Built into omp-deck. | In-process. No model round-trip. | `/task add <title>` |
+| **deck** | Built into omp-deck. | In-process. No model round-trip. | `/task add <title>`, `/plan` |
 | **builtin** | omp SDK. Filtered to commands with text-mode handlers. | In-process via SDK dispatcher. No model round-trip. | `/context`, `/usage`, `/tools`, `/compact`, `/dump`, `/memory view`, `/mcp add ...` |
 | **user** | Markdown files at `~/.omp/agent/commands/*.md`. | Expanded into the prompt; the model interprets. Costs tokens. | Whatever you write. |
 | **project** | Markdown files at `<cwd>/.omp/agent/commands/*.md`. | Same as user, but per-workspace and shadows user with the same name. | Whatever you write. |
@@ -12,6 +12,11 @@ Type `/` in any composer to open the picker. Commands come from four scopes:
 Picker filtering is fuzzy across name + description. Subcommands (e.g.
 `/mcp add`, `/copy last`) are flattened into top-level entries so typing
 `/add` surfaces `/mcp add` and `/task add` side by side.
+
+Some deck commands (`/plan`) are **client-virtual**: they're injected into
+the picker by the web client and never sent over the WS as text. Selecting
+one — or typing it + Enter — dispatches a typed WS frame directly. Useful
+for UI shortcuts that don't need to round-trip through the agent.
 
 ## Deck slash commands
 
@@ -58,6 +63,29 @@ Moves a task to any column. State match is case-insensitive substring.
 ```
 /task move T-32 blocked
 /task move T-32 active
+```
+
+### `/plan [on|off]`
+
+Toggles plan mode on the active session. Bare `/plan` flips the current
+state; `/plan on` and `/plan off` are explicit. Equivalent to **Shift+Tab**
+in the composer.
+
+While plan mode is on, the agent gets the SDK's plan-mode system prompt +
+the `resolve` tool added to its active tool set, so writes are gated until
+the user approves. When the agent submits a plan via `resolve apply`, the
+chat surfaces an inline `PlanApproval` card with **Reject**, **Approve**,
+and **Edit & approve**. State indicators: header pill, composer border
+tint, sidebar badge on the active session row.
+
+Client-virtual — the command is intercepted by the composer and dispatched
+as a `set_plan_mode` WS frame; it never enters the chat as text and costs
+zero tokens.
+
+```
+/plan          # toggle
+/plan on       # explicit enter
+/plan off      # explicit exit
 ```
 
 ## SDK builtins (text-mode subset)

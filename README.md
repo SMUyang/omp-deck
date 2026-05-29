@@ -1,13 +1,12 @@
 # omp-deck
 
-A cockpit web UI for the [oh-my-pi](https://github.com/can1357/oh-my-pi)
-(`omp`) coding agent. Multi-session chat with full tool-call rendering, a
-kanban backed by SQLite, cron routines, an inbox with one-click promote, a
-plugin marketplace, themable settings, and a Telegram bridge — all in a single
-Bun process, designed to run loopback-only behind Tailscale or an SSH tunnel.
+**A calmer place to drive your coding agent.**
 
-> Status: **v0.2 release — KB Cockpit + Maintenance Gate.**
-> See [CHANGELOG.md](./CHANGELOG.md) for the full feature inventory.
+The [`omp`](https://github.com/can1357/oh-my-pi) terminal agent is excellent at the actual coding. But terminals weren't built for everything that comes with running an agent for hours a day — keeping track of what it's working on, glancing at it from another room, picking up where it left off tomorrow, deciding whether to let it execute the thing it just proposed.
+
+omp-deck is the cockpit you drive omp from when the terminal isn't enough. Same agent, same authentication, same models. Different surface — one that gives the work a place to live.
+
+> **Status:** v0.3.0 — plan mode, queued-prompt editing, todo live-sync, KB cockpit. See [CHANGELOG.md](./CHANGELOG.md).
 
 ![omp-deck chat surface — live tool calls + orientation summary](./docs/screenshots/00-hero-chat-paper.png)
 
@@ -25,230 +24,98 @@ Bun process, designed to run loopback-only behind Tailscale or an SSH tunnel.
 
 </details>
 
-## Why
+## Who this is for
 
-The omp TUI is excellent at what it does, but a terminal isn't always where
-you want to drive an agent — you might want a kanban to track its work, a
-phone bridge to ask it things from the couch, a marketplace to install
-plugins without hand-editing JSON, or just a calmer surface for long
-sessions. omp-deck gives you all of that while reusing the SDK in-process so
-the chat itself stays at parity with the TUI.
+You're already running an agent. You've felt the friction of trying to:
 
-omp-deck is **not** a replacement for `omp`. It embeds the same SDK and
-shares its session + auth store. Run both; they coexist.
+- **Track what it's actually doing for you** as a body of work, not a scroll of terminal output that ends at `Ctrl+L`.
+- **Ask it something from somewhere that isn't your laptop** — the couch, a walk, bed.
+- **Decide carefully** when it's about to do something big, instead of trusting it on the first try.
+- **Capture an idea or a bug** without breaking your current focus.
+- **Have it remember things** across sessions without you stuffing context windows by hand.
 
-## Highlights
+omp-deck is the cockpit that holds all of that. The chat surface stays at parity with the terminal — but everything *around* the chat is built for the rest of the work.
 
-- **Chat** with multi-session sidebar, per-tool renderers (`read` / `write` /
-  `edit` / `bash` / `search` / `lsp` / `task` / `eval` / `web_search` /
-  `todo_write` / `generate_image` / `browser`), thinking blocks, hashline
-  diff coloring, cost rollup, image paste/drop/attach, compaction +
-  auto-retry indicators.
-- **Slash commands** with four scopes (`deck` / `builtin` / `user` /
-  `project`) and in-process dispatch — `/task add`, `/context`, `/compact`,
-  `/usage` run instantly with no model round-trip.
-- **Knowledge base** — `/kb` view over your local Karpathy-style llm-wiki at
-  `~/kb` (override via `OMP_DECK_KB_ROOT`). Lazy tree, markdown viewer with
-  `[[wikilink]]` resolution + create-on-click, in-pane editor, Obsidian-
-  style force-directed graph view (`?view=graph`) with click-to-isolate per
-  source directory, full-text search + Ctrl-P quick-open palette, inspector
-  with outbound links + backlinks + tag chips + orphan badge. Empty kb
-  surfaces a one-click setup flow. Hide subtrees with
-  `OMP_DECK_KB_EXCLUDE_DIRS=<csv>`.
-- **Skills** — `/skills` surfaces every skill omp loads across all providers
-  (`native`, `claude-plugins`, `claude`, `codex`, …), not just marketplace
-  plugins. Native (`~/.omp/agent/skills/`) sorts first. Ships an omp-native
-  `create-skill` starter — first-party authoring loop with no Claude-Code
-  dependencies.
-- **Maintenance gate** — bundled omp SDK extension (installed to
-  `~/.omp/agent/extensions/` on boot) that nudges the agent at turn-end
-  (~every 10 turns) to capture reusable output into the canonical org
-  folders (`inbox/`, `tasks/`, `knowledge/`, `queries/`, `context/`, …)
-  or state "No maintenance needed" to release. Structural org-root sniff
-  only activates for cwds with the canonical layout. Universal across
-  deck, omp TUI, and ACP sessions (the deck wires `ExtensionRunner` into
-  `InProcessAgentBridge`).
-- **Kanban** with Jira-style display IDs (`T-1`, `T-2`, ...), drag-and-drop,
-  configurable columns, and live WebSocket broadcasts — agent or external
-  scripts mutating tasks refresh every open kanban without polling.
-- **Routines V1** — multi-step pipelines, not single-action cron jobs. A
-  routine is a typed YAML spec with `run` / `agent` / `http` / `write` / `deck`
-  / `mcp` / `transform` / `wait` / `set_state` steps plus four trigger kinds
-  (`cron`, `webhook`, `manual`, `event`). Author them visually in the new
-  **canvas builder** (drag, drop, wire branches with `if`-flavored nodes),
-  in form mode, or directly as YAML — all three round-trip the same spec.
-  Live run observability paints per-step status rings, durations, and model
-  / cost badges on the canvas; node-click opens the captured `stdout` /
-  `stderr` / structured JSON. Ships with a `daily-briefing` template that
-  hits the deck's own kanban + inbox and writes a morning summary back via
-  the `deck` action steps.
-- **Inbox** — quick capture surface with promote-to-task.
-- **Settings** — masked secret store with atomic `.env` writes + audit log,
-  hot-applied env updates where possible, a one-click server restart for the
-  rest. Paper / Slate / Horizon themes with FOUC-free pre-paint.
-- **Marketplace** — browse and install plugins/skills/MCPs over the SDK's
-  `MarketplaceManager`. Empty state seeds with
-  `anthropics/claude-plugins-official`.
-- **Model picker** — chat-header modal listing every model the SDK knows
-  about, default-filtered to ones with configured auth, provider-grouped.
-- **Telegram bridge** — standalone Bun process supervised by the deck; DM the
-  agent from your phone with allowlist gating and streaming `editMessageText`
-  replies.
+## What you get
+
+**A kanban that's actually yours.** Backlog → Active → Done columns with drag-and-drop. Tasks get `T-N` display IDs you can refer to in conversation (`/task done T-32`). The agent can mutate the board too — its work becomes visible without you doing the bookkeeping.
+
+**Plan mode** — Shift+Tab in the composer (or `/plan`) flips the active session into read-only-with-resolve mode. The agent investigates, drafts a plan, and surfaces it for your approval. Edit before approving, reject if it's wrong, or hit Approve and watch it execute with full tools restored. Borrowed verbatim from the TUI; brought to where the rest of your workflow lives.
+
+**An inbox you can dump into.** Scratch ideas, bug reports, decisions to revisit. One-click promote to task when the dust settles. No mental context-switch from current work.
+
+**A knowledge base over your own markdown.** Point `/kb` at a `~/kb` directory you already keep (or accept the default), and the deck gives you a tree, viewer, editor, Obsidian-style force-directed graph, full-text search, `[[wikilink]]` resolution + create-on-click. Long-term memory that's plaintext-portable and outlives any agent session.
+
+**Routines.** Multi-step pipelines on a cron, webhook, manual, or event trigger — author them visually on a node canvas, or in YAML if you're that kind of person. Ships with a `daily-briefing` template that wakes up, reads your kanban + inbox, and writes you a one-card morning summary back to the inbox. Build your own from there.
+
+**A messaging bridge to your phone.** Telegram now (Slack / Discord / Matrix on the roadmap). DM the agent from anywhere; replies stream live via `editMessageText`. Allowlist-gated so only you (and whoever you invite) can drive it.
+
+**Multi-session.** The chat sidebar lists every session you have open, plus the persisted ones you can resume. Each gets its own kanban scope, its own model, its own queued prompts. Switch between them without losing place.
+
+**A marketplace.** Browse, install, and uninstall skills/plugins/MCPs over the SDK's plugin format. Empty state seeds with `anthropics/claude-plugins-official` so you're never staring at an empty page.
+
+**Settings that respect your `.env`.** Provider API keys, host/port, data dirs — all manageable from a UI with masked secrets, an audit log, and atomic writes. Hot-applied where possible.
+
+**Three themes.** Paper (warm cream + rust accent, engineer's-notebook aesthetic), Slate (dark), Horizon (purple-ink dark). FOUC-free swap — pick one and refresh-proof it.
+
+## Quickstart
+
+If `omp` already works in a terminal on this machine:
+
+```sh
+git clone https://github.com/bjb2/omp-deck.git
+cd omp-deck
+bun install
+bun run dev
+```
+
+Open <http://127.0.0.1:5173>. Your existing `~/.omp/agent` is picked up automatically — no re-auth.
+
+On Windows, you can also double-click `Start-OMP-Deck.cmd` from the repo root — it boots the server on `:8787`, starts the Vite app on `:5173`, opens the deck in your browser, and writes logs under `.logs/`.
+
+If you don't have omp yet, see [docs/install.md](./docs/install.md) for the full path (install Bun → install the omp CLI → authenticate → clone + run). Or skip the CLI entirely and paste a provider API key into Settings → Env after the deck is up.
 
 ## How it compares
 
-omp-deck only makes sense as a pair with the
-[`omp`](https://github.com/can1357/oh-my-pi) coding agent — omp is the agent
-loop, omp-deck is the cockpit you drive it from. Compared against the closest
-neighbors in the agentic-coding space:
+omp + omp-deck is one slice of a busy space. The neighbors:
 
 |                                | **omp + omp-deck**                                                                | **[Claude Code](https://github.com/anthropics/claude-code)** | **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** | **[OpenClaw](https://github.com/openclaw/openclaw)**                       |
 |--------------------------------|-----------------------------------------------------------------------------------|--------------------------------------------------------------|------------------------------------------------------------------|----------------------------------------------------------------------------|
 | Form factor                    | Terminal TUI (omp) + web cockpit (omp-deck)                                       | Terminal CLI / IDE plugin                                    | Terminal TUI + multi-channel gateway                             | Daemon + multi-channel gateway                                             |
-| Underlying agent               | omp, in-process via `@oh-my-pi/pi-coding-agent` SDK                               | Anthropic-built CLI                                          | Hermes core (Nous Research)                                      | OpenClaw Gateway                                                           |
 | Model support                  | Anthropic, OpenAI, Google AI / Vertex, OpenRouter, Ollama, llama.cpp, LM Studio, any OpenAI-compatible | Anthropic Claude only                                        | Model-agnostic (Nous Portal, OpenRouter, NIM, …)                 | Model-agnostic (profiles in `openclaw.json`, w/ fallback chain)            |
 | Hosting                        | Self-hosted Bun process, loopback-only by default                                 | Anthropic-hosted CLI                                         | Local / Docker / SSH / Modal / Daytona / Vercel Sandbox          | Self-hosted on owned host (Mac mini, VPS)                                  |
-| Auth                           | OAuth, API key, or provider key — shared with the omp CLI                         | Anthropic OAuth / API key                                    | Per-provider keys                                                | Per-provider keys + profile rotation                                       |
-| Multi-session chat             | First-class sidebar in the deck                                                   | Single session at a time                                     | Single agent across channels                                     | Per-channel sessions                                                       |
 | Kanban / task board            | Built-in, WS-synced, `T-N` display IDs                                            | —                                                            | —                                                                | —                                                                          |
-| Routines / scheduled work      | V1 multi-step pipelines (`run`/`agent`/`http`/`write`/`deck`/`mcp`/`transform`/`wait`/`set_state`); cron / webhook / manual / event triggers | — | — | Heartbeat scheduler (~30 min)  |
-| Visual builder & observability | React Flow canvas: graph authoring with branch compilation, drag-position persistence, per-step run status rings + duration / model / cost badges, click-to-output preview | — | — | — |
-| Knowledge base                 | `/kb` cockpit over local `~/kb` markdown wiki: tree + viewer + editor, `[[wikilink]]` resolution + backlinks, force-directed graph, full-text + Ctrl-P search | —                                                            | "Deepening user model" (internal, not a markdown wiki)           | —                                                                          |
+| Plan mode                      | Shift+Tab / `/plan` → propose → approve/edit/reject before execution              | TUI plan-mode equivalent                                     | —                                                                | —                                                                          |
+| Routines / scheduled work      | Multi-step pipelines + visual canvas + per-step observability                     | —                                                            | —                                                                | Heartbeat scheduler (~30 min)                                              |
+| Knowledge base                 | `/kb` cockpit over local markdown wiki + graph + backlinks                        | —                                                            | "Deepening user model" (internal, not a markdown wiki)           | —                                                                          |
 | Inbox + promote-to-task        | Built-in                                                                          | —                                                            | —                                                                | —                                                                          |
-| Plugins / skills               | SDK loader + in-app marketplace (Anthropic plugin format)                         | `claude plugins` registry                                    | Skills with autonomous creation + refinement                     | Skills installed from ClawHub; skills can write skills                     |
-| Self-improving over time       | Maintenance-gate extension nudges the agent to capture reusable output into `knowledge/` / `tasks/` / `inbox/` each turn; skills themselves are user/marketplace-authored | — | ✅ learning loop, deepening user model | Skills can self-install |
 | Messenger bridges              | Telegram (Slack / Discord / Matrix on the roadmap)                                | —                                                            | Telegram, Discord, Slack, WhatsApp, Signal                       | 20+ (WhatsApp, Telegram, Slack, Discord, iMessage, Matrix, Teams, …)       |
-| License                        | MIT                                                                               | Proprietary (Anthropic Commercial Terms)                     | Open source (Nous Research)                                      | Open source                                                                |
+| License                        | MIT                                                                               | Proprietary                                                  | Open source                                                      | Open source                                                                |
 
-The short version: **Claude Code** is the polished, vendor-supported terminal
-experience for Claude. **Hermes** is the self-improving agent that compounds
-skills over time and supports serverless backends. **OpenClaw** is the
-multi-channel personal assistant that lives wherever you message from.
-**omp + omp-deck** is the cockpit shape — a model-agnostic coding agent in
-your terminal *plus* a kanban / multi-step routines with a visual builder /
-inbox / knowledge-base cockpit / marketplace / Telegram-bridge web surface
-to drive it.
+The short version: **Claude Code** is the polished vendor experience for Claude. **Hermes** is the self-improving agent with serverless backends. **OpenClaw** lives wherever you message from. **omp + omp-deck** is the cockpit shape — a model-agnostic coding agent with a web surface for the work *around* the chat (kanban, routines, KB, inbox, plan-mode approval, messaging bridge).
 
-## Quickstart
+## A few notes on running it
 
-### If you already use omp on this machine
+**It's not a hosted product.** You run it yourself, on your machine or in a VM you own. Defaults are loopback-only — to reach it from your phone, front it with Tailscale Serve, an SSH tunnel, or a reverse proxy with its own auth. See [docs/deployment.md](./docs/deployment.md) for the hardening checklist.
 
-```sh
-git clone https://github.com/bjb2/omp-deck.git
-cd omp-deck
-bun install
-bun run dev
-```
+**It's not a replacement for `omp`.** It embeds the same SDK in-process and shares the same `~/.omp/agent` session + auth store. Run both — they coexist. The terminal is still where you'll do quick one-shots; the deck is where work sticks around.
 
-Open <http://127.0.0.1:5173>. Your existing `~/.omp/agent` is picked up
-automatically — no re-auth.
-
-On Windows, you can also double-click `Start-OMP-Deck.cmd` from the repo root.
-It starts the background API server on <http://127.0.0.1:8787>, starts the
-Vite web app on <http://127.0.0.1:5173>, opens the deck in your browser, and
-writes process logs under `.logs/`.
-
-### If you don't have omp yet
-
-See [docs/install.md](./docs/install.md). The short version:
-
-```sh
-# 1. Install Bun (https://bun.sh)
-# 2. Install the omp CLI globally so you can authenticate
-bun add -g @oh-my-pi/pi-coding-agent
-omp                                          # interactive auth (browser OAuth or API key)
-# 3. Clone and run the deck
-git clone https://github.com/bjb2/omp-deck.git
-cd omp-deck
-bun install
-bun run dev
-```
-
-Or skip the CLI entirely and paste your provider API key into Settings →
-Env after the deck is up.
-
-## Architecture in two lines
-
-A Bun + Hono backend embeds `@oh-my-pi/pi-coding-agent`. The Vite + React
-frontend is a pure consumer of a WebSocket event stream. The contract layer
-(`packages/protocol`) is dep-free shared types.
-
-```
-Browser (Vite :5173 or built bundle on :8787)
-   │  WS frames + REST control plane
-   ▼
-Bun server  (apps/server)
-   ├─ AgentBridge → InProcessAgentBridge → omp SDK
-   ├─ Hono routes  /api/{sessions, tasks, routines, inbox, settings,
-   │                     models, marketplace, bridges, slash-commands, fs}
-   ├─ WebSocket hub  /ws  (session events + tasks_changed broadcasts)
-   ├─ Routines runner (croner)
-   ├─ BridgeSupervisor (telegram bridge, future Slack/Discord)
-   └─ MarketplaceService (SDK MarketplaceManager wrapper)
-```
-
-Full diagram in [docs/architecture.md](./docs/architecture.md).
+**State is yours.** Tasks, inbox, routines, KB — all SQLite + plain markdown on disk. No telemetry. The deck never logs secret values, only redacted forms.
 
 ## Docs
 
 - [Install](./docs/install.md) — fresh vs existing-omp install paths.
-- [Configuration](./docs/configuration.md) — full env reference + restart
-  semantics.
-- [Deployment](./docs/deployment.md) — Tailscale, Docker, SSH-tunnel,
-  hardening checklist.
-- [Slash commands](./docs/slash-commands.md) — deck `/task` family, SDK
-  builtins, user/project markdown commands.
-- [Marketplaces](./docs/marketplaces.md) — catalog seeding, install
-  semantics, capability badges.
-- [Skills](./docs/skills.md) — `/skills` view, plugin→skill hierarchy, scope
-  semantics, live refresh, REST surface.
+- [Configuration](./docs/configuration.md) — full env reference + restart semantics.
+- [Deployment](./docs/deployment.md) — Tailscale, Docker, SSH-tunnel, hardening checklist.
+- [Slash commands](./docs/slash-commands.md) — deck `/task` + `/plan`, SDK builtins, user/project markdown commands.
+- [Marketplaces](./docs/marketplaces.md) — catalog seeding, install semantics, capability badges.
+- [Skills](./docs/skills.md) — `/skills` view, plugin → skill hierarchy, scope semantics, REST surface.
 - [Telegram bridge](./docs/telegram.md) — DM-driven agent from your phone.
 - [Themes](./docs/themes.md) — Paper / Slate / Horizon / adding more.
-- [Start command template](./docs/start-command-template.md) — define
-  `/start` for an auto-orientation greeting.
-- [Architecture](./docs/architecture.md) — workspace layout, frame model,
-  synthetic events, theming.
+- [Start command template](./docs/start-command-template.md) — define `/start` for auto-orientation.
+- [Architecture](./docs/architecture.md) — workspace layout, frame model, synthetic events, theming.
 - [TUI parity](./docs/tui-parity.md) — feature matrix vs the omp TUI.
 - [Contributing](./CONTRIBUTING.md) — dev loop, code quality, style.
-
-## Security
-
-The deck ships **without an auth layer**. Bind it loopback-only (the default)
-and front it with Tailscale Serve / SSH tunnel / a reverse proxy. The
-hardening checklist in [docs/deployment.md](./docs/deployment.md#hardening-checklist)
-covers what to verify before exposing the deck to a network anyone else can
-reach.
-
-Provider API keys live in env vars (your shell, or the deck-managed `.env`).
-The Settings UI masks them by default; revealing a secret requires a loopback
-request. The deck never logs values, only redacted forms.
-
-## Status & roadmap
-
-**v0.2 shipped:**
-
-- KB Cockpit (tree / viewer / editor / graph / search / inspector) over
-  `~/kb` with live updates.
-- Skills cockpit pivoted to omp-native (`loadCapability` over all providers).
-- Bundled `create-skill` and `maintenance-gate` starters; deck installs
-  them on boot and `InProcessAgentBridge` now wires `ExtensionRunner` so
-  extensions actually fire in deck sessions.
-- Horizon theme (ported from
-  [opus-extensions/omp-themes/horizon.json](https://github.com/vincitamore/misc/tree/main/opus-extensions/omp-themes)).
-- External links open in a new tab across every markdown surface.
-- CRLF-tolerant frontmatter parsing fixes Windows-saved YAML.
-- Interactive `ask` tool bridged into the web UI via the new `ext_ui_dialog_*`
-  WS frames — the agent can now ask the user mid-execution and receive
-  selections / free-form text. Same channel also powers any extension calling
-  `ctx.ui.select / editor / confirm / input`.
-
-**Still deferred:**
-
-- Plan-mode UI (banner + plan file viewer).
-- File browser in the inspector.
-- Subprocess-per-session bridge impl for crash isolation.
-- Slack / Discord / Matrix bridges (same supervisor pattern as Telegram).
-- `bunx omp-deck` install path / Docker image build verified.
 
 ## License
 
