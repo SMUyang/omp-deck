@@ -1,3 +1,6 @@
+# prepack stash (restored by postpack; transient)
+.publish-stash/
+
 # npm pack output
 omp-deck-*.tgz
 
