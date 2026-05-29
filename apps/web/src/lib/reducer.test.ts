@@ -155,3 +155,71 @@ describe("reducer todo_phases_set (T-106)", () => {
 		expect(s.todoPhases[0]!.name).toBe("from-sync");
 	});
 });
+
+describe("reducer queue_state event", () => {
+	test("replaces queuedPrompts wholesale with the broadcast list", () => {
+		let s = fresh();
+		s = applyEvent(s, queueEvent("a", "1"));
+		s = applyEvent(s, queueEvent("b", "2"));
+		s = applyEvent(s, queueEvent("c", "3"));
+
+		s = applyEvent(s, {
+			type: "queue_state",
+			queue: [
+				{ id: "1", text: "a", behavior: "followUp", queuedAt: 1 },
+				{ id: "3", text: "c", behavior: "followUp", queuedAt: 3 },
+			],
+		} as never);
+		expect(s.queuedPrompts.map((q) => q.id)).toEqual(["1", "3"]);
+	});
+
+	test("returns the same state ref when the broadcast queue is structurally identical", () => {
+		let s = fresh();
+		s = applyEvent(s, queueEvent("a", "1"));
+		const before = s;
+		s = applyEvent(s, {
+			type: "queue_state",
+			queue: [{ id: "1", text: "a", behavior: "followUp", queuedAt: 1 }],
+		} as never);
+		expect(s).toBe(before);
+	});
+
+	test("queue_state with edited text on the same id updates that entry only", () => {
+		let s = fresh();
+		s = applyEvent(s, queueEvent("draft", "x"));
+		s = applyEvent(s, {
+			type: "queue_state",
+			queue: [{ id: "x", text: "polished", behavior: "followUp", queuedAt: 1 }],
+		} as never);
+		expect(s.queuedPrompts[0]).toMatchObject({ id: "x", text: "polished" });
+	});
+
+	test("malformed queue entries (no id) are dropped, not crashed on", () => {
+		const s = applyEvent(fresh(), {
+			type: "queue_state",
+			queue: [
+				{ text: "ghost", behavior: "followUp" },
+				{ id: "ok", text: "kept", behavior: "followUp", queuedAt: 1 },
+			],
+		} as never);
+		expect(s.queuedPrompts.map((q) => q.id)).toEqual(["ok"]);
+	});
+});
+
+describe("reducer queuedPrompts snapshot hydration", () => {
+	test("initSession hydrates queuedPrompts from snapshot when present", () => {
+		const s = initSession({
+			sessionId: "s1",
+			cwd: "/tmp/x",
+			isStreaming: true,
+			messages: [],
+			todoPhases: [],
+			queuedPrompts: [
+				{ id: "k1", text: "first", behavior: "followUp", queuedAt: 1 },
+				{ id: "k2", text: "second", behavior: "steer", queuedAt: 2 },
+			],
+		});
+		expect(s.queuedPrompts.map((q) => q.id)).toEqual(["k1", "k2"]);
+		expect(s.queuedPrompts[1]?.behavior).toBe("steer");
+	});
+});

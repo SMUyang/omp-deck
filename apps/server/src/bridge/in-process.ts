@@ -539,7 +539,7 @@ export class InProcessAgentBridge implements AgentBridge {
 	}
 }
 
-class InProcessSessionHandle implements SessionHandle {
+export class InProcessSessionHandle implements SessionHandle {
 	readonly sessionId: string;
 	readonly cwd: string;
 	private session: AgentSession;
@@ -549,6 +549,20 @@ class InProcessSessionHandle implements SessionHandle {
 	private listeners = new Set<EventListener>();
 	private onDisposeCallback: () => void;
 	private disposed = false;
+	/**
+	 * Shadow of the SDK's pending-prompt queue. Entries are appended in
+	 * `prompt()` when the SDK confirms a queue (wasStreaming = true) and
+	 * removed in two ways:
+	 *   - SDK drains the head as a new turn starts → caught in `emit()` on
+	 *     the matching user `message_start` (matches by text, mirroring the
+	 *     web reducer's drain rule).
+	 *   - User explicitly cancels / edits via `cancelQueuedById` /
+	 *     `editQueuedById` / `clearQueue`.
+	 * The wire id (`queuedId` echoed in `prompt_queued`) is the same id used
+	 * for cancel/edit targeting, so client and server agree without a
+	 * separate id mapping table.
+	 */
+	private shadowQueue: import("@omp-deck/protocol").QueuedPromptWire[] = [];
 
 	constructor(args: {
 		session: AgentSession;
@@ -580,11 +594,58 @@ class InProcessSessionHandle implements SessionHandle {
 	}
 
 	emit(event: AgentSessionEventJson): void {
+		this.maybeDrainShadowHead(event);
 		for (const listener of this.listeners) {
 			try {
 				listener(event);
 			} catch (err) {
 				log.warn(`listener failed`, err);
+			}
+		}
+	}
+
+	/**
+	 * When the SDK starts a new turn it emits a `message_start` for the
+	 * (non-synthetic) user message that triggered it. If that message text
+	 * matches a shadowed queued prompt, the SDK drained it from the queue —
+	 * pop the matching entry so the deck UI's queued-bubble disappears in
+	 * lockstep with the real user bubble that appears.
+	 *
+	 * Match-by-text is brittle on duplicates but mirrors the web reducer's
+	 * existing logic; the bridge keeps its shadow text aligned with the
+	 * SDK-stored expansion (see `prompt()`) so slash-expanded prompts match.
+	 */
+	private maybeDrainShadowHead(event: AgentSessionEventJson): void {
+		if (this.shadowQueue.length === 0) return;
+		if ((event as { type?: string }).type !== "message_start") return;
+		const message = (event as { message?: { role?: string; content?: unknown; synthetic?: boolean } }).message;
+		if (!message || message.role !== "user" || message.synthetic) return;
+		const text = extractMessageText(message.content);
+		if (!text) return;
+		const idx = this.shadowQueue.findIndex((q) => q.text === text);
+		if (idx < 0) return;
+		this.shadowQueue.splice(idx, 1);
+		this.emitQueueState();
+	}
+
+	/**
+	 * Broadcast the current shadow queue to subscribers so they can replace
+	 * their local `queuedPrompts` wholesale. Used after cancel/edit/clear
+	 * and on drain. Carries `null` for empty so the reducer can distinguish
+	 * "queue actively empty" from "no state delivered yet".
+	 */
+	private emitQueueState(): void {
+		// Direct fan-out — do NOT route through `emit()` or we'd recurse via
+		// `maybeDrainShadowHead`.
+		const frame = {
+			type: "queue_state",
+			queue: [...this.shadowQueue],
+		} as unknown as AgentSessionEventJson;
+		for (const listener of this.listeners) {
+			try {
+				listener(frame);
+			} catch (err) {
+				log.warn(`queue_state listener failed`, err);
 			}
 		}
 	}
@@ -611,6 +672,7 @@ class InProcessSessionHandle implements SessionHandle {
 		if (planMode) snap.planMode = planMode;
 		const pendingPlan = this.planBridge.getPendingPlanApproval();
 		if (pendingPlan) snap.pendingPlanApproval = pendingPlan;
+		if (this.shadowQueue.length > 0) snap.queuedPrompts = [...this.shadowQueue];
 		return snap;
 	}
 
@@ -747,20 +809,34 @@ class InProcessSessionHandle implements SessionHandle {
 		// The deck UI uses this to surface a "queued" bubble — without it, prompts
 		// sent during streaming look like they vanished until the current turn ends.
 		const wasStreaming = this.isStreamingNow();
+		const behavior = (opts?.streamingBehavior ?? "followUp") as "steer" | "followUp";
 		const promptOpts: Record<string, unknown> = {};
 		if (opts?.streamingBehavior) promptOpts.streamingBehavior = opts.streamingBehavior;
 		if (opts?.images && opts.images.length > 0) promptOpts.images = opts.images;
 		await this.session.prompt(text, Object.keys(promptOpts).length > 0 ? (promptOpts as any) : undefined);
 		if (wasStreaming) {
-			const behavior = (opts?.streamingBehavior ?? "followUp") as "steer" | "followUp";
+			const queuedId = crypto.randomUUID();
+			// Align shadow text with whatever the SDK actually stored (post-
+			// slash/template expansion) so head-drain matching survives expansion.
+			// Falls back to the raw text when the SDK doesn't expose getQueuedMessages.
+			const storedText = this.readLastQueuedText(behavior) ?? text;
+			const entry: import("@omp-deck/protocol").QueuedPromptWire = {
+				id: queuedId,
+				text: storedText,
+				behavior,
+				queuedAt: Date.now(),
+			};
+			if (opts?.images && opts.images.length > 0) entry.images = opts.images;
+			this.shadowQueue.push(entry);
 			this.emit({
 				type: "prompt_queued",
-				queuedId: crypto.randomUUID(),
-				text,
+				queuedId,
+				text: storedText,
 				images: opts?.images,
 				behavior,
 				queueLength: this.queuedMessageCount(),
 			} as unknown as AgentSessionEventJson);
+			this.emitQueueState();
 		}
 	}
 
@@ -774,6 +850,10 @@ class InProcessSessionHandle implements SessionHandle {
 		return typeof s.queuedMessageCount === "number" ? s.queuedMessageCount : 0;
 	}
 
+	getQueueSnapshot(): import("@omp-deck/protocol").QueuedPromptWire[] {
+		return [...this.shadowQueue];
+	}
+
 	clearQueue(): { steering: number; followUp: number } {
 		const s = this.session as unknown as {
 			clearQueue?: () => { steering: string[]; followUp: string[] };
@@ -781,13 +861,157 @@ class InProcessSessionHandle implements SessionHandle {
 		if (typeof s.clearQueue !== "function") return { steering: 0, followUp: 0 };
 		const dropped = s.clearQueue();
 		const counts = { steering: dropped.steering.length, followUp: dropped.followUp.length };
+		const hadShadow = this.shadowQueue.length > 0;
+		this.shadowQueue = [];
 		if (counts.steering + counts.followUp > 0) {
 			this.emit({
 				type: "queue_cleared",
 				cleared: counts,
 			} as unknown as AgentSessionEventJson);
 		}
+		if (hadShadow) this.emitQueueState();
 		return counts;
+	}
+
+	async cancelQueuedById(id: string): Promise<boolean> {
+		const idx = this.shadowQueue.findIndex((q) => q.id === id);
+		if (idx < 0) return false;
+		await this.rebuildQueueExcept(idx, undefined);
+		return true;
+	}
+
+	async editQueuedById(
+		id: string,
+		text: string,
+		images?: import("@omp-deck/protocol").ImageAttachment[],
+	): Promise<boolean> {
+		const idx = this.shadowQueue.findIndex((q) => q.id === id);
+		if (idx < 0) return false;
+		await this.rebuildQueueExcept(idx, { text, images });
+		return true;
+	}
+
+	/**
+	 * Rebuild the SDK queue by popping every entry and re-enqueueing
+	 * survivors. When `replace` is undefined the entry at `targetIdx` is
+	 * dropped (cancel); when set, its text/images are substituted in place
+	 * (edit). Preserves order and the `queuedId` of every other entry so
+	 * client bubbles don't flicker.
+	 *
+	 * Safety: the operation is only safe while a turn is in flight (queue is
+	 * non-empty by precondition). The pop loop is synchronous so no
+	 * microtasks can run mid-loop; the re-enqueue calls are kicked off
+	 * synchronously (their sync prelude all observes `isStreaming = true`
+	 * because the active turn is still streaming) and awaited in parallel.
+	 */
+	private async rebuildQueueExcept(
+		targetIdx: number,
+		replace: { text: string; images?: import("@omp-deck/protocol").ImageAttachment[] } | undefined,
+	): Promise<void> {
+		const sdk = this.session as unknown as {
+			popLastQueuedMessage?: () => string | undefined;
+			isStreaming?: boolean;
+		};
+		if (typeof sdk.popLastQueuedMessage !== "function") {
+			throw new Error("session.popLastQueuedMessage is not available on this SDK build");
+		}
+		// Capture survivors with original ids preserved. The edited entry
+		// keeps its id so the deck bubble doesn't re-key.
+		const survivors: import("@omp-deck/protocol").QueuedPromptWire[] = [];
+		for (let i = 0; i < this.shadowQueue.length; i++) {
+			const entry = this.shadowQueue[i]!;
+			if (i === targetIdx) {
+				if (!replace) continue;
+				const next: import("@omp-deck/protocol").QueuedPromptWire = {
+					id: entry.id,
+					text: replace.text,
+					behavior: entry.behavior,
+					queuedAt: entry.queuedAt,
+				};
+				if (replace.images && replace.images.length > 0) next.images = replace.images;
+				survivors.push(next);
+			} else {
+				survivors.push(entry);
+			}
+		}
+		// Synchronously drain the SDK queue. popLastQueuedMessage is sync;
+		// no microtask boundary inside this loop.
+		while (this.queuedMessageCount() > 0) {
+			sdk.popLastQueuedMessage();
+		}
+		// Kick off re-enqueues synchronously so each `session.prompt` sync
+		// prelude sees `isStreaming = true`. Collect promises; await later.
+		const promises: Promise<void>[] = [];
+		for (const entry of survivors) {
+			const opts: Record<string, unknown> = { streamingBehavior: entry.behavior };
+			if (entry.images && entry.images.length > 0) opts.images = entry.images;
+			promises.push(this.session.prompt(entry.text, opts as any));
+		}
+		this.shadowQueue = survivors;
+		try {
+			await Promise.all(promises);
+			// Re-align text against the SDK's post-expansion store, by bucket.
+			const bucketed = this.readQueuedTextsByBehavior();
+			let stIdx = 0;
+			let fuIdx = 0;
+			for (const s of this.shadowQueue) {
+				const bucket = s.behavior === "steer" ? bucketed.steering : bucketed.followUp;
+				const i = s.behavior === "steer" ? stIdx++ : fuIdx++;
+				const actual = bucket[i];
+				if (typeof actual === "string") s.text = actual;
+			}
+		} catch (err) {
+			log.warn(`re-enqueue after queue manipulation failed`, err);
+			// Shadow may be ahead of reality; resync from SDK as best-effort.
+			this.shadowQueue = this.resyncShadowFromSdk(this.shadowQueue);
+		}
+		this.emitQueueState();
+	}
+
+	private readLastQueuedText(behavior: "steer" | "followUp"): string | undefined {
+		const sdk = this.session as unknown as {
+			getQueuedMessages?: () => { steering: string[]; followUp: string[] };
+		};
+		if (typeof sdk.getQueuedMessages !== "function") return undefined;
+		const q = sdk.getQueuedMessages();
+		const bucket = behavior === "steer" ? q.steering : q.followUp;
+		return bucket[bucket.length - 1];
+	}
+
+	private readQueuedTextsByBehavior(): { steering: string[]; followUp: string[] } {
+		const sdk = this.session as unknown as {
+			getQueuedMessages?: () => { steering: string[]; followUp: string[] };
+		};
+		if (typeof sdk.getQueuedMessages !== "function") return { steering: [], followUp: [] };
+		return sdk.getQueuedMessages();
+	}
+
+	/**
+	 * Last-ditch resync: if a queue manipulation lost track, rebuild the
+	 * shadow from the SDK's text-only view. Re-uses caller-supplied ids
+	 * positionally (steering bucket first, then followUp) so most bubbles
+	 * keep their id; any extras get a fresh uuid.
+	 */
+	private resyncShadowFromSdk(
+		previous: import("@omp-deck/protocol").QueuedPromptWire[],
+	): import("@omp-deck/protocol").QueuedPromptWire[] {
+		const q = this.readQueuedTextsByBehavior();
+		const ordered: { text: string; behavior: "steer" | "followUp" }[] = [];
+		for (const t of q.steering) ordered.push({ text: t, behavior: "steer" });
+		for (const t of q.followUp) ordered.push({ text: t, behavior: "followUp" });
+		const out: import("@omp-deck/protocol").QueuedPromptWire[] = [];
+		for (let i = 0; i < ordered.length; i++) {
+			const prev = previous[i];
+			const e = ordered[i]!;
+			out.push({
+				id: prev?.id ?? crypto.randomUUID(),
+				text: e.text,
+				behavior: e.behavior,
+				queuedAt: prev?.queuedAt ?? Date.now(),
+				...(prev?.images ? { images: prev.images } : {}),
+			});
+		}
+		return out;
 	}
 
 	async abort(): Promise<void> {
@@ -905,4 +1129,31 @@ function modelInfoFromSdk(
 		info.isCurrent = true;
 	}
 	return info;
+}
+
+/**
+ * Extract the user-visible text from an SDK user-message `content` field.
+ * Mirrors the shape variations the SDK emits: plain string, an array of
+ * blocks like `{type:"text", text}`, or an object with a `.text` field.
+ * Returns the empty string when nothing text-like is present (e.g.
+ * image-only message).
+ */
+function extractMessageText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) {
+		const parts: string[] = [];
+		for (const block of content) {
+			if (typeof block === "string") parts.push(block);
+			else if (block && typeof block === "object") {
+				const b = block as { type?: string; text?: unknown };
+				if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
+			}
+		}
+		return parts.join("");
+	}
+	if (content && typeof content === "object") {
+		const c = content as { text?: unknown };
+		if (typeof c.text === "string") return c.text;
+	}
+	return "";
 }

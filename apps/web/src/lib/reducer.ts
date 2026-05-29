@@ -51,7 +51,7 @@ export function initSession(snapshot: SessionSnapshot): SessionUi {
 		usage: { ...EMPTY_USAGE },
 		turnCount: 0,
 		contextUsage: snapshot.contextUsage,
-		queuedPrompts: [],
+		queuedPrompts: hydrateQueuedPrompts(snapshot.queuedPrompts),
 		planMode: snapshot.planMode,
 		pendingPlanApproval: snapshot.pendingPlanApproval,
 	};
@@ -338,6 +338,22 @@ export function applyEvent(state: SessionUi, event: AgentSessionEventJson): Sess
 			return state.queuedPrompts.length === 0
 				? state
 				: { ...state, queuedPrompts: [] };
+
+		// `queue_state` is the authoritative re-broadcast emitted after a
+		// cancel / edit / drain so the client replaces its `queuedPrompts`
+		// wholesale instead of patching deltas. Also fires on every
+		// `prompt_queued` so the snapshot id-ordering stays canonical.
+		case "queue_state": {
+			const ev = event as { queue?: unknown };
+			const next = hydrateQueuedPrompts(ev.queue);
+			if (next.length === state.queuedPrompts.length && next.every((q, i) => {
+				const prev = state.queuedPrompts[i];
+				return prev && prev.id === q.id && prev.text === q.text;
+			})) {
+				return state;
+			}
+			return { ...state, queuedPrompts: next };
+		}
 	}
 	return state;
 }
@@ -625,4 +641,36 @@ function coerceTask(t: any) {
 		status: String(t?.status ?? "pending"),
 		notes: Array.isArray(t?.notes) ? (t.notes as unknown[]).map(String) : undefined,
 	};
+}
+/**
+ * Normalize the wire shape (`QueuedPromptWire[]`) into the UI's
+ * `QueuedPrompt[]`. Tolerates missing optional fields and skips anything
+ * that doesn't carry at least an id+text — the bridge is canonical but the
+ * reducer guards against malformed events from older server builds.
+ */
+function hydrateQueuedPrompts(raw: unknown): QueuedPrompt[] {
+	if (!Array.isArray(raw)) return [];
+	const out: QueuedPrompt[] = [];
+	for (const r of raw) {
+		if (!r || typeof r !== "object") continue;
+		const w = r as {
+			id?: unknown;
+			text?: unknown;
+			images?: unknown;
+			behavior?: unknown;
+			queuedAt?: unknown;
+		};
+		if (typeof w.id !== "string" || w.id.length === 0) continue;
+		const entry: QueuedPrompt = {
+			id: w.id,
+			text: typeof w.text === "string" ? w.text : "",
+			behavior: w.behavior === "steer" ? "steer" : "followUp",
+			queuedAt: typeof w.queuedAt === "number" ? w.queuedAt : Date.now(),
+		};
+		if (Array.isArray(w.images) && w.images.length > 0) {
+			entry.images = w.images as ImageBlock[];
+		}
+		out.push(entry);
+	}
+	return out;
 }

@@ -112,6 +112,31 @@ export interface SessionHandle {
 	/** Drop every queued prompt. Returns the per-bucket counts that were
 	 *  cleared so the caller can surface a `queue_cleared` event. */
 	clearQueue(): { steering: number; followUp: number };
+	/**
+	 * Snapshot of the bridge-tracked shadow queue (the user-visible queue
+	 * mirrored from the SDK). Includes stable `id`s the client can use to
+	 * target a specific entry for cancel/edit. Empty when no turn is in flight.
+	 */
+	getQueueSnapshot(): import("@omp-deck/protocol").QueuedPromptWire[];
+	/**
+	 * Cancel a single queued prompt by its `id`. Returns true if an entry
+	 * was removed, false if the id was unknown (already drained, etc).
+	 * Emits a synthetic `queue_state` event on success so subscribers
+	 * reconcile their `queuedPrompts` list.
+	 */
+	cancelQueuedById(id: string): Promise<boolean>;
+	/**
+	 * Replace a queued prompt's text (and optionally images) in place.
+	 * Returns true if the edit landed, false if the id was unknown.
+	 * Implementation pops every SDK queue entry synchronously then
+	 * re-enqueues survivors with the edited entry substituted — order
+	 * preserved. Emits a synthetic `queue_state` event on success.
+	 */
+	editQueuedById(
+		id: string,
+		text: string,
+		images?: import("@omp-deck/protocol").ImageAttachment[],
+	): Promise<boolean>;
 	abort(): Promise<void>;
 	setName(name: string): Promise<void>;
 	/**

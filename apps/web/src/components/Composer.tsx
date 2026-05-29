@@ -681,12 +681,13 @@ export function Composer() {
 					{isBusy ? (
 						<button
 							type="button"
-							className="btn-danger h-7 px-2 text-xs self-end"
+							className="btn-danger h-7 gap-1 self-end px-2 text-xs"
 							onClick={() => abort()}
-							aria-label="Abort"
-							title="Abort"
+							aria-label="Stop streaming (Ctrl+.)"
+							title="Stop streaming (Ctrl+.)"
 						>
-							<Square className="h-3 w-3" />
+							<Square className="h-3 w-3" fill="currentColor" />
+							<span className="font-mono uppercase tracking-meta text-2xs">stop</span>
 						</button>
 					) : (
 						<button

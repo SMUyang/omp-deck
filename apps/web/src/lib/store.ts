@@ -167,6 +167,11 @@ interface StoreState {
 	 *  Server echoes a `queue_cleared` session event that reconciles
 	 *  `queuedPrompts` in the reducer. */
 	clearQueue(): void;
+	/** Cancel a single queued prompt by its server-assigned id. Server echoes
+	 *  a `queue_state` session event with the new ordered queue. */
+	cancelQueued(queuedId: string): void;
+	/** Edit a queued prompt's text (and optionally images) in place. */
+	editQueued(queuedId: string, text: string, images?: import("@omp-deck/protocol").ImageAttachment[]): void;
 	disposeSession(id: string): Promise<void>;
 	renameSession(id: string, name: string): Promise<void>;
 	toggleAllToolCards(): void;
@@ -301,6 +306,21 @@ export const useStore = create<StoreState>()(
 			const id = get().activeId;
 			if (!id) return;
 			get().ws?.send({ type: "clear_queue", sessionId: id });
+		},
+
+		cancelQueued(queuedId: string) {
+			const id = get().activeId;
+			if (!id) return;
+			get().ws?.send({ type: "cancel_queued", sessionId: id, queuedId });
+		},
+
+		editQueued(queuedId, text, images) {
+			const id = get().activeId;
+			if (!id) return;
+			const frame: Parameters<NonNullable<StoreState["ws"]>["send"]>[0] = images && images.length > 0
+				? { type: "edit_queued", sessionId: id, queuedId, text, images }
+				: { type: "edit_queued", sessionId: id, queuedId, text };
+			get().ws?.send(frame);
 		},
 
 		async disposeSession(id: string) {

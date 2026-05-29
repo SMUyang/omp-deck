@@ -682,6 +682,27 @@ export interface SessionSnapshot {
 	 * page reload re-renders the PlanApproval inline component.
 	 */
 	pendingPlanApproval?: PendingPlanApprovalWire;
+	/**
+	 * Prompts the SDK currently has queued for execution after the active
+	 * turn finishes. Empty when no turn is in flight or no queued prompts
+	 * exist. Included in the snapshot so a page-reload subscriber sees the
+	 * queue immediately instead of waiting for the next `queue_state` event.
+	 */
+	queuedPrompts?: QueuedPromptWire[];
+}
+
+/**
+ * Wire shape of a queued prompt. Mirrors what the deck UI renders for the
+ * "queued" bubble. `id` is the bridge-assigned `queuedId` echoed back in
+ * `prompt_queued` and `queue_state` events so the client can target a
+ * specific entry for cancel/edit.
+ */
+export interface QueuedPromptWire {
+	id: string;
+	text: string;
+	images?: ImageAttachment[];
+	behavior: "steer" | "followUp";
+	queuedAt: number;
 }
 
 /**
@@ -733,6 +754,26 @@ export type ClientFrame =
 	 * reconcile their `queuedPrompts` UI state.
 	 */
 	| { type: "clear_queue"; sessionId: string }
+	/**
+	 * Cancel a single queued prompt by its `queuedId`. The server replies
+	 * with a synthetic `queue_state` session event carrying the new ordered
+	 * queue so subscribed clients can reconcile. No-op if the id is unknown
+	 * (already drained, never queued, or wrong session).
+	 */
+	| { type: "cancel_queued"; sessionId: string; queuedId: string }
+	/**
+	 * Edit a queued prompt's text (and optionally images). Server pops every
+	 * SDK queue entry and re-enqueues survivors with the edited entry's
+	 * content substituted in-place — order preserved. Same `queue_state`
+	 * echo as cancel.
+	 */
+	| {
+			type: "edit_queued";
+			sessionId: string;
+			queuedId: string;
+			text: string;
+			images?: ImageAttachment[];
+	  }
 	/** Response to an `ext_ui_dialog_open` frame. */
 	| ({
 			type: "ext_ui_dialog_response";

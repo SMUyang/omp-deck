@@ -104,6 +104,14 @@ export class WsHub {
 				this.handleClearQueue(ws, frame.sessionId);
 				return;
 
+			case "cancel_queued":
+				await this.handleCancelQueued(ws, frame);
+				return;
+
+			case "edit_queued":
+				await this.handleEditQueued(ws, frame);
+				return;
+
 			case "ext_ui_dialog_response":
 				this.handleExtUiDialogResponse(ws, frame);
 				return;
@@ -284,6 +292,57 @@ export class WsHub {
 			handle.clearQueue();
 		} catch (err) {
 			send(ws, { type: "error", sessionId, error: `clear queue failed: ${String(err)}` });
+		}
+	}
+
+	private async handleCancelQueued(
+		ws: ServerWebSocket<ConnectionData>,
+		frame: Extract<ClientFrame, { type: "cancel_queued" }>,
+	): Promise<void> {
+		const handle = this.bridge.getSession(frame.sessionId);
+		if (!handle) {
+			send(ws, { type: "error", sessionId: frame.sessionId, error: "session not active" });
+			return;
+		}
+		this.bridge.bumpActivity(frame.sessionId);
+		try {
+			await handle.cancelQueuedById(frame.queuedId);
+		} catch (err) {
+			send(ws, {
+				type: "error",
+				sessionId: frame.sessionId,
+				error: `cancel queued failed: ${String(err)}`,
+			});
+		}
+	}
+
+	private async handleEditQueued(
+		ws: ServerWebSocket<ConnectionData>,
+		frame: Extract<ClientFrame, { type: "edit_queued" }>,
+	): Promise<void> {
+		const handle = this.bridge.getSession(frame.sessionId);
+		if (!handle) {
+			send(ws, { type: "error", sessionId: frame.sessionId, error: "session not active" });
+			return;
+		}
+		// Refuse silently-empty edits — the user almost certainly meant cancel.
+		if (!frame.text || frame.text.trim().length === 0) {
+			send(ws, {
+				type: "error",
+				sessionId: frame.sessionId,
+				error: "edit_queued: text required (use cancel_queued to drop)",
+			});
+			return;
+		}
+		this.bridge.bumpActivity(frame.sessionId);
+		try {
+			await handle.editQueuedById(frame.queuedId, frame.text, frame.images);
+		} catch (err) {
+			send(ws, {
+				type: "error",
+				sessionId: frame.sessionId,
+				error: `edit queued failed: ${String(err)}`,
+			});
 		}
 	}
 
