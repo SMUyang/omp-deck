@@ -58,6 +58,17 @@ describe("session status report", () => {
 		expect(text).toContain("92.0% used");
 	});
 
+	test("renders pending context usage when RPC omits tokens or percent", async () => {
+		const malformed = {
+			...snapshot,
+			contextUsage: { contextWindow: 200000 },
+		} as unknown as SessionSnapshot;
+
+		const text = await buildSessionStatusText({ snapshot: malformed, providerUsageJson: { reports: [] } });
+
+		expect(text).toContain("200.0k window, usage refresh pending");
+	});
+
 	test("deck-native /status consumes the command instead of falling through", async () => {
 		const result = await executeDeckSlashCommand("/status", {
 			cwd: "/workspace/project",

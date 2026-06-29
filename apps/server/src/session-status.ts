@@ -241,16 +241,19 @@ export async function fetchProviderUsageJson(ompBin: string): Promise<ProviderUs
 }
 
 export async function buildLiveSessionStatusText(options: BuildLiveSessionStatusOptions): Promise<string> {
+	let providerUsageJson: ProviderUsageJson | undefined;
+	let providerUsageError: string | undefined;
 	try {
-		return await buildSessionStatusText({
-			snapshot: options.snapshot,
-			providerUsageJson: await fetchProviderUsageJson(options.ompBin),
-		});
+		providerUsageJson = await fetchProviderUsageJson(options.ompBin);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+		providerUsageError = err instanceof Error ? err.message : String(err);
 		log.warn("provider usage fetch failed", err);
-		return await buildSessionStatusText({ snapshot: options.snapshot, providerUsageError: message });
 	}
+	return await buildSessionStatusText({
+		snapshot: options.snapshot,
+		providerUsageJson,
+		providerUsageError,
+	});
 }
 
 export async function buildSessionStatusText(options: BuildSessionStatusOptions): Promise<string> {
@@ -258,11 +261,14 @@ export async function buildSessionStatusText(options: BuildSessionStatusOptions)
 	const usage = rollupUsage(snapshot.messages);
 	const model = snapshot.model ? `${snapshot.model.provider}/${snapshot.model.id}` : "unknown";
 	const context = snapshot.contextUsage;
-	const contextText = context
-		? context.tokens !== null && context.percent !== null
-			? `${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)} tokens (${context.percent.toFixed(1)}%)`
-			: `${formatTokens(context.contextWindow)} window, usage refresh pending`
-		: "unavailable";
+	const contextTokens = context ? numberOrUndefined(context.tokens) : undefined;
+	const contextPercent = context ? numberOrUndefined(context.percent) : undefined;
+	const contextWindow = context ? numberOrUndefined(context.contextWindow) : undefined;
+	const contextText = !context
+		? "unavailable"
+		: contextTokens !== undefined && contextPercent !== undefined && contextWindow !== undefined
+			? `${formatTokens(contextTokens)} / ${formatTokens(contextWindow)} tokens (${contextPercent.toFixed(1)}%)`
+			: `${formatTokens(contextWindow ?? 0)} window, usage refresh pending`;
 	const providerUsage = options.providerUsageError
 		? `Provider usage unavailable: ${options.providerUsageError}`
 		: renderProviderUsageJson(options.providerUsageJson, snapshot.model?.provider);
