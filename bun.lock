@@ -4,6 +4,17 @@
   "workspaces": {
     "": {
       "name": "omp-deck",
+      "dependencies": {
+        "@oh-my-pi/pi-ai": "15.1.7",
+        "@oh-my-pi/pi-coding-agent": "15.1.7",
+        "@omp-deck/protocol": "0.6.1",
+        "ajv": "^8.17.1",
+        "ajv-formats": "^3.0.1",
+        "croner": "^10.0.1",
+        "hono": "^4.6.14",
+        "quickjs-emscripten": "^0.31.0",
+        "yaml": "^2.9.0",
+      },
       "devDependencies": {
         "typescript": "^5.6.3",
       },
@@ -21,7 +32,7 @@
     },
     "apps/server": {
       "name": "@omp-deck/server",
-      "version": "0.2.0",
+      "version": "0.6.1",
       "dependencies": {
         "@oh-my-pi/pi-ai": "15.1.7",
         "@oh-my-pi/pi-coding-agent": "15.1.7",
@@ -38,7 +49,7 @@
     },
     "apps/web": {
       "name": "@omp-deck/web",
-      "version": "0.2.0",
+      "version": "0.6.1",
       "dependencies": {
         "@dnd-kit/core": "^6.3.1",
         "@dnd-kit/sortable": "^10.0.0",
@@ -74,7 +85,7 @@
     },
     "packages/protocol": {
       "name": "@omp-deck/protocol",
-      "version": "0.2.0",
+      "version": "0.6.1",
       "dependencies": {
         "ajv": "^8.17.1",
         "ajv-formats": "^3.0.1",
