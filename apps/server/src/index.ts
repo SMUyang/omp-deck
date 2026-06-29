@@ -108,6 +108,7 @@ async function main(): Promise<void> {
 			: new InProcessAgentBridge({
 					idleTimeoutMs: config.idleTimeoutMs,
 					autoStartCommand: config.autoStartCommand,
+					ompBin: config.ompBin,
 				});
 	const routinesRunner = new RoutinesRunner();
 	routinesRunner.start();

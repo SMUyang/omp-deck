@@ -13,7 +13,6 @@
  *   - plan-mode enter/exit/respond (throws)
  *   - queue edit/cancel by id (returns false)
  *   - extension custom UI beyond select/confirm/input forwarding
- *   - slash-command dispatch (falls through to prompt)
  */
 import type {
 	AgentMessageJson,
@@ -31,6 +30,7 @@ import type {
 	SessionSummary,
 } from "@omp-deck/protocol";
 
+import type { DeckSlashResult } from "../deck-slash-commands.ts";
 import type {
 	AgentBridge,
 	CreateSessionOpts,
@@ -46,6 +46,7 @@ import { OmpRpcTransport, type RpcEvent } from "./rpc-transport.ts";
 import * as path from "node:path";
 import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
+import { buildLiveSessionStatusText } from "../session-status.ts";
 
 const log = logger("rpc-bridge");
 
@@ -231,6 +232,7 @@ interface RpcSessionOpts {
 	cwd: string;
 	state: RpcStateData;
 	messages: AgentMessageJson[];
+	ompBin: string;
 	onDispose: () => void;
 }
 
@@ -239,8 +241,9 @@ class RpcSessionHandle implements SessionHandle {
 	readonly cwd: string;
 	readonly #transport: OmpRpcTransport;
 	readonly #listeners = new Set<EventListener>();
-	readonly #messages: AgentMessageJson[];
+	#messages: AgentMessageJson[];
 	#state: RpcStateData;
+	readonly #ompBin: string;
 	#disposed = false;
 	readonly #onDispose: () => void;
 
@@ -249,6 +252,7 @@ class RpcSessionHandle implements SessionHandle {
 		this.cwd = opts.cwd;
 		this.#state = opts.state;
 		this.#messages = opts.messages;
+		this.#ompBin = opts.ompBin;
 		this.sessionId = opts.state.sessionId;
 		this.#onDispose = opts.onDispose;
 
@@ -268,14 +272,42 @@ class RpcSessionHandle implements SessionHandle {
 		if (type === "turn_start") this.#state.isStreaming = true;
 		else if (type === "turn_end" || type === "agent_end") this.#state.isStreaming = false;
 
-		// Forward to WS layer
-		const json = event as unknown as AgentSessionEventJson;
+		this.#emit(event as unknown as AgentSessionEventJson);
+
+		if (type === "turn_end" || type === "agent_end" || type === "compaction_complete") {
+			void this.#refreshStateFromRpc();
+		}
+	}
+
+	#emit(event: AgentSessionEventJson): void {
 		for (const listener of this.#listeners) {
 			try {
-				listener(json);
+				listener(event);
 			} catch (err) {
 				log.warn("session listener threw", err);
 			}
+		}
+	}
+
+	async #refreshStateFromRpc(): Promise<void> {
+		try {
+			const rawState = await this.#transport.send<unknown>({ type: "get_state" });
+			const state = extractState(rawState);
+			this.#state = state;
+			if (state.contextUsage) {
+				this.#emit({ type: "context_usage", contextUsage: state.contextUsage } as unknown as AgentSessionEventJson);
+			}
+		} catch (err) {
+			log.warn("get_state refresh failed", err);
+		}
+	}
+
+	async #refreshMessagesFromRpc(): Promise<void> {
+		try {
+			const rawMessages = await this.#transport.send<RpcMessagesData>({ type: "get_messages" });
+			this.#messages = rawMessages.messages ?? [];
+		} catch (err) {
+			log.warn("get_messages refresh failed", err);
 		}
 	}
 
@@ -367,8 +399,46 @@ class RpcSessionHandle implements SessionHandle {
 		return { kind: "fallthrough" };
 	}
 
-	async dispatchDeckSlashCommand(_text: string): Promise<SlashDispatchResult> {
-		return { kind: "fallthrough" };
+	async dispatchDeckSlashCommand(text: string): Promise<SlashDispatchResult> {
+		if (!text.startsWith("/")) return { kind: "fallthrough" };
+		let result: DeckSlashResult | "fallthrough";
+		try {
+			const { executeDeckSlashCommand } = await import("../deck-slash-commands.ts");
+			result = await executeDeckSlashCommand(text, {
+				cwd: this.cwd,
+				getStatusText: async () => {
+					await this.#refreshStateFromRpc();
+					await this.#refreshMessagesFromRpc();
+					return await buildLiveSessionStatusText({ snapshot: this.snapshot(), ompBin: this.#ompBin });
+				},
+			});
+		} catch (err) {
+			const message = `Slash command error: ${String((err as Error).message ?? err)}`;
+			log.warn(`deck slash dispatch threw for ${text.slice(0, 40)}: ${String(err)}`);
+			this.#emitSyntheticSlashRoundTrip(text, message);
+			return { kind: "consumed", output: message };
+		}
+		if (result === "fallthrough") return { kind: "fallthrough" };
+		this.#emitSyntheticSlashRoundTrip(text, result.output || "Done.");
+		return { kind: "consumed", output: result.output || "Done." };
+	}
+
+	#emitSyntheticSlashRoundTrip(userText: string, assistantText: string | undefined): void {
+		const now = Date.now();
+		this.#emit({
+			type: "message_start",
+			message: { role: "user", content: userText, timestamp: now, synthetic: true },
+		} as unknown as AgentSessionEventJson);
+		if (!assistantText) return;
+		this.#emit({
+			type: "message_start",
+			message: {
+				role: "assistant",
+				content: [{ type: "text", text: assistantText }],
+				timestamp: now,
+				synthetic: true,
+			},
+		} as unknown as AgentSessionEventJson);
 	}
 
 	getContextUsage(): ContextUsage | undefined {
@@ -481,6 +551,7 @@ export class RpcAgentBridge implements AgentBridge {
 			cwd: opts.cwd,
 			state,
 			messages,
+			ompBin: this.#ompBin,
 			onDispose: () => {
 				this.#sessions.delete(state.sessionId);
 			},
@@ -522,6 +593,7 @@ export class RpcAgentBridge implements AgentBridge {
 			cwd: state.sessionFile ? opts.sessionPath : this.#cwd,
 			state,
 			messages,
+			ompBin: this.#ompBin,
 			onDispose: () => {
 				this.#sessions.delete(state.sessionId);
 			},

@@ -95,6 +95,7 @@ function makeHandle(): { handle: InProcessSessionHandle; session: StubSession; e
 			getPlanModeContext: () => undefined,
 			getPendingPlanApproval: () => undefined,
 		} as never,
+		ompBin: "omp",
 		onDispose: () => {},
 	});
 	handle.subscribe((ev) => emitted.push(ev));

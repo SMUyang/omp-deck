@@ -25,6 +25,7 @@ export interface DeckSlashCommand {
 
 export interface DeckSlashContext {
 	cwd: string;
+	getStatusText?: () => Promise<string> | string;
 }
 
 export type DeckSlashResult = { kind: "consumed"; output: string };
@@ -39,6 +40,18 @@ function broadcastTasksChanged(): void {
 }
 
 export const DECK_SLASH_COMMANDS: DeckSlashCommand[] = [
+	{
+		name: "status",
+		description: "Show session, context, chat, and provider usage",
+		handle(_args, ctx) {
+			if (!ctx.getStatusText) {
+				throw new Error("/status is unavailable for this session.");
+			}
+			const output = ctx.getStatusText();
+			if (typeof output === "string") return { kind: "consumed", output };
+			return output.then((text) => ({ kind: "consumed", output: text }));
+		},
+	},
 	{
 		name: "task add",
 		description: "Create a backlog task in this workspace",

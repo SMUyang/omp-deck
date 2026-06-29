@@ -31,12 +31,14 @@ import type {
 	SessionSnapshot,
 	SessionSummary,
 } from "@omp-deck/protocol";
+import type { DeckSlashResult } from "../deck-slash-commands.ts";
 
 import { logger } from "../log.ts";
 import { getDeckModelRegistry } from "../auth-singleton.ts";
 import { looksLikePlaceholderKey } from "../credential-quality.ts";
 import { getEffectivePrelude } from "../orientation-store.ts";
 import { notificationService } from "../notifications/index.ts";
+import { buildLiveSessionStatusText } from "../session-status.ts";
 import { ExtensionUIBridge } from "./ext-ui-bridge.ts";
 import { PlanModeBridge } from "./plan-mode-bridge.ts";
 import type {
@@ -89,15 +91,18 @@ export class InProcessAgentBridge implements AgentBridge {
 	/** Shared SDK model registry, lazily constructed on first session create. */
 	private modelRegistry: ModelRegistry | undefined;
 	private modelRegistryPromise: Promise<ModelRegistry> | undefined;
+	private readonly ompBin: string;
 
 	constructor(opts: {
 		idleTimeoutMs?: number;
 		reapIntervalMs?: number;
 		autoStartCommand?: string | null;
+		ompBin?: string;
 	} = {}) {
 		this.idleTimeoutMs = opts.idleTimeoutMs ?? 15 * 60_000; // 15 min default
 		this.reapIntervalMs = opts.reapIntervalMs ?? 60_000; // scan once a minute
 		this.autoStartCommand = opts.autoStartCommand ?? "/start";
+		this.ompBin = opts.ompBin ?? "omp";
 		if (this.idleTimeoutMs > 0) this.startReaper();
 	}
 
@@ -416,6 +421,7 @@ export class InProcessAgentBridge implements AgentBridge {
 			sessionId,
 			getModelRegistry: () => this.ensureModelRegistry(),
 			planBridge,
+			ompBin: this.ompBin,
 			onDispose: () => {
 				uiBridge.dispose();
 				planBridge.dispose();
@@ -606,6 +612,7 @@ export class InProcessSessionHandle implements SessionHandle {
 	private readonly planBridge: PlanModeBridge;
 	private listeners = new Set<EventListener>();
 	private onDisposeCallback: () => void;
+	private readonly ompBin: string;
 	private disposed = false;
 	/**
 	 * Shadow of the SDK's pending-prompt queue. Entries are appended in
@@ -630,6 +637,7 @@ export class InProcessSessionHandle implements SessionHandle {
 		getModelRegistry: () => Promise<ModelRegistry>;
 		planBridge: PlanModeBridge;
 		onDispose: () => void;
+		ompBin: string;
 	}) {
 		this.session = args.session;
 		this.sessionManager = args.sessionManager;
@@ -638,6 +646,7 @@ export class InProcessSessionHandle implements SessionHandle {
 		this.modelRegistryRef = args.getModelRegistry;
 		this.planBridge = args.planBridge;
 		this.onDisposeCallback = args.onDispose;
+		this.ompBin = args.ompBin;
 	}
 
 	get sessionFile(): string | undefined {
@@ -786,10 +795,13 @@ export class InProcessSessionHandle implements SessionHandle {
 
 	async dispatchDeckSlashCommand(text: string): Promise<SlashDispatchResult> {
 		if (!text.startsWith("/")) return { kind: "fallthrough" };
-		let result: import("../deck-slash-commands.ts").DeckSlashResult | "fallthrough";
+		let result: DeckSlashResult | "fallthrough";
 		try {
 			const { executeDeckSlashCommand } = await import("../deck-slash-commands.ts");
-			result = await executeDeckSlashCommand(text, { cwd: this.cwd });
+			result = await executeDeckSlashCommand(text, {
+				cwd: this.cwd,
+				getStatusText: () => buildLiveSessionStatusText({ snapshot: this.snapshot(), ompBin: this.ompBin }),
+			});
 		} catch (err) {
 			const message = `Slash command error: ${String((err as Error).message ?? err)}`;
 			log.warn(`deck slash dispatch threw for ${text.slice(0, 40)}: ${String(err)}`);
