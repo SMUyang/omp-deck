@@ -10,6 +10,7 @@ import type { Server, ServerWebSocket } from "bun";
 import * as path from "node:path";
 
 import { InProcessAgentBridge } from "./bridge/in-process.ts";
+import { RpcAgentBridge } from "./bridge/rpc.ts";
 import { RoutinesRunner } from "./routines-runner.ts";
 import { closeDb, openDb } from "./db/index.ts";
 import { loadConfig } from "./config.ts";
@@ -96,10 +97,18 @@ async function main(): Promise<void> {
 	notificationService.register(new BrowserNotificationChannel());
 
 
-	const bridge = new InProcessAgentBridge({
-		idleTimeoutMs: config.idleTimeoutMs,
-		autoStartCommand: config.autoStartCommand,
-	});
+	const bridge =
+		config.agentBackend === "rpc"
+			? new RpcAgentBridge({
+					ompBin: config.ompBin,
+					cwd: config.defaultCwd,
+					idleTimeoutMs: config.idleTimeoutMs,
+					autoStartCommand: config.autoStartCommand,
+				})
+			: new InProcessAgentBridge({
+					idleTimeoutMs: config.idleTimeoutMs,
+					autoStartCommand: config.autoStartCommand,
+				});
 	const routinesRunner = new RoutinesRunner();
 	routinesRunner.start();
 	let server: Server<ConnectionData>;

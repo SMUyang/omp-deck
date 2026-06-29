@@ -22,6 +22,10 @@ export interface Config {
 	 * ~/.omp/agent/commands/start.md slash command if present).
 	 */
 	autoStartCommand: string | null;
+	/** Agent backend: "in-process" (default, embeds SDK) or "rpc" (spawns omp --mode rpc). */
+	agentBackend: "in-process" | "rpc";
+	/** Path to the omp binary used when agentBackend is "rpc". Default: "omp" (from PATH). */
+	ompBin: string;
 }
 
 export function parseInt10(value: string | undefined, fallback: number): number {
@@ -104,6 +108,8 @@ export function loadConfig(): Config {
 		),
 		// Set OMP_DECK_AUTO_START="" or "0" to disable, or to any other prompt
 		// string to override the default "/start" slash-command invocation.
-		autoStartCommand: parseAutoStart(process.env.OMP_DECK_AUTO_START),
-	};
+	autoStartCommand: parseAutoStart(process.env.OMP_DECK_AUTO_START),
+	agentBackend: process.env.OMP_DECK_AGENT_BACKEND === "rpc" ? "rpc" : "in-process",
+	ompBin: process.env.OMP_DECK_OMP_BIN?.trim() || "omp",
+};
 }
