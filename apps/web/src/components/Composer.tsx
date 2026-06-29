@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { FilePathPicker } from "@/components/composer/FilePathPicker";
 import { SlashCommandPicker } from "@/components/composer/SlashCommandPicker";
 import { Paperclip, ArrowUp, Square, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ImageAttachment } from "@omp-deck/protocol";
 
 import { selectActiveSession, useStore } from "@/lib/store";
@@ -37,6 +38,7 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const slashCommandsCache = new Map<string, SlashCommand[]>();
 
 export function Composer() {
+	const { t } = useTranslation();
 	const session = useStore(selectActiveSession);
 	const sendPrompt = useStore((s) => s.sendPrompt);
 	const abort = useStore((s) => s.abort);
@@ -641,8 +643,8 @@ export function Composer() {
 						className="btn-ghost h-7 w-7 shrink-0 self-end p-0"
 						onClick={() => fileRef.current?.click()}
 						disabled={disabled}
-						aria-label="Attach image"
-						title="Attach image"
+						aria-label={t("composer.attachImage")}
+						title={t("composer.attachImage")}
 					>
 						<Paperclip className="h-4 w-4" />
 					</button>
@@ -683,11 +685,11 @@ export function Composer() {
 							type="button"
 							className="btn-danger h-7 gap-1 self-end px-2 text-xs"
 							onClick={() => abort()}
-							aria-label="Stop streaming (Ctrl+.)"
-							title="Stop streaming (Ctrl+.)"
+							aria-label={t("composer.stopStreaming")}
+							title={t("composer.stopStreaming")}
 						>
 							<Square className="h-3 w-3" fill="currentColor" />
-							<span className="font-mono uppercase tracking-meta text-2xs">stop</span>
+							<span className="font-mono uppercase tracking-meta text-2xs">{t("composer.stop")}</span>
 						</button>
 					) : (
 						<button
@@ -695,8 +697,8 @@ export function Composer() {
 							className="btn-primary h-7 w-7 p-0 self-end disabled:bg-line-strong"
 							onClick={send}
 							disabled={disabled || (draft.trim().length === 0 && images.length === 0)}
-							aria-label="Send"
-							title="Send"
+							aria-label={t("composer.send")}
+							title={t("composer.send")}
 						>
 							<ArrowUp className="h-3.5 w-3.5" />
 						</button>
@@ -709,9 +711,9 @@ export function Composer() {
 							type="button"
 							onClick={() => clearQueue()}
 							className="rounded border border-line bg-paper px-1.5 py-0.5 uppercase tracking-meta text-ink-2 hover:text-danger hover:border-danger/40"
-							title="Drop every queued prompt for this session"
+							title={t("composer.dropQueued")}
 						>
-							{queuedCount} queued · cancel
+							{t("composer.queuedCount", { count: queuedCount })}
 						</button>
 					) : null}
 					<span>
@@ -737,6 +739,7 @@ function ImageThumb({
 	bytes: number;
 	onRemove: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="group relative">
 			<img
@@ -751,7 +754,7 @@ function ImageThumb({
 				type="button"
 				onClick={onRemove}
 				className="absolute -right-1.5 -top-1.5 rounded-full bg-ink p-0.5 text-paper opacity-0 transition-opacity hover:bg-danger group-hover:opacity-100"
-				aria-label="Remove image"
+				aria-label={t("composer.removeImage")}
 			>
 				<X className="h-3 w-3" />
 			</button>

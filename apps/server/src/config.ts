@@ -71,6 +71,32 @@ function resolveWebDist(): string | undefined {
 	return undefined;
 }
 
+/**
+ * Resolve the omp binary to an absolute path, excluding any
+ * node_modules/.bin/omp (embedded old SDK) hit on PATH.
+ */
+function resolveOmpBin(): string {
+	// If bun's global bin is on PATH, `which omp` finds the real CLI.
+	// We exclude paths containing "node_modules/.bin" to avoid hitting
+	// the deck's own embedded dependency.
+	const pathEnv = process.env.PATH ?? "";
+	for (const dir of pathEnv.split(path.delimiter)) {
+		if (!dir || dir.includes("node_modules") || dir.includes("node_modules/.bin")) continue;
+		const candidate = path.join(dir, "omp");
+		try {
+			if (fs.statSync(candidate).isFile()) {
+				// Resolve symlinks
+				const real = fs.realpathSync(candidate);
+				return real;
+			}
+		} catch {
+			// not found — continue
+		}
+	}
+	// Fallback: let Bun spawn "omp" and hope for the best
+	return "omp";
+}
+
 export function loadConfig(): Config {
 	const home = os.homedir();
 	const defaultCwd = process.env.OMP_DECK_DEFAULT_CWD?.trim() || home;
@@ -109,7 +135,7 @@ export function loadConfig(): Config {
 		// Set OMP_DECK_AUTO_START="" or "0" to disable, or to any other prompt
 		// string to override the default "/start" slash-command invocation.
 	autoStartCommand: parseAutoStart(process.env.OMP_DECK_AUTO_START),
-	agentBackend: process.env.OMP_DECK_AGENT_BACKEND === "rpc" ? "rpc" : "in-process",
-	ompBin: process.env.OMP_DECK_OMP_BIN?.trim() || "omp",
+	agentBackend: process.env.OMP_DECK_AGENT_BACKEND === "in-process" ? "in-process" : "rpc",
+	ompBin: process.env.OMP_DECK_OMP_BIN?.trim() || resolveOmpBin(),
 };
 }

@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useStore } from "../lib/store";
 
@@ -49,6 +50,7 @@ function formatUptime(secs: number): string {
 export function ConnectionIndicator(): JSX.Element {
 	const heartbeat = useStore((s) => s.heartbeat);
 	const wsStatus = useStore((s) => s.wsStatus);
+	const { t } = useTranslation();
 	const [now, setNow] = useState(Date.now());
 
 	useEffect(() => {
@@ -60,12 +62,12 @@ export function ConnectionIndicator(): JSX.Element {
 	const color = classify(gap, heartbeat !== null);
 	const label =
 		color === "green"
-			? "connected"
+			? t("connection.connected")
 			: color === "yellow"
-			? "reconnecting"
+			? t("connection.reconnecting")
 			: heartbeat === null
-			? "no heartbeat yet"
-			: "disconnected";
+			? t("connection.noHeartbeat")
+			: t("connection.disconnected");
 
 	const tooltip = heartbeat
 		? [
