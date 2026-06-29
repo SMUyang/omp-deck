@@ -45,6 +45,7 @@ interface ProviderUsageReport {
 }
 
 export interface ProviderUsageJson {
+	generatedAt?: unknown;
 	reports?: unknown;
 }
 

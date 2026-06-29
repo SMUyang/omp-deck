@@ -7,6 +7,7 @@ import type {
 	ListSlashCommandsResponse,
 	ListWorkspacesResponse,
 	ModelRef,
+	ProviderUsageResponse,
 } from "@omp-deck/protocol";
 
 const BASE = "/api";
@@ -83,5 +84,8 @@ export const api = {
 	completeFilePath(cwd: string, q: string, limit = 20): Promise<ListFilePathsResponse> {
 		const params = new URLSearchParams({ cwd, q, limit: String(limit) });
 		return request<ListFilePathsResponse>(`/fs/complete?${params.toString()}`);
+	},
+	getProviderUsage(): Promise<ProviderUsageResponse> {
+		return request<ProviderUsageResponse>("/status/provider-usage");
 	},
 };

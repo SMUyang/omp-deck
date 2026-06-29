@@ -257,6 +257,32 @@ export interface ListModelsResponse {
 	active?: ModelRef;
 }
 
+export interface ProviderUsageLimitWire {
+	label: string;
+	status?: string;
+	windowLabel?: string;
+	resetsAt?: number;
+	unit?: string;
+	used?: number;
+	limit?: number;
+	remaining?: number;
+	usedFraction?: number;
+	remainingFraction?: number;
+}
+
+export interface ProviderUsageReportWire {
+	provider: string;
+	fetchedAt?: number;
+	notes?: string[];
+	limits: ProviderUsageLimitWire[];
+}
+
+export interface ProviderUsageResponse {
+	generatedAt?: number;
+	reports: ProviderUsageReportWire[];
+	error?: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Onboarding (first-run wizard)
 // ─────────────────────────────────────────────────────────────────────────────

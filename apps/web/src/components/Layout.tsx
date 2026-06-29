@@ -57,8 +57,8 @@ export function Layout({ sidebar, main, inspector, topBar }: Props) {
 						type="button"
 						className={cn("btn-ghost h-7 w-7 p-0", inspectorOpen && "lg:bg-paper-3")}
 						onClick={() => setInspectorOpen(!inspectorOpen)}
-						aria-label="Toggle inspector"
-						title="Toggle inspector"
+						aria-label="Toggle status panel"
+						title="Toggle status panel"
 					>
 						<PanelRight className="h-4 w-4" />
 					</button>
@@ -101,7 +101,7 @@ export function Layout({ sidebar, main, inspector, topBar }: Props) {
 
 				<main className="relative flex min-w-0 flex-1 flex-col bg-paper">{main}</main>
 
-				{/* Inspector — same overlay/push pattern, right side. */}
+				{/* Status panel — same overlay/push pattern, right side. */}
 				<aside
 					className={cn(
 						"absolute inset-y-0 right-0 z-30 w-[300px] max-w-[85%] bg-paper border-l border-line shadow-[-1px_0_0_0_rgba(0,0,0,0.04)]",
@@ -136,7 +136,7 @@ function MobileCloseBar({ onClose, side }: { onClose: () => void; side: "left" |
 			</button>
 			{side === "right" ? (
 				<span className="ml-2 font-mono text-2xs uppercase tracking-meta text-ink-3">
-					Inspector
+					Status panel
 				</span>
 			) : null}
 		</div>

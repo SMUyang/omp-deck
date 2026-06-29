@@ -33,6 +33,7 @@ import { buildUploadsRouter } from "./routes-uploads.ts";
 import { buildOrientationRouter } from "./routes-orientation.ts";
 import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
+import { buildStatusRouter } from "./routes-status.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
 import type { BridgeSupervisor } from "./bridge-supervisor.ts";
 import type { MarketplaceService } from "./marketplace-service.ts";
@@ -242,6 +243,7 @@ export function buildRouter(
 	app.route("/", buildUtilityRouter());
 	app.route("/", buildSlashCommandsRouter());
 	app.route("/", buildFsRouter());
+	app.route("/", buildStatusRouter(config));
 	app.route("/", buildSettingsRouter(bridge, config, opts));
 	app.route("/", buildOrientationRouter());
 	app.route("/", buildBridgesRouter(supervisor));
