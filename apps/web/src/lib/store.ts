@@ -40,6 +40,19 @@ import { applyEvent, initSession } from "./reducer";
 import type { SessionUi } from "./types";
 import { WsClient, type WsStatus } from "./ws";
 
+export const STATUS_PANEL_STORAGE_KEY = "omp-deck:status-panel-open";
+
+interface BoolStorage {
+	getItem(key: string): string | null;
+}
+
+export function getInitialStatusPanelOpen(storage: BoolStorage | undefined, desktop: boolean): boolean {
+	if (!desktop) return false;
+	const raw = storage?.getItem(STATUS_PANEL_STORAGE_KEY) ?? null;
+	if (raw === null) return true;
+	return raw === "1";
+}
+
 function readBool(key: string, fallback: boolean): boolean {
 	if (typeof localStorage === "undefined") return fallback;
 	const raw = localStorage.getItem(key);
@@ -225,7 +238,7 @@ export const useStore = create<StoreState>()(
 		// matches the user's last preference — but only on desktop. On mobile the
 		// panels are overlay drawers and always start closed.
 		sidebarOpen: readChromeOpen("omp-deck:sidebar-open", true),
-		inspectorOpen: readChromeOpen("omp-deck:inspector-open", false),
+		inspectorOpen: getInitialStatusPanelOpen(typeof localStorage === "undefined" ? undefined : localStorage, isDesktopViewport()),
 
 		async bootstrap() {
 			get().connect();
@@ -390,7 +403,7 @@ export const useStore = create<StoreState>()(
 		setInspectorOpen(open) {
 			if (isDesktopViewport()) {
 				try {
-					localStorage.setItem("omp-deck:inspector-open", open ? "1" : "0");
+					localStorage.setItem(STATUS_PANEL_STORAGE_KEY, open ? "1" : "0");
 				} catch {}
 			}
 			set({ inspectorOpen: open });
