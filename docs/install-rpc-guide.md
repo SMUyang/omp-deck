@@ -313,7 +313,8 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 | `install-rpc-deck.sh` | macOS / Linux | 一键安装脚本 |
 | `install-rpc-deck.ps1` | Windows | 一键安装脚本（PowerShell） |
 | `start-rpc-deck.sh` | macOS / Linux | 启动脚本（foreground / background / stop / status） |
-| `start-rpc-deck.cmd` | Windows | 启动脚本（CMD） |
+| `start-rpc-deck.cmd` | Windows | CMD 启动入口（只调用 PowerShell wrapper，避免 CMD 解析问题） |
+| `start-rpc-deck.ps1` | Windows | 真正的启动逻辑：自动 `bun install`、构建前端、设置 RPC env、运行生产模式 |
 | `docs/rpc-backend.md` | 跨平台 | RPC backend 技术文档 |
 | `apps/server/src/bridge/rpc-transport.ts` | 跨平台 | JSON-lines 传输层源码 |
 | `apps/server/src/bridge/rpc.ts` | 跨平台 | RPC bridge 实现源码 |

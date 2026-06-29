@@ -80,6 +80,22 @@ interface RpcMessagesData {
 	messages: AgentMessageJson[];
 }
 
+interface RpcSubagentSubscriptionResponse {
+	level: "off" | "progress" | "events";
+}
+
+async function enableSubagentProgress(transport: OmpRpcTransport): Promise<void> {
+	try {
+		const result = await transport.send<RpcSubagentSubscriptionResponse>({
+			type: "set_subagent_subscription",
+			level: "progress",
+		});
+		log.info(`subagent subscription enabled (${result.level})`);
+	} catch (err) {
+		log.warn("set_subagent_subscription failed", err);
+	}
+}
+
 // ─── Conversion ───────────────────────────────────────────────────────
 
 function rpcModelToInfo(model: RpcModel, current?: ModelRef): ModelInfo {
@@ -447,6 +463,7 @@ export class RpcAgentBridge implements AgentBridge {
 			extraArgs,
 		});
 		await transport.start();
+		await enableSubagentProgress(transport);
 
 		const rawState = await transport.send<unknown>({ type: "get_state" });
 		const state = extractState(rawState);
@@ -487,6 +504,7 @@ export class RpcAgentBridge implements AgentBridge {
 			extraArgs: ["--resume", opts.sessionPath],
 		});
 		await transport.start();
+		await enableSubagentProgress(transport);
 
 		const rawState = await transport.send<unknown>({ type: "get_state" });
 		const state = extractState(rawState);
