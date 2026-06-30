@@ -1,9 +1,10 @@
 # Scaffold the V1 routines tasks into the deck kanban.
 # ASCII-only per PS 5.1 .ps1 parse rules; reads JSON via .NET to avoid Get-Content cp1252 corruption.
 $ErrorActionPreference = "Stop"
+$rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 
-$jsonPath = "C:\Users\bryan\enclave\omp-deck\scripts\v1-routines-tasks.json"
-$stubDir = "C:\Users\bryan\enclave\my-org-new\tasks\backlog"
+$jsonPath = Join-Path $rootDir "scripts\v1-routines-tasks.json"
+$stubDir = if ($env:OMP_DECK_STUB_DIR) { $env:OMP_DECK_STUB_DIR } else { Join-Path $rootDir ".logs\routine-task-stubs" }
 $apiBase = "http://127.0.0.1:8787/api"
 
 # Read JSON via .NET so UTF-8 round-trips correctly on PS 5.1

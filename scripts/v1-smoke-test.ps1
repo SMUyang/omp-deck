@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Stop"
+$rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
+$marker = Join-Path $rootDir ".logs\v1-smoke.txt"
+$markerSpecPath = $marker.Replace('\', '/')
 
-$spec = @'
+$spec = @"
 name: p1-smoke-test
 description: V1 P1 smoke test - exercises http + transform + write + set_state
 trigger:
@@ -29,7 +32,7 @@ steps:
       return { next: prev + 1 };
   - id: write_marker
     type: write
-    path: C:/Users/bryan/enclave/omp-deck/.logs/v1-smoke.txt
+    path: $markerSpecPath
     content: |
       V1 P1 smoke test
       Run id:        {{ run.id }}
@@ -42,7 +45,7 @@ steps:
     type: set_state
     state:
       run_count: "{{ steps.compute_next.json.next }}"
-'@
+"@
 
 $createBody = @{
     name = "p1-smoke-test"
@@ -86,14 +89,13 @@ foreach ($s in $steps.steps) {
     Write-Output ("  [" + $s.stepIndex + "] " + $s.stepId + " (" + $s.stepType + "): " + $s.status + " in " + $s.durationMs + "ms")
     if ($s.error) { Write-Output ("      error: " + $s.error) }
     if ($s.outputJson) {
-        $abbrev = if ($s.outputJson.Length -gt 200) { $s.outputJson.Substring(0,200) + "…" } else { $s.outputJson }
+        $abbrev = if ($s.outputJson.Length -gt 200) { $s.outputJson.Substring(0,200) + "..." } else { $s.outputJson }
         Write-Output ("      output: " + $abbrev)
     }
 }
 
 Write-Output ""
 Write-Output "=== Step 5: Marker file content ==="
-$marker = "C:\Users\bryan\enclave\omp-deck\.logs\v1-smoke.txt"
 if (Test-Path $marker) {
     Get-Content $marker | ForEach-Object { Write-Output ("  | " + $_) }
 } else {

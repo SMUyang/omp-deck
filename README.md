@@ -84,7 +84,7 @@ Other env knobs: `OMP_DECK_PORT`, `OMP_DECK_HOST`, `OMP_DECK_DB_PATH`, `OMP_DECK
 
 ### From source (for development)
 
-If you're working on the deck itself or want hot reload + the Vite dev server:
+For hot reload + the Vite dev server:
 
 ```sh
 git clone https://github.com/bjb2/omp-deck.git
@@ -95,7 +95,7 @@ bun run dev
 
 Open <http://127.0.0.1:5173>.
 
-On **Windows**, you can also double-click `Start-OMP-Deck.cmd` from the repo root — it boots the server on `:8787`, starts the Vite app on `:5173`, opens the deck in your browser, and writes logs under `.logs/`. On **macOS / Linux**, the sibling is `bash Start-OMP-Deck.sh start` (`stop` / `status` subcommands too); bare invocation runs foreground, same as `bun run dev`.
+For the Windows RPC fork flow, use `install-rpc-deck.ps1` once, then start with `start-rpc-deck.cmd` or `start-rpc-deck.ps1`. The RPC launcher builds the web bundle, runs the production Bun server on `:8787`, opens <http://127.0.0.1:8787>, and writes logs under `.logs/`.
 
 For container-based deployment, the repo ships a `Dockerfile` (Debian-slim base, glibc-compatible); see [docs/deployment.md](./docs/deployment.md). For the full step-by-step (Bun install, optional `omp` CLI, auth alternatives), see [docs/install.md](./docs/install.md).
 

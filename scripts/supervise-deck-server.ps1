@@ -16,7 +16,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$root         = "C:\Users\bryan\enclave\omp-deck"
+$root         = Resolve-Path (Join-Path $PSScriptRoot "..")
 $serverDir    = Join-Path $root "apps\server"
 $logDir       = Join-Path $root ".logs"
 $supervisorLog= Join-Path $logDir "supervisor.log"

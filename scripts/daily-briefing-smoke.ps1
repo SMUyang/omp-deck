@@ -60,15 +60,15 @@ foreach ($s in $steps.steps) {
     }
 }
 
-$today = Get-Date -Format "yyyy-MM-dd"
-$marker = "C:\Users\bryan\enclave\my-org-new\inbox\captures\morning-briefing-$today.md"
 Write-Output ""
-Write-Output "=== Step 5: Generated briefing file ==="
-if (Test-Path $marker) {
-    Write-Output ("Found: " + $marker)
-    Get-Content $marker | Select-Object -First 60 | ForEach-Object { Write-Output ("  | " + $_) }
+Write-Output "=== Step 5: Generated inbox capture ==="
+$inbox = Invoke-RestMethod -Uri "http://127.0.0.1:8787/api/inbox?kind=capture&includeProcessed=true"
+$item = $inbox.items | Where-Object { $_.source -eq "routine:daily-briefing" } | Select-Object -First 1
+if ($item) {
+    Write-Output ("Found inbox item: " + $item.id + " - " + $item.title)
+    ($item.body -split "`n" | Select-Object -First 60) | ForEach-Object { Write-Output ("  | " + $_) }
     Write-Output "[Routine left installed -- disabled by default. Enable from the kanban or the Routines UI when ready to fire on schedule.]"
 } else {
-    Write-Output ("Briefing file NOT found at " + $marker)
-    Write-Output "(Likely the agent step failed - check the per-step output above. The omp CLI must be on PATH for 'omp -p' to work.)"
+    Write-Output "Briefing inbox item NOT found."
+    Write-Output "Check the per-step output above; the agent step may have failed."
 }

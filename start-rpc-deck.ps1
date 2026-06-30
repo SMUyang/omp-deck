@@ -34,17 +34,29 @@ function Resolve-OmpBin {
   return $cmd.Source
 }
 
-function Ensure-Bun {
-  $bun = Get-Command bun -ErrorAction SilentlyContinue
-  if (-not $bun) {
-    throw "bun not found on PATH. Install with: powershell -c \"irm bun.sh/install.ps1 | iex\""
+function Ensure-Omp($OmpBin) {
+  try {
+    $ompVer = & $OmpBin --version 2>&1 | Select-Object -First 1
+    Write-Info "omp found: $OmpBin ($ompVer)"
+  } catch {
+    throw "omp binary is not runnable: $OmpBin. Run 'omp --version' in this PowerShell, or set OMP_DECK_OMP_BIN to the full omp.exe path. $($_.Exception.Message)"
   }
 }
 
+function Ensure-Bun {
+  $bun = Get-Command bun -ErrorAction SilentlyContinue
+  if (-not $bun) {
+    throw 'bun not found on PATH. If you installed Bun in this session, close and reopen PowerShell, then try again. Install with: powershell -c "irm bun.sh/install.ps1 | iex"'
+  }
+  $bunVer = & bun --version 2>$null
+  Write-Info "bun found: $($bun.Source) ($bunVer)"
+}
+
 function Ensure-Dependencies {
-  $viteCmd = Join-Path $Root "apps\web\node_modules\.bin\vite.cmd"
   $rootModules = Join-Path $Root "node_modules"
-  if ((Test-Path $viteCmd) -and (Test-Path $rootModules)) { return }
+  $serverModules = Join-Path $Root "apps\server\node_modules"
+  $webModules = Join-Path $Root "apps\web\node_modules"
+  if ((Test-Path $rootModules) -and (Test-Path $serverModules) -and (Test-Path $webModules)) { return }
   Write-Info "Installing dependencies with bun install..."
   & bun install
   if ($LASTEXITCODE -ne 0) { throw "bun install failed" }
@@ -61,6 +73,7 @@ function Ensure-WebBuild {
 function Set-RpcEnvironment {
   Ensure-Bun
   $ompBin = Resolve-OmpBin
+  Ensure-Omp $ompBin
   $env:OMP_DECK_AGENT_BACKEND = "rpc"
   $env:OMP_DECK_OMP_BIN = $ompBin
   if (-not $env:OMP_DECK_PORT) { $env:OMP_DECK_PORT = "8787" }

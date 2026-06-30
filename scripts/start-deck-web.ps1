@@ -3,8 +3,9 @@
 # ASCII only per PS 5.1 .ps1 parse rules.
 $ErrorActionPreference = "Stop"
 
-$webDir = "C:\Users\bryan\enclave\omp-deck\apps\web"
-$logDir = "C:\Users\bryan\enclave\omp-deck\.logs"
+$rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
+$webDir = Join-Path $rootDir "apps\web"
+$logDir = Join-Path $rootDir ".logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"

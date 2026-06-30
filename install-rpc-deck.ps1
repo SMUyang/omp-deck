@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# install-rpc-deck.ps1 — Windows installer for omp-deck with external omp RPC backend.
+# install-rpc-deck.ps1 - Windows installer for omp-deck with external omp RPC backend.
 #
 # Usage (PowerShell):
 #   .\install-rpc-deck.ps1                    # install only
@@ -43,14 +43,19 @@ function Write-Ok($msg)   { Write-Output "[OK] $msg" }
 function Write-Warn2($msg){ Write-Output "[!]  $msg" }
 function Write-Err2($msg) { Write-Output "[X]  $msg" }
 
-# ── 1. Check prerequisites ──────────────────────────────────────────────
+function Invoke-Checked($FilePath, $Arguments, $FailureMessage) {
+  & $FilePath @Arguments
+  if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
+}
+
+# -- 1. Check prerequisites ------------------------------------------------
 Write-Step "Checking prerequisites"
 
 # Bun
 $bunCmd = Get-Command bun -ErrorAction SilentlyContinue
 if (-not $bunCmd) {
   Write-Err2 "Bun is not installed."
-  Write-Output "  Install: powershell -c `"irm bun.sh/install.ps1 | iex`""
+  Write-Output '  Install: powershell -c "irm bun.sh/install.ps1 | iex"'
   exit 1
 }
 $bunVer = & bun --version 2>$null
@@ -87,27 +92,33 @@ if (-not $gitCmd) {
 }
 Write-Ok "Git found"
 
-# ── 2. Clone or update repo ─────────────────────────────────────────────
+# -- 2. Clone or update repo ----------------------------------------------
 Write-Step "Setting up omp-deck"
 
 if (Test-Path "$InstallDir\.git") {
-  Write-Ok "Existing clone found at $InstallDir — pulling latest"
+  Write-Ok "Existing clone found at $InstallDir - pulling latest"
   Push-Location $InstallDir
-  try { git pull --ff-only origin main 2>$null } catch { Write-Warn2 "git pull failed, continuing" }
-  Pop-Location
+  try {
+    Invoke-Checked "git" @("pull", "--ff-only", "origin", "main") "git pull failed"
+  } finally {
+    Pop-Location
+  }
 } else {
   Write-Output "Cloning $RepoUrl -> $InstallDir"
-  git clone $RepoUrl $InstallDir
+  Invoke-Checked "git" @("clone", $RepoUrl, $InstallDir) "git clone failed"
 }
 
-# ── 3. Install dependencies ────────────────────────────────────────────
+# -- 3. Install dependencies ----------------------------------------------
 Write-Step "Installing dependencies"
 Push-Location $InstallDir
-& bun install
-Pop-Location
+try {
+  Invoke-Checked "bun" @("install") "bun install failed"
+} finally {
+  Pop-Location
+}
 Write-Ok "Dependencies installed"
 
-# ── 4. Summary ──────────────────────────────────────────────────────────
+# -- 4. Summary ------------------------------------------------------------
 Write-Step "Installation complete"
 
 Write-Output ""
@@ -116,8 +127,8 @@ if ($OmpBin) {
   Write-Output "  omp binary  : $OmpBin"
   Write-Output "  backend     : rpc (external omp)"
 } else {
-  Write-Output "  omp binary  : (not found -- will use in-process embedded SDK)"
-  Write-Output "  backend     : in-process (default)"
+  Write-Output "  omp binary  : (not found -- RPC launcher will ask you to install omp)"
+  Write-Output "  backend     : rpc (requires external omp)"
 }
 Write-Output "  install dir : $InstallDir"
 Write-Output "  server port : $DeckPort"
@@ -125,32 +136,24 @@ Write-Output "  web port    : $WebPort"
 Write-Output ""
 
 if ($Start) {
-  Write-Output "Starting omp-deck..."
-  Push-Location $InstallDir
-  $env:NO_COLOR = "1"
-  if ($OmpBin) {
-    $env:OMP_DECK_AGENT_BACKEND = "rpc"
-    $env:OMP_DECK_OMP_BIN = $OmpBin
-  }
+  Write-Output "Starting omp-deck with the RPC launcher..."
+  if ($OmpBin) { $env:OMP_DECK_OMP_BIN = $OmpBin }
   $env:OMP_DECK_PORT = $DeckPort
   $env:OMP_DECK_WEB_PORT = $WebPort
-  & bun run dev
-  Pop-Location
+  $launcher = Join-Path $InstallDir "start-rpc-deck.ps1"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher
 } else {
-  Write-Output "To start with RPC backend:"
-  if ($OmpBin) {
-    Write-Output "  cd $InstallDir"
-    Write-Output "  `$env:OMP_DECK_AGENT_BACKEND='rpc'; `$env:OMP_DECK_OMP_BIN='$OmpBin'; bun run dev"
-    Write-Output ""
-    Write-Output "  Or use the CMD launcher:"
-    Write-Output "  start-rpc-deck.cmd"
-  } else {
-    Write-Output "  cd $InstallDir"
-    Write-Output "  bun run dev"
+  Write-Output "To start:"
+  Write-Output "  cd $InstallDir"
+  Write-Output "  .\start-rpc-deck.cmd"
+  Write-Output ""
+  Write-Output "Or from PowerShell:"
+  Write-Output "  .\start-rpc-deck.ps1"
+  if (-not $OmpBin) {
     Write-Output ""
     Write-Warn2 "Install omp CLI first to use the RPC backend:"
     Write-Output "  bun add -g @oh-my-pi/pi-coding-agent"
   }
   Write-Output ""
-  Write-Output "Then open http://127.0.0.1:$WebPort in your browser."
+  Write-Output "Then open http://127.0.0.1:$DeckPort in your browser."
 }

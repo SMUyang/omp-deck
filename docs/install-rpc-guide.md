@@ -27,7 +27,7 @@ cd omp-deck
 bash install-rpc-deck.sh
 ```
 
-脚本自动完成：检查环境 → 克隆/更新仓库 → `bun install` → 验证 RPC 连通性 → 打印启动命令。
+脚本自动完成：检查环境 → 克隆/更新仓库 → `bun install` → 打印统一启动命令。
 
 ### Windows
 
@@ -50,7 +50,7 @@ cd omp-deck
 powershell -NoProfile -ExecutionPolicy Bypass -File install-rpc-deck.ps1
 ```
 
-如果需要指定安装目录或安装后直接启动：
+如果需要指定安装目录或安装后直接启动（会调用同一个 `start-rpc-deck.ps1` launcher）：
 ```powershell
 .\install-rpc-deck.ps1 -InstallDir C:\code\omp-deck -Start
 ```
@@ -72,18 +72,19 @@ bun run dev
 
 **Windows：**
 ```cmd
-REM 使用启动脚本
+REM 使用统一 RPC 启动脚本
 start-rpc-deck.cmd              REM 前台运行，Ctrl+C 停止
 start-rpc-deck.cmd start        REM 后台运行，自动打开浏览器
 start-rpc-deck.cmd stop         REM 停止后台进程
-
-REM 或手动启动（PowerShell）
-$env:OMP_DECK_AGENT_BACKEND = "rpc"
-$env:OMP_DECK_OMP_BIN = (Get-Command omp).Source
-bun run dev
+start-rpc-deck.cmd status       REM 查看后台进程状态
 ```
 
-打开 `http://127.0.0.1:5173` 即可使用。
+PowerShell 也可以直接运行：
+```powershell
+.\start-rpc-deck.ps1
+```
+
+Windows RPC launcher 会自动 `bun install`（如缺依赖）、构建前端、设置 `OMP_DECK_AGENT_BACKEND=rpc`，然后用 production server 启动。打开 `http://127.0.0.1:8787` 即可使用。
 
 ---
 
@@ -149,19 +150,17 @@ bun run dev
 
 **Windows (PowerShell)：**
 ```powershell
-$env:OMP_DECK_AGENT_BACKEND = "rpc"
-$env:OMP_DECK_OMP_BIN = "C:\Users\yourname\.bun\bin\omp.exe"
-bun run dev
+$env:OMP_DECK_OMP_BIN = (Get-Command omp).Source
+.\start-rpc-deck.ps1
 ```
 
 **Windows (CMD)：**
 ```cmd
-set OMP_DECK_AGENT_BACKEND=rpc
 set OMP_DECK_OMP_BIN=C:\Users\yourname\.bun\bin\omp.exe
-bun run dev
+start-rpc-deck.cmd
 ```
 
-打开 `http://127.0.0.1:5173`。
+Windows 上推荐用 launcher，不推荐手动 `bun run dev`：launcher 会统一处理 Bun 依赖检查、web build、RPC 环境变量和 production server。打开 `http://127.0.0.1:8787`。
 
 ---
 
@@ -283,8 +282,7 @@ lsof -ti tcp:8787 | xargs kill -9
 **Windows：**
 ```cmd
 set OMP_DECK_PORT=8877
-set OMP_DECK_WEB_PORT=5174
-bun run dev
+start-rpc-deck.cmd
 REM 或杀掉占用进程
 for /f "tokens=5" %a in ('netstat -aon ^| findstr :8787 ^| findstr LISTENING') do taskkill /pid %a /f
 ```

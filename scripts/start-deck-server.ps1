@@ -1,8 +1,9 @@
 # Start the omp-deck server in the background. ASCII only per PS 5.1 .ps1 parse rules.
 $ErrorActionPreference = "Stop"
 
-$serverDir = "C:\Users\bryan\enclave\omp-deck\apps\server"
-$logDir = "C:\Users\bryan\enclave\omp-deck\.logs"
+$rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
+$serverDir = Join-Path $rootDir "apps\server"
+$logDir = Join-Path $rootDir ".logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"
