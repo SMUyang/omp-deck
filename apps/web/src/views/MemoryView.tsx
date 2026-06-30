@@ -307,6 +307,7 @@ function MemoryTopology({
 						</feMerge>
 					</filter>
 				</defs>
+				<circle cx={center.x} cy={center.y} r={bankRadius} className="fill-none stroke-line/20" strokeWidth="1" strokeDasharray="3 4" />
 				{bankNodes.map((node) => (
 					<line key={`edge:${node.bank.bank}`} x1={center.x} y1={center.y} x2={node.x} y2={node.y} className="stroke-line" strokeWidth="1.5" />
 				))}
@@ -355,10 +356,12 @@ function BankTopologyNode({
 		{ label: "emb", count: node.bank.embeddingCount },
 		{ label: "G", count: node.bank.graphEdgeCount },
 	];
-	const storeRadius = node.radius + 24;
-	const labelAnchor = Math.cos(node.angle) >= 0 ? "start" : "end";
-	const labelX = node.x + (labelAnchor === "start" ? node.radius + 10 : -node.radius - 10);
-	const labelY = node.y + 4;
+	const storeRadius = node.radius + 28;
+	const labelOut = {
+		x: node.x + Math.cos(node.angle) * (node.radius + 14),
+		y: node.y + Math.sin(node.angle) * (node.radius + 14) + 4,
+	};
+	const labelAnchor = Math.abs(Math.cos(node.angle)) < 0.3 ? "middle" : Math.cos(node.angle) >= 0 ? "start" : "end";
 
 	return (
 		<g
@@ -373,8 +376,9 @@ function BankTopologyNode({
 			className="cursor-pointer outline-none"
 		>
 			<title>{t("memory.bankTopologyTitle", { bank: node.bank.bank, count: node.total })}</title>
+			<circle cx={node.x} cy={node.y} r={storeRadius} className="fill-none stroke-line/15" strokeWidth="1" />
 			{stores.map((store, index) => {
-				const angle = node.angle + (index - 2) * 0.38;
+				const angle = node.angle + (index - 2) * 0.28;
 				const x = node.x + Math.cos(angle) * storeRadius;
 				const y = node.y + Math.sin(angle) * storeRadius;
 				const storeNodeRadius = store.count > 0 ? 5 + Math.min(8, Math.sqrt(store.count) / 3) : 4;
@@ -399,7 +403,7 @@ function BankTopologyNode({
 			<text x={node.x} y={node.y + 4} textAnchor="middle" className="fill-ink font-mono text-[10px] font-semibold">
 				{node.total}
 			</text>
-			<text x={labelX} y={labelY} textAnchor={labelAnchor} className="fill-ink-2 font-mono text-[9px]">
+			<text x={labelOut.x} y={labelOut.y} textAnchor={labelAnchor} className="fill-ink-2 font-mono text-[9px]">
 				{node.bank.bank}
 			</text>
 		</g>
@@ -407,7 +411,7 @@ function BankTopologyNode({
 }
 
 function totalBankCount(bank: MemoryBankSummary): number {
-	return bank.workingCount + bank.episodicCount + bank.factCount + bank.embeddingCount;
+	return bank.workingCount + bank.episodicCount + bank.factCount + bank.embeddingCount + bank.graphEdgeCount;
 }
 
 function MemoryGraphPanel({
