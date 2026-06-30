@@ -1747,3 +1747,88 @@ export interface OAuthPromptReplyRequest {
 	promptId: string;
 	answer: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Memory Cockpit
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MemoryBackendId = "off" | "local" | "hindsight" | "mnemopi";
+
+export interface MemoryBankSummary {
+	bank: string;
+	dbPath: string;
+	workingCount: number;
+	episodicCount: number;
+	factCount: number;
+	embeddingCount: number;
+	graphEdgeCount: number;
+}
+
+export interface MemoryStatusResponse {
+	backend: MemoryBackendId;
+	available: boolean;
+	agentDir: string;
+	memoryDir: string;
+	banks: MemoryBankSummary[];
+	totalWorking: number;
+	totalEpisodic: number;
+	totalFacts: number;
+	totalEmbeddings: number;
+	totalGraphEdges: number;
+	message?: string;
+}
+
+export interface MemoryItem {
+	id: string;
+	content: string;
+	contentTruncated?: boolean;
+	source?: string;
+	timestamp?: string;
+	importance?: number;
+	memoryType?: string;
+	bank: string;
+	recallCount?: number;
+	supersededBy?: string | null;
+}
+
+export interface MemorySearchResponse {
+	query: string;
+	count: number;
+	items: MemoryItem[];
+}
+
+export type MemoryGraphNodeKind = "working" | "episodic" | "fact" | "reference";
+
+export interface MemoryGraphNode {
+	/** Stable graph id, prefixed with bank to avoid cross-bank collisions. */
+	id: string;
+	/** Original row id from the source memory table. */
+	memoryId: string;
+	bank: string;
+	kind: MemoryGraphNodeKind;
+	content: string;
+	contentTruncated?: boolean;
+	importance?: number;
+	memoryType?: string;
+	timestamp?: string;
+	recallCount?: number;
+	inbound: number;
+	outbound: number;
+}
+
+export interface MemoryGraphEdge {
+	source: string;
+	target: string;
+	bank: string;
+	relation: string;
+	weight?: number;
+}
+
+export interface MemoryGraphResponse {
+	query: string;
+	bank?: string;
+	nodes: MemoryGraphNode[];
+	edges: MemoryGraphEdge[];
+	totalNodes: number;
+	truncated: boolean;
+}

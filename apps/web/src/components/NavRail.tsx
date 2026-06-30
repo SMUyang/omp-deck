@@ -1,4 +1,4 @@
-import { BookOpen, Clock, Globe, Inbox, KanbanSquare, MessagesSquare, Plug, Settings, Sparkles, Store } from "lucide-react";
+import { BookOpen, Brain, Clock, Globe, Inbox, KanbanSquare, MessagesSquare, Plug, Settings, Sparkles, Store } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { changeLang, getCurrentLang, type Lang } from "@/i18n";
@@ -15,6 +15,7 @@ const ITEMS: ReadonlyArray<{
 	{ to: "/inbox", labelKey: "nav.inbox", icon: Inbox },
 	{ to: "/marketplace", labelKey: "nav.marketplace", icon: Store },
 	{ to: "/skills", labelKey: "nav.skills", icon: Sparkles },
+	{ to: "/memory", labelKey: "nav.memory", icon: Brain },
 	{ to: "/kb", labelKey: "nav.knowledge", icon: BookOpen },
 	{ to: "/integrations", labelKey: "nav.integrations", icon: Plug },
 ];

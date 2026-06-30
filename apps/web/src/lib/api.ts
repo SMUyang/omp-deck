@@ -6,6 +6,9 @@ import type {
 	ListSessionsResponse,
 	ListSlashCommandsResponse,
 	ListWorkspacesResponse,
+	MemoryGraphResponse,
+	MemorySearchResponse,
+	MemoryStatusResponse,
 	ModelRef,
 	ProviderUsageResponse,
 } from "@omp-deck/protocol";
@@ -87,5 +90,19 @@ export const api = {
 	},
 	getProviderUsage(): Promise<ProviderUsageResponse> {
 		return request<ProviderUsageResponse>("/status/provider-usage");
+	},
+	getMemoryStatus(): Promise<MemoryStatusResponse> {
+		return request<MemoryStatusResponse>("/memory/status");
+	},
+	searchMemories(q: string): Promise<MemorySearchResponse> {
+		return request<MemorySearchResponse>(`/memory/search?q=${encodeURIComponent(q)}`);
+	},
+	getMemoryGraph(params: { bank?: string | null; q?: string; limit?: number } = {}): Promise<MemoryGraphResponse> {
+		const search = new URLSearchParams();
+		if (params.bank) search.set("bank", params.bank);
+		if (params.q) search.set("q", params.q);
+		if (params.limit) search.set("limit", String(params.limit));
+		const suffix = search.toString();
+		return request<MemoryGraphResponse>(`/memory/graph${suffix ? `?${suffix}` : ""}`);
 	},
 };
