@@ -336,6 +336,31 @@ describe("memory-service", () => {
 		expect(similarEdges.every((e) => e.source !== "proj:m3" && e.target !== "proj:m3")).toBe(true);
 	});
 
+	test("query similar neighbor resolves as working node not reference", () => {
+		const agentDir = makeTempAgentDir();
+		const dbPath = path.join(agentDir, "memories", "mnemopi", "banks", "proj", "mnemopi.db");
+		createTestDb(dbPath);
+		const { Database } = require("bun:sqlite");
+		const db = new Database(dbPath);
+		// Recreate memory_embeddings with identical vectors for m1 and m2
+		db.run(`DROP TABLE memory_embeddings`);
+		db.run(`CREATE TABLE memory_embeddings (memory_id TEXT, embedding_json TEXT)`);
+		const identical = JSON.stringify([1, 0, 0, 0]);
+		db.run(`INSERT INTO memory_embeddings VALUES ('m1', ?)`, identical);
+		db.run(`INSERT INTO memory_embeddings VALUES ('m2', ?)`, identical);
+		db.close();
+
+		// Query "keyboard" matches only m1, but m2 is similar via embedding
+		const graph = getMemoryGraph(agentDir, { bank: "proj", query: "keyboard", limit: 10 });
+
+		const m2Node = graph.nodes.find((n) => n.memoryId === "m2");
+		expect(m2Node).toBeDefined();
+		if (!m2Node) throw new Error("expected m2 node");
+		// m2 must resolve as a working node with real content, not a bare reference
+		expect(m2Node.kind).toBe("working");
+		expect(m2Node.content).toContain("yabai");
+	});
+
 	test("derives same_session edges from working_memory session_id", () => {
 		const agentDir = makeTempAgentDir();
 		const dbPath = path.join(agentDir, "memories", "mnemopi", "banks", "proj", "mnemopi.db");

@@ -481,6 +481,8 @@ function contentFromFactRow(row: SqliteRow | undefined, fallback: string): strin
 function resolveEndpointNode(db: Database, bank: string, memoryId: string, workingRows: Map<string, RawWorkingMemoryRow>): MemoryGraphNode {
 	const working = workingRows.get(memoryId);
 	if (working) return toGraphNode(bank, working);
+	const workingDirect = loadRowById(db, "working_memory", "id", memoryId) as RawWorkingMemoryRow | undefined;
+	if (workingDirect && workingDirect.content) return toGraphNode(bank, workingDirect);
 
 	const episodic = loadRowById(db, "episodic_memory", "id", memoryId);
 	if (episodic) {
