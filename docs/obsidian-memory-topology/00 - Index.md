@@ -28,3 +28,4 @@
 
 - `3498942` Add Memory Cockpit v1: status, search, and topology overview
 - `3498942+` Fix topology bank node sizing to include `graphEdgeCount`; switch bank satellites to outward-facing concentric arcs with faint orbit rings
+- `d390bf5+` Extract architecture, skills, and cfdna/pon-snv-cnv domain facts into Mnemopi structured memories; complete transformation checklist

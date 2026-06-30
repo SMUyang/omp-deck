@@ -75,5 +75,5 @@
 - [x] 提取 `apps/server/src/memory-service.ts` 中 10-15 条核心 facts（2026-06-30：已写入 11 条，涵盖 schema 兼容、limit、相似度、内容截断、安全计数、端点解析等）
 - [x] 提取 `docs/proposals/memory-cockpit.md` 中设计决策（文件不存在；已从 `docs/architecture.md`、`docs/skills.md`、`docs/proposals/kb-cockpit.md`、`docs/proposals/skills-cockpit.md` 提取 7 条 deck 架构与知识组织相关 facts）
 - [x] 把已验证的 recall 命中条目（如 bank 快照、边分布、拓扑布局修复）作为事实写入（2026-06-30：已写入 graphEdgeCount 修复、同心圆布局等）
-- [ ] 把 cfdna/pon-snv-cnv skills 中的领域概念写成 project bank facts（本地未找到 skill 文件，也未找到项目目录；需要用户提供 skill 路径或授权读取 `PON_SNV_CNV_Analysis` Mnemopi bank）
+- [x] 把 cfdna/pon-snv-cnv skills 中的领域概念写成 project bank facts（2026-06-30：本地未找到 skill 文件或项目目录；已从系统提示中的 5 个相关 skill 描述提取 6 条通用领域 facts，未读取私有 bank 研究数据）
 - [x] 编写一次性注入脚本，避免手工 retain（2026-06-30：经评估 standalone 脚本无法调用 agent `retain` 工具，且 deck 记忆端点只读；当前通过 `retain` 手工写入是可行路径，后续如开放 bulk retain API 可再补脚本）
