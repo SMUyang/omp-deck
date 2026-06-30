@@ -5,7 +5,7 @@
  * correlation plus event subscription. Does NOT depend on the deck's embedded
  * SDK — it talks to whatever `omp` is on PATH (or OMP_DECK_OMP_BIN).
  */
-import type { FileSink } from "bun";
+import type { FileSink, Subprocess } from "bun";
 import { logger } from "../log.ts";
 
 const log = logger("rpc-transport");
@@ -13,6 +13,11 @@ const log = logger("rpc-transport");
 /** A command sent to omp over stdin (one JSON object per line). */
 export interface RpcCommand {
 	readonly id: string;
+	readonly type: string;
+	readonly [key: string]: unknown;
+}
+
+export interface RpcCommandBody {
 	readonly type: string;
 	readonly [key: string]: unknown;
 }
@@ -68,8 +73,34 @@ export interface OmpRpcTransportOptions {
 }
 
 interface PendingRequest {
+	command: string;
 	resolve: (response: RpcResponse) => void;
 	reject: (error: Error) => void;
+}
+
+export interface PendingResponseKey {
+	readonly id: string;
+	readonly command: string;
+}
+
+export function selectPendingResponseKey(
+	response: Pick<RpcResponse, "id" | "command">,
+	pending: Iterable<PendingResponseKey>,
+): string | undefined {
+	if (response.id) {
+		for (const item of pending) {
+			if (item.id === response.id) return item.id;
+		}
+		return undefined;
+	}
+
+	let matchedId: string | undefined;
+	for (const item of pending) {
+		if (item.command !== response.command) continue;
+		if (matchedId) return undefined;
+		matchedId = item.id;
+	}
+	return matchedId;
 }
 
 type PipedReader = ReadableStream<Uint8Array>;
@@ -80,7 +111,7 @@ export class OmpRpcTransport {
 	readonly #cwd: string;
 	readonly #extraArgs: readonly string[];
 	readonly #readyTimeoutMs: number;
-	#proc: ReturnType<typeof Bun.spawn> | null = null;
+	#proc: Subprocess | null = null;
 	#stdin: PipedWriter | null = null;
 	#stdout: PipedReader | null = null;
 	#stderr: PipedReader | null = null;
@@ -133,34 +164,35 @@ export class OmpRpcTransport {
 	}
 
 	/** Send a command and await its correlated response. */
-	async send<T = unknown>(command: Omit<RpcCommand, "id">): Promise<T> {
+	async send<T = unknown>(command: RpcCommandBody): Promise<T> {
 		if (!this.#stdin) throw new Error("transport not started or stdin closed");
 		const id = `r${++this.#requestCounter}`;
 		const line = JSON.stringify({ ...command, id }) + "\n";
 
-		const response = await new Promise<RpcResponse>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.#pending.delete(id);
-				reject(
-					new Error(
-						`RPC timeout: command "${command.type}" (${id}). Stderr: ${this.#getStderrPreview()}`,
-					),
-				);
-			}, 60_000);
+		const pendingResponse = Promise.withResolvers<RpcResponse>();
+		const timer = setTimeout(() => {
+			this.#pending.delete(id);
+			pendingResponse.reject(
+				new Error(
+					`RPC timeout: command "${command.type}" (${id}). Stderr: ${this.#getStderrPreview()}`,
+				),
+			);
+		}, 60_000);
 
-			this.#pending.set(id, {
-				resolve: (resp) => {
-					clearTimeout(timer);
-					resolve(resp);
-				},
-				reject: (err) => {
-					clearTimeout(timer);
-					reject(err);
-				},
-			});
-
-			this.#stdin!.write(line);
+		this.#pending.set(id, {
+			command: command.type,
+			resolve: (resp) => {
+				clearTimeout(timer);
+				pendingResponse.resolve(resp);
+			},
+			reject: (err) => {
+				clearTimeout(timer);
+				pendingResponse.reject(err);
+			},
 		});
+
+		this.#stdin.write(line);
+		const response = await pendingResponse.promise;
 
 		if (!response.success) {
 			throw new Error(`RPC "${command.type}" failed: ${response.error ?? "(no error message)"}`);
@@ -310,12 +342,20 @@ export class OmpRpcTransport {
 		}
 
 		if (isResponse(parsed)) {
-			const id = parsed.id;
-			if (id && this.#pending.has(id)) {
-				this.#pending.get(id)!.resolve(parsed);
-				return;
+			const pendingKeys: PendingResponseKey[] = [];
+			for (const [pendingId, pending] of this.#pending) {
+				pendingKeys.push({ id: pendingId, command: pending.command });
 			}
-			log.warn(`orphan RPC response: ${parsed.command} (${id})`);
+			const key = selectPendingResponseKey(parsed, pendingKeys);
+			if (key) {
+				const pending = this.#pending.get(key);
+				if (pending) {
+					this.#pending.delete(key);
+					pending.resolve(parsed);
+					return;
+				}
+			}
+			log.warn(`orphan RPC response: ${parsed.command} (${parsed.id})`);
 			return;
 		}
 

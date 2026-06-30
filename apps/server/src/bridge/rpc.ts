@@ -42,7 +42,8 @@ import type {
 	RuntimeEnvUpdate,
 } from "./types.ts";
 
-import { OmpRpcTransport, type RpcEvent } from "./rpc-transport.ts";
+import type { RpcCommandBody, RpcEvent } from "./rpc-transport.ts";
+import { OmpRpcTransport } from "./rpc-transport.ts";
 import * as path from "node:path";
 import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
@@ -337,10 +338,9 @@ class RpcSessionHandle implements SessionHandle {
 		text: string,
 		opts?: { streamingBehavior?: "steer" | "followUp"; images?: ImageAttachment[] },
 	): Promise<void> {
-		const command: Record<string, unknown> = { type: "prompt", message: text };
-		if (opts?.streamingBehavior) {
-			command.streamingBehavior = opts.streamingBehavior;
-		}
+		const command: RpcCommandBody = opts?.streamingBehavior
+			? { type: "prompt", message: text, streamingBehavior: opts.streamingBehavior }
+			: { type: "prompt", message: text };
 		await this.#transport.send(command);
 	}
 
