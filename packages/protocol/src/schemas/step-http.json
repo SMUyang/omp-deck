@@ -14,7 +14,6 @@
         "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
         "url": {
           "type": "string",
-          "format": "uri-reference",
           "description": "Templated."
         },
         "headers": {

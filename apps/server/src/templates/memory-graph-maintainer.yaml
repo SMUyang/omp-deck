@@ -15,14 +15,14 @@ steps:
   - id: fetch_status
     type: http
     method: GET
-    url: http://127.0.0.1:8787/api/memory/status
+    url: "http://127.0.0.1:{{ env.OMP_DECK_PORT }}/api/memory/status"
     expect_json: true
 
   # Fetch the full bounded graph (all banks, 120 nodes)
   - id: fetch_graph
     type: http
     method: GET
-    url: http://127.0.0.1:8787/api/memory/graph?limit=120
+    url: "http://127.0.0.1:{{ env.OMP_DECK_PORT }}/api/memory/graph?limit=120"
     expect_json: true
 
   - id: compute_stats

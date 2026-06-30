@@ -18,7 +18,7 @@ import { validateRoutineSpec } from "@omp-deck/protocol";
 import { listTemplates, loadTemplate } from "./templates.ts";
 
 /** Templates that MUST ship in the public repo. Anything else is best-effort. */
-const REQUIRED_SHIPPED = ["daily-briefing"] as const;
+const REQUIRED_SHIPPED = ["daily-briefing", "memory-graph-maintainer"] as const;
 
 describe("routine templates", () => {
 	test("every required shipped template is in the listing", () => {
@@ -41,4 +41,18 @@ describe("routine templates", () => {
 			}
 		});
 	}
+
+	test("memory-graph-maintainer uses runtime deck port instead of hard-coded default port", () => {
+		const loaded = loadTemplate("memory-graph-maintainer");
+		expect(loaded).not.toBeNull();
+		if (!loaded) return;
+		const httpUrls = loaded.spec.steps
+			.filter((step) => step.type === "http")
+			.map((step) => step.url);
+		expect(httpUrls.length).toBeGreaterThan(0);
+		for (const url of httpUrls) {
+			expect(url).toContain("{{ env.OMP_DECK_PORT }}");
+			expect(url).not.toContain("127.0.0.1:8787");
+		}
+	});
 });

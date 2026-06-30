@@ -104,7 +104,7 @@ export async function runV1Pipeline(input: {
 		},
 		trigger: triggerPayload,
 		steps: {},
-		env: filterEnv(process.env),
+		env: buildRoutineEnv(process.env),
 		secrets: {}, // V1: tenant `.env` secrets not yet plumbed through; placeholder
 		state: loadState(routine.id),
 	};
@@ -405,6 +405,16 @@ async function dispatchStep(
 			};
 		}
 	}
+}
+
+export function buildRoutineEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+	const out = filterEnv(env);
+	if (!out.OMP_DECK_API_BASE) {
+		const host = out.OMP_DECK_HOST?.trim() || "127.0.0.1";
+		const port = out.OMP_DECK_PORT?.trim() || "8787";
+		out.OMP_DECK_API_BASE = `http://${host}:${port}/api`;
+	}
+	return out;
 }
 
 function filterEnv(env: NodeJS.ProcessEnv): Record<string, string> {

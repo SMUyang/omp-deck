@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 
 import { evaluate } from "./sandbox.ts";
 import { render, renderString } from "./template.ts";
+import { buildRoutineEnv } from "./v1-runner.ts";
 
 const sampleContext = {
 	run: {
@@ -34,6 +35,18 @@ const sampleContext = {
 	secrets: { MY_KEY: "sk-do-not-leak-abc", OTHER: "shh" },
 	state: { last_briefing_date: "2026-05-20" },
 };
+
+describe("routine env", () => {
+	test("derives OMP_DECK_API_BASE from host and port when unset", () => {
+		const env = buildRoutineEnv({ OMP_DECK_HOST: "127.0.0.1", OMP_DECK_PORT: "8902" });
+		expect(env.OMP_DECK_API_BASE).toBe("http://127.0.0.1:8902/api");
+	});
+
+	test("keeps explicit OMP_DECK_API_BASE", () => {
+		const env = buildRoutineEnv({ OMP_DECK_API_BASE: "http://deck.local/api", OMP_DECK_PORT: "8902" });
+		expect(env.OMP_DECK_API_BASE).toBe("http://deck.local/api");
+	});
+});
 
 // ─── template.render — value-mode (whole-value substitution) ───────────────
 
