@@ -593,24 +593,24 @@ function loadDerivedEdges(
 	}
 	for (const ep of episodicRows) {
 		const epNodeId = graphNodeId(bank, ep.id);
-		if (!candidateMap.has(epNodeId)) {
-			const trimmed = trimMemoryContent(ep.content ?? ep.id);
-			candidateMap.set(epNodeId, {
-				id: epNodeId,
-				memoryId: ep.id,
-				bank,
-				kind: "episodic",
-				content: trimmed.content,
-				...(trimmed.truncated ? { contentTruncated: true } : {}),
-				importance: ep.importance ?? undefined,
-				timestamp: ep.timestamp ?? undefined,
-				inbound: 0,
-				outbound: 0,
-			});
-		}
+		const trimmed = trimMemoryContent(ep.content ?? ep.id);
+		const epNode: MemoryGraphNode = {
+			id: epNodeId,
+			memoryId: ep.id,
+			bank,
+			kind: "episodic",
+			content: trimmed.content,
+			...(trimmed.truncated ? { contentTruncated: true } : {}),
+			importance: ep.importance ?? undefined,
+			timestamp: ep.timestamp ?? undefined,
+			inbound: 0,
+			outbound: 0,
+		};
+		if (!query && !candidateMap.has(epNodeId)) candidateMap.set(epNodeId, epNode);
 		for (const targetId of parseSummaryIds(ep.summary_of)) {
 			const targetNodeId = graphNodeId(bank, targetId);
 			if (query && !seedNodeIds.has(epNodeId) && !seedNodeIds.has(targetNodeId)) continue;
+			if (!candidateMap.has(epNodeId)) candidateMap.set(epNodeId, epNode);
 			if (!candidateMap.has(targetNodeId)) candidateMap.set(targetNodeId, resolveEndpointNode(db, bank, targetId, workingRows));
 			derived.push({ source: epNodeId, target: targetNodeId, bank, relation: "summarizes", weight: 1 });
 		}
@@ -624,22 +624,22 @@ function loadDerivedEdges(
 	}
 	for (const fact of factRows) {
 		const factNodeId = graphNodeId(bank, fact.fact_id);
-		if (!candidateMap.has(factNodeId)) {
-			const triple = [fact.subject, fact.predicate, fact.object].filter(Boolean).join(" ");
-			candidateMap.set(factNodeId, {
-				id: factNodeId,
-				memoryId: fact.fact_id,
-				bank,
-				kind: "fact",
-				content: trimMemoryContent(triple || fact.fact_id).content,
-				timestamp: fact.timestamp ?? undefined,
-				inbound: 0,
-				outbound: 0,
-			});
-		}
+		const triple = [fact.subject, fact.predicate, fact.object].filter(Boolean).join(" ");
+		const factNode: MemoryGraphNode = {
+			id: factNodeId,
+			memoryId: fact.fact_id,
+			bank,
+			kind: "fact",
+			content: trimMemoryContent(triple || fact.fact_id).content,
+			timestamp: fact.timestamp ?? undefined,
+			inbound: 0,
+			outbound: 0,
+		};
+		if (!query && !candidateMap.has(factNodeId)) candidateMap.set(factNodeId, factNode);
 		if (!fact.source_msg_id) continue;
 		const targetNodeId = graphNodeId(bank, fact.source_msg_id);
 		if (query && !seedNodeIds.has(factNodeId) && !seedNodeIds.has(targetNodeId)) continue;
+		if (!candidateMap.has(factNodeId)) candidateMap.set(factNodeId, factNode);
 		if (!candidateMap.has(targetNodeId)) candidateMap.set(targetNodeId, resolveEndpointNode(db, bank, fact.source_msg_id, workingRows));
 		derived.push({ source: factNodeId, target: targetNodeId, bank, relation: "extracted_from", weight: fact.confidence ?? 0.7 });
 	}

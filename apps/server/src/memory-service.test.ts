@@ -170,6 +170,27 @@ describe("memory-service", () => {
 		expect(graph.totalNodes).toBe(1);
 	});
 
+	test("query graph excludes unrelated derived fact and episodic nodes", () => {
+		const agentDir = makeTempAgentDir();
+		const dbPath = path.join(agentDir, "memories", "mnemopi", "banks", "proj", "mnemopi.db");
+		createTestDb(dbPath);
+		const { Database } = require("bun:sqlite");
+		const db = new Database(dbPath);
+		db.run(`DROP TABLE facts`);
+		db.run(`CREATE TABLE facts (fact_id TEXT, source_msg_id TEXT, subject TEXT, predicate TEXT, object TEXT, confidence REAL, timestamp TEXT)`);
+		db.run(`INSERT INTO facts VALUES ('fact-yabai', 'm2', 'window manager', 'is', 'yabai', 0.7, '2026-01-04')`);
+		db.run(`DROP TABLE episodic_memory`);
+		db.run(`CREATE TABLE episodic_memory (id TEXT, content TEXT, summary_of TEXT, importance REAL, timestamp TEXT)`);
+		db.run(`INSERT INTO episodic_memory VALUES ('ep-yabai', 'window manager summary', 'm2', 0.6, '2026-01-05')`);
+		db.close();
+
+		const graph = getMemoryGraph(agentDir, { bank: "proj", query: "keyboard", limit: 10 });
+
+		expect(graph.nodes.map((node) => node.id)).toEqual(["proj:m1"]);
+		expect(graph.edges).toHaveLength(0);
+		expect(graph.totalNodes).toBe(1);
+	});
+
 	test("reads graph_edges when source target columns are available", () => {
 		const agentDir = makeTempAgentDir();
 		const dbPath = path.join(agentDir, "memories", "mnemopi", "banks", "proj", "mnemopi.db");
