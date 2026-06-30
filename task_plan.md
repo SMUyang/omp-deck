@@ -42,4 +42,4 @@ Status: complete
 - Follow TDD for new server behavior.
 
 ## Known issues
-- Full `bun test` currently has 339 pass / 1 fail. Failure is `apps/server/src/orientation-store.test.ts` reading the real user start command; unrelated to memory topology but should be isolated separately.
+- Fresh full `bun test` currently has 348 pass / 1 fail. Failure is `apps/server/src/orientation-store.test.ts` reading the real user start command; unrelated to memory topology but should be isolated separately.

@@ -13,5 +13,5 @@
 - Added native SVG graph retrieval panel in `MemoryView.tsx` with submitted topology search, selected-node details, and stale response guard.
 - Added project skill `.omp/skills/memory-topology/SKILL.md` and verified it with a read-only pressure scenario.
 - Code review found unbounded edge loads and per-keystroke API calls; fixed by capping `graph_edges` query and switching graph search to Enter/button submit.
-- Final targeted checks: memory-service tests 10 pass / 0 fail; server typecheck clean; web typecheck clean; web build exit 0; browser smoke confirmed initial 117 graph nodes, keyboard search reduces to 7 nodes after submit, selected node details render, no nav fallback.
-- Final full `bun test`: 339 pass / 1 fail, still only orientation-store environment leakage from real start command.
+- Fresh targeted checks after checklist completion: memory-service tests 16 pass / 0 fail; server typecheck clean; web typecheck clean; web build exit 0; browser smoke confirmed overview topology renders with 2 SVGs, graph counts render, topology search changes graph results after Enter, and no `nav.memory`/`nav.settings` fallback labels.
+- Fresh full `bun test`: 348 pass / 1 fail; remaining failure is still `apps/server/src/orientation-store.test.ts` reading the real user start command from `~/.omp/agent/commands/start.md`, unrelated to memory topology.
