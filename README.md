@@ -6,7 +6,7 @@ The [`omp`](https://github.com/can1357/oh-my-pi) terminal agent is excellent at 
 
 pi is known for its flexibility and omp applies some opinions on how to leverage it more effectively. omp-deck is best understood as a web interface for omp with a small set of additional opinions applied on top of omp. 
 
-> **Status:** v0.5.0 — cross-platform CI matrix, Linux container builds and boots, Mac/Linux launcher. See [CHANGELOG.md](./CHANGELOG.md).
+> **Status:** v0.6.1 — RPC backend (external `omp --mode rpc`), auto-update scripts, memory topology cockpit. Fork of [bjb2/omp-deck](https://github.com/bjb2/omp-deck). See [CHANGELOG.md](./CHANGELOG.md).
 
 ![omp-deck chat surface — live tool calls + orientation summary](./docs/screenshots/00-hero-chat-paper.png)
 
@@ -60,44 +60,101 @@ omp-deck is the cockpit that holds all of that. The chat surface stays at parity
 
 ## Quickstart
 
-### Global install (recommended)
+### Option A: RPC backend with external omp (recommended for this fork)
+
+This fork defaults to an **RPC backend** — instead of embedding an old SDK, the deck spawns your globally installed `omp` CLI via `omp --mode rpc`, so the web UI always matches your terminal experience exactly (same model catalog, same session data, same version).
+
+**Prerequisites:** [Bun](https://bun.sh) ≥ 1.3.14 and `omp` CLI (`bun add -g @oh-my-pi/pi-coding-agent`). Git is auto-installed if missing.
+
+#### macOS / Linux — one-shot installer
+
+```sh
+bash install-rpc-deck.sh --start
+```
+
+The installer checks prerequisites (auto-installs git via Homebrew / apt / dnf / pacman / apk if missing), clones the repo, runs `bun install`, verifies `omp --mode rpc`, and starts the deck.
+
+#### Windows — one-shot installer
+
+```powershell
+.\install-rpc-deck.ps1 -Start
+# or from CMD:
+powershell -NoProfile -ExecutionPolicy Bypass -File install-rpc-deck.ps1 -Start
+```
+
+Git is auto-installed via `winget` or `choco` if missing.
+
+#### Starting the deck (auto-pulls latest code before launch)
+
+```sh
+# macOS / Linux — foreground (Ctrl+C to stop)
+bash start-rpc-deck.sh
+
+# macOS / Linux — background, opens browser
+bash start-rpc-deck.sh start
+bash start-rpc-deck.sh stop      # stop background instance
+bash start-rpc-deck.sh status    # check if running
+```
+
+```powershell
+# Windows — foreground
+.\start-rpc-deck.ps1
+
+# Windows — background
+.\start-rpc-deck.ps1 start
+.\start-rpc-deck.ps1 stop
+.\start-rpc-deck.ps1 status
+```
+
+Both start scripts run `git pull --ff-only origin main` + `bun install` before launching, so every start picks up the latest fixes. The background mode writes PID + logs to `.logs/`.
+
+### Option B: npm global install (uses embedded SDK)
 
 You don't need the `omp` CLI installed separately — the deck bundles the agent SDK in-process.
-
-**Prerequisites:** [Bun](https://bun.sh) ≥ 1.3.14 on your `PATH`, plus Node ≥ 18 (for `npm install` itself).
 
 ```sh
 npm install -g omp-deck
 omp-deck
 ```
 
-Boots on <http://127.0.0.1:8787> — open it in your browser. On first run, the deck creates `~/.omp/agent/` from scratch and installs starter skills + extensions; its own state lives in `~/.omp-deck/` (override with `OMP_DECK_DATA_DIR`). If you already use `omp` in a terminal on this machine, your existing `~/.omp/agent` is picked up automatically — no re-auth.
+Boots on <http://127.0.0.1:8787>. Your existing `~/.omp/agent` is picked up automatically.
 
-**Authenticate (one-time, in the deck UI):**
-
-- **Claude Pro / Max, ChatGPT Plus / Pro, or any subscription provider** → Settings → Providers → click *Sign in*. Browser OAuth flow handles the rest. Token stored in `~/.omp/agent/auth.db`.
-- **Anthropic / OpenAI / OpenRouter / Google / etc. API key** → Settings → Env → paste the key. Saved to the deck-managed `.env` (never logged in clear text).
-
-That's it — pick a model in the chat surface and send a prompt.
-
-Other env knobs: `OMP_DECK_PORT`, `OMP_DECK_HOST`, `OMP_DECK_DB_PATH`, `OMP_DECK_UPLOADS_ROOT` — see [docs/configuration.md](./docs/configuration.md). Prefer to skip the global install? `bunx omp-deck` works too (same package, no PATH pollution).
-
-### From source (for development)
-
-For hot reload + the Vite dev server:
+### Option C: From source (for development)
 
 ```sh
-git clone https://github.com/bjb2/omp-deck.git
+git clone https://github.com/SMUyang/omp-deck.git
 cd omp-deck
 bun install
 bun run dev
 ```
 
-Open <http://127.0.0.1:5173>.
+Open <http://127.0.0.1:5173> (Vite dev server).
 
-For the Windows RPC fork flow, use `install-rpc-deck.ps1` once, then start with `start-rpc-deck.cmd` or `start-rpc-deck.ps1`. The RPC launcher builds the web bundle, runs the production Bun server on `:8787`, opens <http://127.0.0.1:8787>, and writes logs under `.logs/`.
+### Option D: Docker
 
-For container-based deployment, the repo ships a `Dockerfile` (Debian-slim base, glibc-compatible); see [docs/deployment.md](./docs/deployment.md). For the full step-by-step (Bun install, optional `omp` CLI, auth alternatives), see [docs/install.md](./docs/install.md).
+```sh
+docker-compose up -d
+```
+
+The repo ships a `Dockerfile` (Debian-slim base) with `restart: unless-stopped` and a healthcheck. See [docs/deployment.md](./docs/deployment.md).
+
+### Environment overrides
+
+| Variable | Default | Description |
+|---|---|---|
+| `OMP_DECK_PORT` | `8787` | Server port |
+| `OMP_DECK_WEB_PORT` | `5173` | Vite dev server port (dev mode only) |
+| `OMP_DECK_AGENT_BACKEND` | `rpc` | `rpc` (external omp) or `in-process` (embedded SDK) |
+| `OMP_DECK_OMP_BIN` | auto-detect | Path to omp binary |
+| `OMP_DECK_DEFAULT_CWD` | `$HOME` | Default workspace |
+| `OMP_DECK_HOST` | `127.0.0.1` | Bind address |
+
+**Authenticate (one-time, in the deck UI):**
+
+- **Subscription providers** (Claude Pro/Max, ChatGPT Plus/Pro) → Settings → Providers → *Sign in*.
+- **API keys** (Anthropic, OpenAI, etc.) → Settings → Env → paste the key.
+
+See [docs/configuration.md](./docs/configuration.md) for the full reference.
 
 ## How it compares
 
@@ -118,17 +175,73 @@ omp + omp-deck is one slice of a busy space. The neighbors:
 
 The short version: **Claude Code** is the polished vendor experience for Claude. **Hermes** is the self-improving agent with serverless backends. **OpenClaw** lives wherever you message from. **omp + omp-deck** is the cockpit shape — a model-agnostic coding agent with a web surface for the work *around* the chat (kanban, routines, KB, inbox, plan-mode approval, messaging bridge).
 
+## Architecture
+
+omp-deck is a monorepo with three packages: a React/Vite web frontend, a Bun/Hono server, and a shared protocol package. The server embeds the agent via a pluggable bridge layer.
+
+```
+Browser (React + Vite)
+    │  REST + WebSocket
+    ▼
+omp-deck server (Bun + Hono)
+    │
+    ├── Agent Bridge ──────────────────────────────
+    │   ├── RpcAgentBridge (default)
+    │   │   spawns one `omp --mode rpc` per session
+    │   │   talks JSON-lines over stdio
+    │   │
+    │   └── InProcessAgentBridge (fallback)
+    │       embeds @oh-my-pi/pi-coding-agent SDK
+    │
+    ├── Routines Runner (croner)
+    │   ├── cron / webhook / manual / event triggers
+    │   ├── http step → self-call deck API
+    │   ├── agent step → `omp -p <prompt>` headless
+    │   └── transform / write / deck / mcp / wait steps
+    │
+    ├── deck.db (SQLite, WAL + busy_timeout)
+    │   tasks, inbox, routines, sessions, settings
+    │
+    └── Mnemopi readonly (memory topology)
+        8+ banks, working/episodic/facts, graph edges
+```
+
+### Three omp invocation paths
+
+| Path | What it does | How |
+|------|-------------|-----|
+| **RPC session** | Interactive chat in the browser | `omp --mode rpc` long-lived subprocess per session, JSON-lines over stdio |
+| **Headless agent** | Routine `agent` step (e.g. memory-graph-maintainer LLM analysis) | `omp -p <prompt>` one-shot, captures stdout |
+| **HTTP self-call** | Routine `http` step fetching deck API data | Internal bearer-token HTTP to `127.0.0.1:PORT/api/...` |
+
+The RPC backend is the default (`OMP_DECK_AGENT_BACKEND=rpc`). Set `OMP_DECK_AGENT_BACKEND=in-process` to fall back to the embedded SDK (useful if `omp` CLI is not installed).
+
+### Background running
+
+| Method | Persistence | Auto-restart | Survives reboot |
+|--------|------------|-------------|----------------|
+| `start-rpc-deck.sh start` / `start-rpc-deck.ps1 start` | Process (nohup / Start-Process) | ✗ | ✗ |
+| `docker-compose up -d` | Container | ✓ `unless-stopped` | ✓ |
+| `bun run start` (foreground) | Terminal session | ✗ | ✗ |
+
+All start scripts auto-pull latest code (`git pull --ff-only`) and refresh dependencies (`bun install`) before launching.
+
+### Scheduled tasks (routines)
+
+The built-in routine system supports multi-step pipelines triggered by cron, webhook, manual, or event. The shipped `memory-graph-maintainer` template runs every 30 minutes: fetches the memory topology graph, runs LLM analysis on gaps, writes results to the inbox. Agent steps shell out to `omp -p`; HTTP steps self-call the deck API. Budget caps (`max_duration_secs`, `max_llm_cost_usd`) prevent runaway runs.
+
 ## A few notes on running it
 
 **It's not a hosted product.** You run it yourself, on your machine or in a VM you own. Defaults are loopback-only — to reach it from your phone, front it with Tailscale Serve, an SSH tunnel, or a reverse proxy with its own auth. See [docs/deployment.md](./docs/deployment.md) for the hardening checklist.
 
-**It's not a replacement for `omp`.** It embeds the same SDK in-process and shares the same `~/.omp/agent` session + auth store. Run both — they coexist. The terminal is still where you'll do quick one-shots; the deck is where work sticks around.
+**It's not a replacement for `omp`.** In RPC mode, the deck spawns your terminal `omp` via `omp --mode rpc` — same binary, same model catalog, same `~/.omp/agent` session + auth store. Run both — they coexist. The terminal is for quick one-shots; the deck is where work sticks around.
 
 **State is yours.** Tasks, inbox, routines, KB — all SQLite + plain markdown on disk. No telemetry. The deck never logs secret values, only redacted forms.
 
 ## Docs
 
 - [Install](./docs/install.md) — fresh vs existing-omp install paths.
+- [RPC install guide](./docs/install-rpc-guide.md) — step-by-step for the external omp RPC backend (macOS / Linux / Windows).
 - [Configuration](./docs/configuration.md) — full env reference + restart semantics.
 - [Deployment](./docs/deployment.md) — Tailscale, Docker, SSH-tunnel, hardening checklist.
 - [Slash commands](./docs/slash-commands.md) — deck `/task` + `/plan`, SDK builtins, user/project markdown commands.
