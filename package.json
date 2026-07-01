@@ -50,6 +50,7 @@
 	"files": [
 		"bin",
 		"apps/server/src",
+		"apps/server/scripts",
 		"apps/server/package.json",
 		"apps/web/dist",
 		"starter-skills",
