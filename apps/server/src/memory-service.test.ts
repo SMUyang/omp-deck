@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-import { findMnemopiDbs, getMemoryGraph, getMemoryStatus, searchMemories } from "./memory-service.ts";
+import { findMnemopiDbs, getMemoryGraph, getMemoryStatus, openDbReadonly, searchMemories } from "./memory-service.ts";
 
 const tempDirs: string[] = [];
 
@@ -425,5 +425,18 @@ describe("memory-service", () => {
 		expect(entityEdges[0]).toMatchObject({ source: "proj:m1", target: "proj:m2", relation: "shares_entity" });
 		// Weight is the minimum confidence of the two triples
 		expect(entityEdges[0]?.weight).toBeCloseTo(0.6);
+	});
+	test("openDbReadonly sets busy_timeout so concurrent readers survive lock contention from the omp writer process", () => {
+		const agentDir = makeTempAgentDir();
+		const dbPath = path.join(agentDir, "memories", "mnemopi", "banks", "proj", "mnemopi.db");
+		createTestDb(dbPath);
+
+		const ro = openDbReadonly(dbPath);
+		try {
+			const row = ro.query<{ timeout: number }, []>("PRAGMA busy_timeout").get()!;
+			expect(row.timeout).toBeGreaterThanOrEqual(1000);
+		} finally {
+			ro.close();
+		}
 	});
 });

@@ -42,14 +42,17 @@ function trimMemoryContent(content: string): { content: string; truncated: boole
 	return { content: `${content.slice(0, MEMORY_CONTENT_LIMIT)}…`, truncated: true };
 }
 
-function openDbReadonly(dbPath: string): Database {
+export function openDbReadonly(dbPath: string): Database {
+	let db: Database;
 	try {
-		return new Database(dbPath, { readonly: true });
+		db = new Database(dbPath, { readonly: true });
 	} catch {
 		// Some DBs in WAL recovery state fail readonly but succeed read-write.
 		// We never write — this just lets SQLite do WAL recovery if needed.
-		return new Database(dbPath);
+		db = new Database(dbPath);
 	}
+	db.exec("PRAGMA busy_timeout = 5000");
+	return db;
 }
 
 interface RawWorkingMemoryRow {
