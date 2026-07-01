@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import type { ImagePreviewSource } from "./image-preview";
 import { normalizePreviewImages } from "./image-preview";
 import { ImageLightbox } from "./ImageLightbox";
@@ -18,6 +18,7 @@ export function ImagePreviewGrid({
 }: ImagePreviewGridProps): ReactNode {
 	const items = normalizePreviewImages(images, altPrefix);
 	const [lightbox, setLightbox] = useState<number | null>(null);
+	const closeLightbox = useCallback(() => setLightbox(null), []);
 
 	if (items.length === 0) return null;
 
@@ -37,7 +38,7 @@ export function ImagePreviewGrid({
 				))}
 			</div>
 			{lightbox !== null ? (
-				<ImageLightbox images={items} index={lightbox} onIndexChange={setLightbox} onClose={() => setLightbox(null)} />
+			<ImageLightbox images={items} index={lightbox} onIndexChange={setLightbox} onClose={closeLightbox} />
 			) : null}
 		</>
 	);
