@@ -221,8 +221,13 @@ interface ImageLightboxProps {
 }
 
 export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLightboxProps): ReactNode {
+	if (images.length === 0) return null;
+
+	const clamped = Math.max(0, Math.min(index, images.length - 1));
+	const current = images[clamped];
+	if (!current) return null;
+
 	useEffect(() => {
-		if (images.length === 0) return;
 		const handleKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				onClose();
@@ -236,13 +241,7 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
 		};
 		window.addEventListener("keydown", handleKey);
 		return () => window.removeEventListener("keydown", handleKey);
-	}, [images, index, onClose, onIndexChange]);
-
-	if (images.length === 0) return null;
-
-	const clamped = Math.max(0, Math.min(index, images.length - 1));
-	const current = images[clamped];
-	if (!current) return null;
+	}, [clamped, images.length, onClose, onIndexChange]);
 
 	return (
 		<div
@@ -347,7 +346,7 @@ export function ImagePreviewGrid({
 				<ImageLightbox
 					images={items}
 					index={lightbox}
-					onIndexChange={(i) => setLightbox(i % items.length)}
+					onIndexChange={setLightbox}
 					onClose={() => setLightbox(null)}
 				/>
 			) : null}
