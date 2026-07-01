@@ -44,7 +44,6 @@ describe("image preview helpers", () => {
 		).toEqual([]);
 	});
 
-
 	test("uses bare prefix for single images", () => {
 		const items = normalizePreviewImages([{ data: "x", mimeType: "image/png" }], "screenshot");
 		expect(items).toEqual([{ src: "data:image/png;base64,x", alt: "screenshot" }]);
