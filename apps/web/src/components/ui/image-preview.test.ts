@@ -32,6 +32,18 @@ describe("image preview helpers", () => {
 			{ src: "data:image/jpeg;base64,two", alt: "tool output 2 of 2" },
 		]);
 	});
+	test("filters whitespace-only image payloads", () => {
+		expect(
+			normalizePreviewImages(
+				[
+					{ data: "   ", mimeType: "image/png" },
+					{ data: "\n\t", mimeType: "image/png" },
+				],
+				"pasted",
+			),
+		).toEqual([]);
+	});
+
 
 	test("uses bare prefix for single images", () => {
 		const items = normalizePreviewImages([{ data: "x", mimeType: "image/png" }], "screenshot");
