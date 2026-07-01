@@ -242,6 +242,7 @@ The built-in routine system supports multi-step pipelines triggered by cron, web
 
 - [Install](./docs/install.md) — fresh vs existing-omp install paths.
 - [RPC install guide](./docs/install-rpc-guide.md) — step-by-step for the external omp RPC backend (macOS / Linux / Windows).
+- [中文指南](./docs/guide-zh.md) — 安装、配置、定时任务、记忆系统的完整中文指南。
 - [Configuration](./docs/configuration.md) — full env reference + restart semantics.
 - [Deployment](./docs/deployment.md) — Tailscale, Docker, SSH-tunnel, hardening checklist.
 - [Slash commands](./docs/slash-commands.md) — deck `/task` + `/plan`, SDK builtins, user/project markdown commands.
