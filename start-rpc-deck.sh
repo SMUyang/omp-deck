@@ -5,6 +5,8 @@
 # starts omp-deck in RPC mode so it talks to your globally installed `omp`
 # binary via `omp --mode rpc`. This ensures the Web UI matches your terminal
 # omp experience exactly (same model catalog, same session data).
+# Auto-pulls latest code and dependencies before starting.
+#
 #
 # Usage:
 #   bash start-rpc-deck.sh              # foreground (Ctrl+C to stop)
@@ -78,6 +80,19 @@ check_omp() {
   fi
 }
 
+# ── Pull latest updates before starting ─────────────────────────────────
+self_update() {
+  if [ ! -d ".git" ]; then
+    return
+  fi
+  echo "  pulling latest updates..."
+  if git pull --ff-only origin main 2>/dev/null; then
+    bun install --frozen-lockfile > "$LOG_DIR/install.log" 2>&1 || true
+  else
+    echo "  WARNING: git pull failed, continuing with current state"
+  fi
+}
+
 mkdir -p "$LOG_DIR"
 
 case "${1:-foreground}" in
@@ -88,7 +103,7 @@ case "${1:-foreground}" in
     fi
     build_env
     check_omp
-    bun install --frozen-lockfile > "$LOG_DIR/install.log" 2>&1 || true
+    self_update
     nohup env \
       OMP_DECK_AGENT_BACKEND="$OMP_DECK_AGENT_BACKEND" \
       OMP_DECK_OMP_BIN="$OMP_DECK_OMP_BIN" \
@@ -135,6 +150,7 @@ case "${1:-foreground}" in
   foreground|"")
     build_env
     check_omp
+    self_update
     exec bun run dev
     ;;
 

@@ -1,6 +1,7 @@
 #Requires -Version 5.1
 # start-rpc-deck.ps1 - Windows launcher for omp-deck with external omp RPC backend.
 # ASCII-only for Windows PowerShell 5.1 compatibility.
+# Auto-pulls latest code and dependencies before starting.
 #
 # Usage:
 #   .\start-rpc-deck.ps1              foreground, Ctrl+C to stop
@@ -62,6 +63,17 @@ function Ensure-Dependencies {
   if ($LASTEXITCODE -ne 0) { throw "bun install failed" }
 }
 
+function Update-Repo {
+  if (-not (Test-Path "$Root\.git")) { return }
+  Write-Info "pulling latest updates..."
+  & git pull --ff-only origin main 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    & bun install --frozen-lockfile 2>$null
+  } else {
+    Write-Info "WARNING: git pull failed, continuing with current state"
+  }
+}
+
 function Ensure-WebBuild {
   $index = Join-Path $Root "apps\web\dist\index.html"
   if (Test-Path $index) { return }
@@ -72,6 +84,7 @@ function Ensure-WebBuild {
 
 function Set-RpcEnvironment {
   Ensure-Bun
+  Update-Repo
   $ompBin = Resolve-OmpBin
   Ensure-Omp $ompBin
   $env:OMP_DECK_AGENT_BACKEND = "rpc"
