@@ -1,5 +1,12 @@
 # CPA Vision Input and Image Generation Design
 
+> **Superseded.** This combined spec was split after review into:
+>
+> - `2026-07-01-cpa-usage-design.md`
+> - `2026-07-01-image-models-design.md`
+>
+> Use those two specs for implementation planning.
+
 ## Decision
 
 Implement **both** visual understanding and image generation for `omp-deck`,
