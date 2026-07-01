@@ -69,6 +69,7 @@ interface RpcStateData {
 	sessionId: string;
 	sessionFile?: string;
 	sessionName?: string;
+	cwd?: string;
 	model?: { provider: string; id: string };
 	thinkingLevel?: string;
 	isStreaming: boolean;
@@ -133,6 +134,7 @@ function extractState(value: unknown): RpcStateData {
 		sessionId,
 		sessionFile: typeof value.sessionFile === "string" ? value.sessionFile : undefined,
 		sessionName: typeof value.sessionName === "string" ? value.sessionName : undefined,
+		cwd: typeof value.cwd === "string" ? value.cwd : undefined,
 		model: isRecord(value.model)
 			? {
 					provider: String(value.model.provider ?? ""),
@@ -159,26 +161,122 @@ interface SessionHeader {
 	readonly timestamp: string;
 }
 
-function parseSessionHeader(firstLine: string): SessionHeader | null {
-	let parsed: unknown;
+interface SessionSummaryFromJsonlOptions {
+	readonly fullPath: string;
+	readonly content: string;
+	readonly modifiedAt: Date;
+	readonly cwdFilter?: string;
+}
+
+function parseJsonLine(line: string): Record<string, unknown> | undefined {
 	try {
-		parsed = JSON.parse(firstLine);
+		const parsed: unknown = JSON.parse(line);
+		return isRecord(parsed) ? parsed : undefined;
 	} catch {
-		return null;
+		return undefined;
 	}
-	if (!isRecord(parsed) || parsed.type !== "session") return null;
-	const id = typeof parsed.id === "string" ? parsed.id : "";
-	const cwd = typeof parsed.cwd === "string" ? parsed.cwd : "";
-	const timestamp = typeof parsed.timestamp === "string" ? parsed.timestamp : "";
-	if (!id || !timestamp) return null;
-	const title = typeof parsed.title === "string" ? parsed.title : undefined;
+}
+
+function normalizedTitle(value: unknown): string | null | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.replace(/[\x00-\x1F\x7F]/g, "").trim();
+	return trimmed ? trimmed : null;
+}
+
+function parseSessionHeader(record: Record<string, unknown>, titleOverride?: string | null): SessionHeader | undefined {
+	if (record.type !== "session") return undefined;
+	const id = typeof record.id === "string" ? record.id : "";
+	const cwd = typeof record.cwd === "string" ? record.cwd : "";
+	const timestamp = typeof record.timestamp === "string" ? record.timestamp : "";
+	if (!id || !timestamp) return undefined;
+	const headerTitle = typeof record.title === "string" ? record.title : undefined;
+	const title = titleOverride === null ? undefined : (titleOverride ?? headerTitle);
 	return { id, cwd, title, timestamp };
+}
+
+function parseSessionHeaderFromJsonl(content: string): SessionHeader | undefined {
+	let titleOverride: string | null | undefined;
+	let firstNonEmpty = true;
+	for (const rawLine of content.split(/\r?\n/)) {
+		const line = rawLine.trim();
+		if (!line) continue;
+		const record = parseJsonLine(line);
+		if (!record) return undefined;
+		if (firstNonEmpty && record.type === "title") {
+			titleOverride = normalizedTitle(record.title);
+			firstNonEmpty = false;
+			continue;
+		}
+		return parseSessionHeader(record, titleOverride);
+	}
+	return undefined;
+}
+
+function countMessageEntries(content: string): number {
+	let count = 0;
+	for (const rawLine of content.split(/\r?\n/)) {
+		const line = rawLine.trim();
+		if (!line) continue;
+		const record = parseJsonLine(line);
+		if (record?.type === "message") count++;
+	}
+	return count;
+}
+
+export function sessionSummaryFromJsonl(opts: SessionSummaryFromJsonlOptions): SessionSummary | undefined {
+	const header = parseSessionHeaderFromJsonl(opts.content);
+	if (!header) return undefined;
+	if (opts.cwdFilter && header.cwd !== opts.cwdFilter) return undefined;
+	return {
+		id: header.id,
+		path: opts.fullPath,
+		cwd: header.cwd,
+		title: header.title,
+		createdAt: header.timestamp,
+		updatedAt: opts.modifiedAt.toISOString(),
+		messageCount: countMessageEntries(opts.content),
+	};
+}
+
+export function resumeCwdFromState(state: Pick<RpcStateData, "cwd">, fallbackCwd: string): string {
+	const cwd = state.cwd?.trim();
+	return cwd ? cwd : fallbackCwd;
+}
+
+function isLowSignalTitleInput(text: string): boolean {
+	const normalized = text.trim().toLowerCase();
+	return normalized.length < 4 || normalized === "hello" || normalized === "hi" || normalized === "hey";
+}
+
+export function deriveAutoSessionName(text: string): string | undefined {
+	const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? "";
+	if (!firstLine || firstLine.startsWith("/") || isLowSignalTitleInput(firstLine)) return undefined;
+	const cleaned = firstLine.replace(/[\x00-\x1F\x7F]/g, "").replace(/\s+/g, " ").trim();
+	if (!cleaned) return undefined;
+	const codePoints = [...cleaned];
+	return codePoints.length > 80 ? `${codePoints.slice(0, 77).join("")}…` : cleaned;
+}
+
+async function readSessionCwdFromFile(sessionFile: string | undefined): Promise<string | undefined> {
+	if (!sessionFile) return undefined;
+	try {
+		const file = Bun.file(sessionFile);
+		const content = await file.text();
+		const stat = await file.stat();
+		const summary = sessionSummaryFromJsonl({
+			fullPath: sessionFile,
+			content,
+			modifiedAt: stat ? new Date(stat.mtimeMs) : new Date(),
+		});
+		return summary?.cwd || undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /**
  * List sessions by scanning ~/.omp/agent/sessions on disk.
- * Reads only the first line (session header) of each JSONL file,
- * so it's fast and version-agnostic — no embedded SDK needed.
+ * Understands OMP 16's mutable title slot first line, followed by the session header.
  */
 async function listSessionsFromDisk(cwdFilter?: string): Promise<SessionSummary[]> {
 	const sessionsRoot = path.join(getAgentDir(), "sessions");
@@ -191,32 +289,15 @@ async function listSessionsFromDisk(cwdFilter?: string): Promise<SessionSummary[
 		const fullPath = path.join(sessionsRoot, relPath);
 		try {
 			const file = Bun.file(fullPath);
-			const text = await file.text();
-			const nlIdx = text.indexOf("\n");
-			const firstLine = nlIdx === -1 ? text : text.slice(0, nlIdx);
-			const header = parseSessionHeader(firstLine);
-			if (!header) continue;
-
-			if (cwdFilter && header.cwd !== cwdFilter) continue;
-
+			const content = await file.text();
 			const stat = await file.stat();
-			const createdAt = header.timestamp;
-			const updatedAt = stat
-				? new Date(stat.mtimeMs).toISOString()
-				: createdAt;
-
-			// Approximate message count: total non-empty lines minus header line
-			const messageCount = Math.max(0, text.split("\n").filter(Boolean).length - 1);
-
-			summaries.push({
-				id: header.id,
-				path: fullPath,
-				cwd: header.cwd,
-				title: header.title,
-				createdAt,
-				updatedAt,
-				messageCount,
+			const summary = sessionSummaryFromJsonl({
+				fullPath,
+				content,
+				modifiedAt: stat ? new Date(stat.mtimeMs) : new Date(),
+				cwdFilter,
 			});
+			if (summary) summaries.push(summary);
 		} catch {
 			continue;
 		}
@@ -246,6 +327,7 @@ class RpcSessionHandle implements SessionHandle {
 	#state: RpcStateData;
 	readonly #ompBin: string;
 	#disposed = false;
+	#autoTitleInFlight = false;
 	readonly #onDispose: () => void;
 
 	constructor(opts: RpcSessionOpts) {
@@ -272,6 +354,10 @@ class RpcSessionHandle implements SessionHandle {
 		const type = event.type;
 		if (type === "turn_start") this.#state.isStreaming = true;
 		else if (type === "turn_end" || type === "agent_end") this.#state.isStreaming = false;
+		else if (type === "session_info_update" && typeof event.title === "string") {
+			this.#state.sessionName = event.title;
+			this.#emitSessionUpdated();
+		}
 
 		this.#emit(event as unknown as AgentSessionEventJson);
 
@@ -293,8 +379,17 @@ class RpcSessionHandle implements SessionHandle {
 	async #refreshStateFromRpc(): Promise<void> {
 		try {
 			const rawState = await this.#transport.send<unknown>({ type: "get_state" });
+			const previous = this.#state;
 			const state = extractState(rawState);
 			this.#state = state;
+			if (
+				previous.sessionName !== state.sessionName ||
+				previous.thinkingLevel !== state.thinkingLevel ||
+				previous.model?.provider !== state.model?.provider ||
+				previous.model?.id !== state.model?.id
+			) {
+				this.#emitSessionUpdated();
+			}
 			if (state.contextUsage) {
 				this.#emit({ type: "context_usage", contextUsage: state.contextUsage } as unknown as AgentSessionEventJson);
 			}
@@ -310,6 +405,25 @@ class RpcSessionHandle implements SessionHandle {
 		} catch (err) {
 			log.warn("get_messages refresh failed", err);
 		}
+	}
+
+	#emitSessionUpdated(): void {
+		this.#emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+	}
+
+	#ensureAutoSessionName(text: string): void {
+		if (this.#state.sessionName || this.#autoTitleInFlight) return;
+		const name = deriveAutoSessionName(text);
+		if (!name) return;
+		this.#autoTitleInFlight = true;
+		// Fire-and-forget: never blocks or breaks the prompt turn.
+		void this.setName(name)
+			.catch((err) => {
+				log.warn("auto session name write failed", err);
+			})
+			.finally(() => {
+				this.#autoTitleInFlight = false;
+			});
 	}
 
 	subscribe(listener: EventListener): () => void {
@@ -342,6 +456,7 @@ class RpcSessionHandle implements SessionHandle {
 			? { type: "prompt", message: text, streamingBehavior: opts.streamingBehavior }
 			: { type: "prompt", message: text };
 		await this.#transport.send(command);
+		this.#ensureAutoSessionName(text);
 	}
 
 	isStreamingNow(): boolean {
@@ -380,6 +495,7 @@ class RpcSessionHandle implements SessionHandle {
 	async setName(name: string): Promise<void> {
 		await this.#transport.send({ type: "set_session_name", name });
 		this.#state.sessionName = name;
+		this.#emitSessionUpdated();
 	}
 
 	async compact(focus?: string): Promise<void> {
@@ -587,10 +703,12 @@ export class RpcAgentBridge implements AgentBridge {
 		} catch (err) {
 			log.warn("get_messages failed on resume", err);
 		}
+		const fileCwd = await readSessionCwdFromFile(state.sessionFile ?? opts.sessionPath);
+		const resumedCwd = resumeCwdFromState({ cwd: state.cwd ?? fileCwd }, this.#cwd);
 
 		const handle = new RpcSessionHandle({
 			transport,
-			cwd: state.sessionFile ? opts.sessionPath : this.#cwd,
+			cwd: resumedCwd,
 			state,
 			messages,
 			ompBin: this.#ompBin,
