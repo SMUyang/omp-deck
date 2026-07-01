@@ -67,6 +67,10 @@ describe("RPC auto session naming", () => {
 		);
 	});
 
+	test("keeps short non-filler Chinese prompts titleable", () => {
+		expect(deriveAutoSessionName("修标题")).toBe("修标题");
+	});
+
 	test("skips low-signal first prompts so the next real prompt can name the session", () => {
 		expect(deriveAutoSessionName("hi")).toBeUndefined();
 	});

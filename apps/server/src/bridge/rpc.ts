@@ -243,9 +243,68 @@ export function resumeCwdFromState(state: Pick<RpcStateData, "cwd">, fallbackCwd
 	return cwd ? cwd : fallbackCwd;
 }
 
+const FILLER_TITLE_TOKENS: Record<string, true> = {
+	hi: true,
+	hii: true,
+	hiii: true,
+	hiya: true,
+	hey: true,
+	heya: true,
+	hello: true,
+	helo: true,
+	hullo: true,
+	yo: true,
+	sup: true,
+	wassup: true,
+	whatsup: true,
+	howdy: true,
+	greetings: true,
+	thanks: true,
+	thank: true,
+	thx: true,
+	ty: true,
+	please: true,
+	pls: true,
+	plz: true,
+	ok: true,
+	okay: true,
+	k: true,
+	kk: true,
+	yep: true,
+	yes: true,
+	yeah: true,
+	yup: true,
+	nope: true,
+	no: true,
+	nah: true,
+	sure: true,
+	cool: true,
+	nice: true,
+	great: true,
+	lol: true,
+	lmao: true,
+	haha: true,
+	test: true,
+	testing: true,
+	ping: true,
+	pong: true,
+	hmm: true,
+	hmmm: true,
+	um: true,
+	uh: true,
+};
+
+const TITLE_WORD = /[\p{L}\p{N}]+/gu;
+
+function stripCodeBlocks(message: string): string {
+	return message.replace(/```[\s\S]*?```/g, " ");
+}
+
+
 function isLowSignalTitleInput(text: string): boolean {
-	const normalized = text.trim().toLowerCase();
-	return normalized.length < 4 || normalized === "hello" || normalized === "hi" || normalized === "hey";
+	const tokens = stripCodeBlocks(text).toLowerCase().match(TITLE_WORD);
+	if (!tokens) return true;
+	return tokens.every((token) => FILLER_TITLE_TOKENS[token] === true || /^\d+$/.test(token));
 }
 
 export function deriveAutoSessionName(text: string): string | undefined {
