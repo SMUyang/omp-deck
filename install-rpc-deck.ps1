@@ -116,7 +116,8 @@ if (Test-Path "$InstallDir\.git") {
   Write-Ok "Existing clone found at $InstallDir - pulling latest"
   Push-Location $InstallDir
   try {
-    Invoke-Checked "git" @("pull", "--ff-only", "origin", "main") "git pull failed"
+    & git pull --ff-only origin main 2>$null
+    if ($LASTEXITCODE -ne 0) { Write-Warn2 "git pull failed, continuing with existing state" }
   } finally {
     Pop-Location
   }

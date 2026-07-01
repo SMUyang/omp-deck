@@ -7,7 +7,6 @@
 # omp experience exactly (same model catalog, same session data).
 # Auto-pulls latest code and dependencies before starting.
 #
-#
 # Usage:
 #   bash start-rpc-deck.sh              # foreground (Ctrl+C to stop)
 #   bash start-rpc-deck.sh start        # background, opens browser

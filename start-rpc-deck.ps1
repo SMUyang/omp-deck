@@ -64,13 +64,20 @@ function Ensure-Dependencies {
 }
 
 function Update-Repo {
-  if (-not (Test-Path "$Root\.git")) { return }
+  if (-not (Test-Path "$Root\.git")) { return $false }
+  $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+  if (-not $gitCmd) { return $false }
   Write-Info "pulling latest updates..."
   & git pull --ff-only origin main 2>$null
   if ($LASTEXITCODE -eq 0) {
     & bun install --frozen-lockfile 2>$null
+    Write-Info "dependencies updated"
+    Write-Info "rebuilding web frontend..."
+    & bun run --filter '@omp-deck/web' build 2>$null
+    return $true
   } else {
     Write-Info "WARNING: git pull failed, continuing with current state"
+    return $false
   }
 }
 

@@ -2,7 +2,7 @@
 # install-rpc-deck.sh — One-shot installer for omp-deck with external omp RPC backend.
 #
 # This script:
-#   1. Checks prerequisites (Bun, omp CLI)
+#   1. Checks prerequisites (Git, Bun, omp CLI)
 #   2. Clones the fork (or uses an existing clone)
 #   3. Runs bun install
 #   4. Verifies omp --mode rpc works
