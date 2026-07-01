@@ -6,6 +6,7 @@ import type {
 	ListSessionsResponse,
 	ListWorkspacesResponse,
 	RestartServerResponse,
+	UpdateRunResponse,
 	WorkspaceEntry,
 } from "@omp-deck/protocol";
 
@@ -13,6 +14,7 @@ import type { Config } from "./config.ts";
 import { logger } from "./log.ts";
 import { getBuildInfo, getUptimeSecs } from "./build-info.ts";
 import { getUpdateCheck } from "./update-check.ts";
+import { resolveRepoRoot, runUpdateSteps } from "./update-runner.ts";
 import type { AgentBridge } from "./bridge/types.ts";
 
 const log = logger("routes");
@@ -71,6 +73,22 @@ export function buildRouter(
 		const info = getBuildInfo();
 		const body = await getUpdateCheck({ currentVersion: info.version });
 		return c.json(body);
+	});
+
+	app.post("/update", async (c) => {
+		const repoRoot = resolveRepoRoot();
+		const result = await runUpdateSteps(repoRoot);
+		const body: UpdateRunResponse = {
+			ok: result.ok,
+			installType: result.installType,
+			steps: result.steps,
+			...(result.error ? { error: result.error } : {}),
+			restarting: result.ok,
+		};
+		if (result.ok && opts.restartServer) {
+			opts.restartServer();
+		}
+		return c.json(body, result.ok ? 200 : 500);
 	});
 
 	app.get("/workspaces", async (c) => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Play, RotateCcw, Save, Square, X } from "lucide-react";
+import { Download, Play, RotateCcw, Save, Square, X } from "lucide-react";
 import type {
 	BridgeInfo,
 	BridgeName,
@@ -12,7 +12,7 @@ import type {
 	PreludeResponse,
 	StartCommand,
 } from "@omp-deck/protocol";
-import type { ProviderInfo } from "@omp-deck/protocol";
+import type { ProviderInfo, VersionInfo } from "@omp-deck/protocol";
 
 import { Layout } from "@/components/Layout";
 import { Badge } from "@/components/ui/Badge";
@@ -22,6 +22,7 @@ import { OAuthFlowModal } from "@/components/settings/OAuthFlowModal";
 import { bridgesApi } from "@/lib/bridges-api";
 import { settingsApi } from "@/lib/settings-api";
 import { orientationApi } from "@/lib/orientation-api";
+import { api } from "@/lib/api";
 import { authApi } from "@/lib/auth-api";
 import { playNotificationTone } from "@/lib/audio";
 import { useNotificationPermission } from "@/lib/notifications";
@@ -94,6 +95,8 @@ export function SettingsView() {
 								<AppearanceSection />
 							) : selected === "notifications" ? (
 								<NotificationsSection />
+							) : selected === "about" ? (
+								<AboutSection />
 							) : (
 								<StubSection section={selected} />
 							)}
@@ -1872,6 +1875,118 @@ function ProviderCard({
 					<Button variant="outline" onClick={onLogin} className="flex-1">
 						Login (replaces API key)
 					</Button>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function AboutSection() {
+	const heartbeat = useStore((s) => s.heartbeat);
+	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+	const [updating, setUpdating] = useState(false);
+	const [updateResult, setUpdateResult] = useState<string | undefined>();
+
+	useEffect(() => {
+		void fetch("/api/version")
+			.then((res) => res.json())
+			.then((data) => setVersionInfo(data as VersionInfo))
+			.catch(() => {});
+	}, []);
+
+	async function runUpdate(): Promise<void> {
+		setUpdating(true);
+		setUpdateResult(undefined);
+		try {
+			const result = await api.runUpdate();
+			if (result.ok) {
+				setUpdateResult(`Update succeeded (${result.installType}). Server restarting…`);
+			} else {
+				setUpdateResult(result.error ?? "Update failed.");
+			}
+		} catch (e) {
+			setUpdateResult(String(e));
+		} finally {
+			setUpdating(false);
+		}
+	}
+
+	const current = versionInfo?.current ?? heartbeat?.version ?? "unknown";
+	const latest = versionInfo?.latest ?? null;
+	const updateAvailable = versionInfo?.updateAvailable ?? false;
+
+	return (
+		<div className="mx-auto max-w-2xl space-y-4">
+			<div>
+				<h1 className="text-xl font-semibold tracking-tight">About</h1>
+				<p className="mt-1 text-sm text-ink-3">Version, diagnostics, and self-update.</p>
+			</div>
+
+			<div className="rounded-md border border-line bg-paper-2 p-4">
+				<div className="meta mb-2">Version</div>
+				<div className="flex items-center gap-3">
+					<span className="font-mono text-sm text-ink">{current}</span>
+					{updateAvailable ? (
+						<Badge tone="warn">update available{latest ? `: ${latest}` : ""}</Badge>
+					) : (
+						<Badge tone="success">up to date</Badge>
+					)}
+				</div>
+				{updateAvailable ? (
+					<div className="mt-3 flex items-center gap-2">
+						<Button
+							variant="primary"
+							size="sm"
+							disabled={updating}
+							onClick={() => void runUpdate()}
+						>
+							<Download className="mr-1 h-3.5 w-3.5" />
+							{updating ? "Updating…" : "Update now"}
+						</Button>
+						<a
+							href={versionInfo?.releaseUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="text-xs text-ink-3 underline hover:text-ink-2"
+						>
+							Release notes
+						</a>
+					</div>
+				) : null}
+				{updateResult ? (
+					<div className="mt-3 rounded-md border border-line bg-paper px-3 py-2 font-mono text-xs text-ink-2 whitespace-pre-wrap">
+						{updateResult}
+					</div>
+				) : null}
+			</div>
+
+			<div className="rounded-md border border-line bg-paper-2 p-4">
+				<div className="meta mb-2">Server identity</div>
+				{heartbeat ? (
+					<dl className="space-y-1 text-xs">
+						<div className="flex gap-2">
+							<dt className="w-20 text-ink-3">pid</dt>
+							<dd className="font-mono text-ink">{heartbeat.pid}</dd>
+						</div>
+						<div className="flex gap-2">
+							<dt className="w-20 text-ink-3">version</dt>
+							<dd className="font-mono text-ink">{heartbeat.version}</dd>
+						</div>
+						<div className="flex gap-2">
+							<dt className="w-20 text-ink-3">build</dt>
+							<dd className="font-mono text-ink">{heartbeat.buildSha?.slice(0, 12) ?? "—"}</dd>
+						</div>
+						<div className="flex gap-2">
+							<dt className="w-20 text-ink-3">started</dt>
+							<dd className="font-mono text-ink">{new Date(heartbeat.serverStartedAt).toLocaleString()}</dd>
+						</div>
+						<div className="flex gap-2">
+							<dt className="w-20 text-ink-3">uptime</dt>
+							<dd className="font-mono text-ink">{Math.round(heartbeat.uptimeSecs)}s</dd>
+						</div>
+					</dl>
+				) : (
+					<div className="text-xs text-ink-3">Waiting for heartbeat…</div>
 				)}
 			</div>
 		</div>

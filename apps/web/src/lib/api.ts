@@ -11,6 +11,7 @@ import type {
 	MemoryStatusResponse,
 	ModelRef,
 	ProviderUsageResponse,
+	UpdateRunResponse,
 } from "@omp-deck/protocol";
 
 const BASE = "/api";
@@ -104,5 +105,8 @@ export const api = {
 		if (params.limit) search.set("limit", String(params.limit));
 		const suffix = search.toString();
 		return request<MemoryGraphResponse>(`/memory/graph${suffix ? `?${suffix}` : ""}`);
+	},
+	runUpdate(): Promise<UpdateRunResponse> {
+		return request<UpdateRunResponse>("/update", { method: "POST" });
 	},
 };

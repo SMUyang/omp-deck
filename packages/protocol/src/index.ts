@@ -351,6 +351,23 @@ export interface VersionInfo {
 	disabled: boolean;
 }
 
+export type UpdateInstallType = "git" | "npm-global" | "unknown";
+
+export interface UpdateStepWire {
+	command: string[];
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+}
+
+export interface UpdateRunResponse {
+	ok: boolean;
+	installType: UpdateInstallType;
+	steps: UpdateStepWire[];
+	error?: string;
+	restarting: boolean;
+}
+
 export interface SetSessionModelRequest {
 	model: ModelRef;
 }
