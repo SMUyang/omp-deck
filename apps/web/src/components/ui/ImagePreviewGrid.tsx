@@ -33,7 +33,7 @@ export function ImagePreviewGrid({
 						onClick={() => setLightbox(i)}
 						aria-label={`Open ${item.alt}`}
 					>
-						<img src={item.src} alt={item.alt} className={thumbnailClassName} />
+						<img src={item.src} alt={item.alt} className={thumbnailClassName} draggable={false} />
 					</button>
 				))}
 			</div>
