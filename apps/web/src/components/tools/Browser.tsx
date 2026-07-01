@@ -1,6 +1,7 @@
 import type { ToolRendererProps } from "./ToolCallCard";
 import { ArgRow, extractResultText } from "./shared";
 import { MaybeJsonBlock } from "@/lib/code";
+import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
 
 export function BrowserTool({ args, stream }: ToolRendererProps) {
 	const action = String((args.action as string | undefined) ?? "");
@@ -19,10 +20,10 @@ export function BrowserTool({ args, stream }: ToolRendererProps) {
 			</div>
 			{url ? <ArgRow k="url" v={url} /> : null}
 			{screenshot ? (
-				<img
-					src={`data:${screenshot.mimeType};base64,${screenshot.data}`}
-					alt="screenshot"
-					className="max-h-96 rounded border border-line"
+				<ImagePreviewGrid
+					images={[{ data: screenshot.data, mimeType: screenshot.mimeType }]}
+					altPrefix="screenshot"
+					thumbnailClassName="max-h-96 w-auto rounded border border-line object-contain"
 				/>
 			) : null}
 			{text ? <MaybeJsonBlock text={text} /> : null}

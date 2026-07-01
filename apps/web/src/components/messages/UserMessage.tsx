@@ -1,5 +1,6 @@
 import type { UserMsg } from "@/lib/types";
 import { Markdown } from "@/lib/markdown";
+import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
 
 export function UserMessage({ msg }: { msg: UserMsg }) {
 	return (
@@ -8,18 +9,11 @@ export function UserMessage({ msg }: { msg: UserMsg }) {
 				you
 				{msg.synthetic ? <span className="ml-1.5 text-thinking">· synthetic</span> : null}
 			</div>
-			{msg.images && msg.images.length > 0 ? (
-				<div className="flex flex-wrap gap-1.5">
-					{msg.images.map((img, i) => (
-						<img
-							key={i}
-							src={`data:${img.mimeType};base64,${img.data}`}
-							alt={`pasted ${i + 1}`}
-							className="h-28 w-28 rounded border border-line object-cover"
-						/>
-					))}
-				</div>
-			) : null}
+			<ImagePreviewGrid
+				images={msg.images ?? []}
+				altPrefix="pasted"
+				thumbnailClassName="h-28 w-28 rounded border border-line object-cover"
+			/>
 			{msg.text ? <Markdown>{msg.text}</Markdown> : null}
 		</div>
 	);

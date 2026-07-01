@@ -1,5 +1,6 @@
 import type { ToolRendererProps } from "./ToolCallCard";
 import { ArgRow, extractResultText } from "./shared";
+import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
 
 export function GenerateImageTool({ args, stream }: ToolRendererProps) {
 	const subject = String((args.subject as string | undefined) ?? "");
@@ -11,10 +12,10 @@ export function GenerateImageTool({ args, stream }: ToolRendererProps) {
 		<div className="space-y-1.5">
 			<ArgRow k="subject" v={subject} />
 			{imageData ? (
-				<img
-					src={`data:${imageData.mimeType};base64,${imageData.data}`}
-					alt="generated"
-					className="max-h-96 rounded border border-line"
+				<ImagePreviewGrid
+					images={[{ data: imageData.data, mimeType: imageData.mimeType }]}
+					altPrefix="generated"
+					thumbnailClassName="max-h-96 w-auto rounded border border-line object-contain"
 				/>
 			) : null}
 			{!imageData && text ? <div className="font-mono text-2xs text-ink-3">{text}</div> : null}
