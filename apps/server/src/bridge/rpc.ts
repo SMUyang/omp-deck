@@ -316,6 +316,26 @@ export function deriveAutoSessionName(text: string): string | undefined {
 	return codePoints.length > 80 ? `${codePoints.slice(0, 77).join("")}…` : cleaned;
 }
 
+function textFromMessageContent(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	const parts: string[] = [];
+	for (const block of content) {
+		if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue;
+		parts.push(block.text);
+	}
+	return parts.join("\n\n");
+}
+
+export function deriveAutoSessionNameFromMessages(messages: readonly AgentMessageJson[]): string | undefined {
+	for (const message of messages) {
+		if (message.role !== "user") continue;
+		const name = deriveAutoSessionName(textFromMessageContent(message.content));
+		if (name) return name;
+	}
+	return undefined;
+}
+
 async function readSessionCwdFromFile(sessionFile: string | undefined): Promise<string | undefined> {
 	if (!sessionFile) return undefined;
 	try {
@@ -402,6 +422,8 @@ class RpcSessionHandle implements SessionHandle {
 		opts.transport.onEvent((event) => {
 			this.#handleEvent(event);
 		});
+		this.#ensureAutoSessionNameFromMessages();
+
 	}
 
 	get sessionFile(): string | undefined {
@@ -470,10 +492,7 @@ class RpcSessionHandle implements SessionHandle {
 		this.#emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
 	}
 
-	#ensureAutoSessionName(text: string): void {
-		if (this.#state.sessionName || this.#autoTitleInFlight) return;
-		const name = deriveAutoSessionName(text);
-		if (!name) return;
+	#writeAutoSessionName(name: string): void {
 		this.#autoTitleInFlight = true;
 		// Fire-and-forget: never blocks or breaks the prompt turn.
 		void this.setName(name)
@@ -483,6 +502,18 @@ class RpcSessionHandle implements SessionHandle {
 			.finally(() => {
 				this.#autoTitleInFlight = false;
 			});
+	}
+
+	#ensureAutoSessionName(text: string): void {
+		if (this.#state.sessionName || this.#autoTitleInFlight) return;
+		const name = deriveAutoSessionName(text);
+		if (name) this.#writeAutoSessionName(name);
+	}
+
+	#ensureAutoSessionNameFromMessages(): void {
+		if (this.#state.sessionName || this.#autoTitleInFlight) return;
+		const name = deriveAutoSessionNameFromMessages(this.#messages);
+		if (name) this.#writeAutoSessionName(name);
 	}
 
 	subscribe(listener: EventListener): () => void {

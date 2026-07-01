@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
 import type {
+	AgentSessionEventJson,
 	ExtUiDialogResponse,
 	ListSessionsResponse,
 	ListWorkspacesResponse,
@@ -44,6 +45,39 @@ export const STATUS_PANEL_STORAGE_KEY = "omp-deck:status-panel-open";
 
 interface BoolStorage {
 	getItem(key: string): string | null;
+}
+
+interface SessionTitleSnapshot {
+	sessionId: string;
+	sessionName?: string;
+}
+
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sessionUpdatedSnapshot(event: AgentSessionEventJson): SessionTitleSnapshot | undefined {
+	if (event.type !== "session_updated" || !isRecord(event.snapshot)) return undefined;
+	const sessionId = event.snapshot.sessionId;
+	const sessionName = event.snapshot.sessionName;
+	if (typeof sessionId !== "string" || typeof sessionName !== "string") return undefined;
+	return { sessionId, sessionName };
+}
+
+export function applySessionSummarySnapshot(
+	sessions: SessionSummary[],
+	snapshot: SessionTitleSnapshot,
+): SessionSummary[] {
+	const title = snapshot.sessionName?.trim();
+	if (!title) return sessions;
+	let changed = false;
+	const next = sessions.map((session) => {
+		if (session.id !== snapshot.sessionId || session.title === title) return session;
+		changed = true;
+		return { ...session, title };
+	});
+	return changed ? next : sessions;
 }
 
 export function getInitialStatusPanelOpen(storage: BoolStorage | undefined, desktop: boolean): boolean {
@@ -518,7 +552,11 @@ function handleFrame(
 				const prev = s.sessionsById[frame.sessionId];
 				if (!prev) return {};
 				const next = applyEvent(prev, frame.event);
-				return { sessionsById: { ...s.sessionsById, [frame.sessionId]: next } };
+				const snapshot = sessionUpdatedSnapshot(frame.event);
+				return {
+					sessionsById: { ...s.sessionsById, [frame.sessionId]: next },
+					...(snapshot ? { sessions: applySessionSummarySnapshot(s.sessions, snapshot) } : {}),
+				};
 			});
 			return;
 		}

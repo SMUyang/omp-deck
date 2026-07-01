@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { deriveAutoSessionName, resumeCwdFromState, sessionSummaryFromJsonl } from "./rpc.ts";
+import { deriveAutoSessionName, deriveAutoSessionNameFromMessages, resumeCwdFromState, sessionSummaryFromJsonl } from "./rpc.ts";
 
 const SESSION_FILE = "/Users/example/.omp/agent/sessions/-repo/session.jsonl";
 
@@ -73,5 +73,14 @@ describe("RPC auto session naming", () => {
 
 	test("skips low-signal first prompts so the next real prompt can name the session", () => {
 		expect(deriveAutoSessionName("hi")).toBeUndefined();
+	});
+
+	test("derives a title from the first existing user message for resumed unnamed sessions", () => {
+		expect(
+			deriveAutoSessionNameFromMessages([
+				{ role: "assistant", content: "ready" },
+				{ role: "user", content: [{ type: "text", text: "修复自动标题" }] },
+			] as never),
+		).toBe("修复自动标题");
 	});
 });
