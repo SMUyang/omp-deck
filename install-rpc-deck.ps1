@@ -83,12 +83,29 @@ if (-not $OmpBin) {
   Write-Ok "omp $ompVer found at $OmpBin"
 }
 
-# Git
+# Git (auto-install if missing)
 $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 if (-not $gitCmd) {
-  Write-Err2 "Git is not installed."
-  Write-Output "  Install: winget install Git.Git"
-  exit 1
+  Write-Warn2 "Git is not installed. Attempting to install..."
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($winget) {
+    & winget install Git.Git --accept-package-agreements --accept-source-agreements
+  } else {
+    $choco = Get-Command choco -ErrorAction SilentlyContinue
+    if ($choco) {
+      & choco install git -y
+    } else {
+      Write-Err2 "Could not auto-install git. Please install manually: winget install Git.Git"
+      exit 1
+    }
+  }
+  # Refresh PATH so newly installed git is visible
+  $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+  $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+  if (-not $gitCmd) {
+    Write-Err2 "Git installed but not on PATH. Please reopen your terminal and run this script again."
+    exit 1
+  }
 }
 Write-Ok "Git found"
 

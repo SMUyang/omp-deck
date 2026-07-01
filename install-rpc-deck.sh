@@ -63,6 +63,52 @@ done
 # ── 1. Check prerequisites ──────────────────────────────────────────────
 step "Checking prerequisites"
 
+# Git (auto-install if missing)
+if ! command -v git >/dev/null 2>&1; then
+  warn "Git is not installed. Attempting to install..."
+  case "$(uname -s)" in
+    Darwin)
+      if command -v brew >/dev/null 2>&1; then
+        brew install git
+      else
+        info "Installing Homebrew first..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        if [ -f /opt/homebrew/bin/brew ]; then
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+        elif [ -f /usr/local/bin/brew ]; then
+          eval "$(/usr/local/bin/brew shellenv)"
+        fi
+        brew install git
+      fi
+      ;;
+    Linux)
+      if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update -qq && sudo apt-get install -y git
+      elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y git
+      elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y git
+      elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -S --noconfirm git
+      elif command -v apk >/dev/null 2>&1; then
+        sudo apk add git
+      else
+        err "Could not detect package manager. Please install git manually."
+        exit 1
+      fi
+      ;;
+    *)
+      err "Unsupported OS: $(uname -s). Please install git manually."
+      exit 1
+      ;;
+  esac
+  if ! command -v git >/dev/null 2>&1; then
+    err "Git installation failed. Please install git manually."
+    exit 1
+  fi
+fi
+info "$(git --version) found"
+
 # Bun
 if ! command -v bun >/dev/null 2>&1; then
   err "Bun is not installed."
