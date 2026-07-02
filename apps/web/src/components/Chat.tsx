@@ -10,6 +10,7 @@ import { TtsrLine } from "./messages/TtsrLine";
 import { IrcLine } from "./messages/IrcLine";
 import { QueuedMessage } from "./messages/QueuedMessage";
 import { PlanApproval } from "./messages/PlanApproval";
+import { ContextPackPanel } from "./session/ContextPackPanel";
 
 export function Chat() {
 	const session = useStore(selectActiveSession);
@@ -77,6 +78,7 @@ export function Chat() {
 					{session.pendingPlanApproval ? (
 						<PlanApproval session={session} />
 					) : null}
+					<ContextPackPanel sessionId={session.sessionId} />
 				</div>
 			</div>
 		</div>

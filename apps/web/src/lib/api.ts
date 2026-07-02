@@ -11,6 +11,9 @@ import type {
 	MemoryStatusResponse,
 	ModelRef,
 	ProviderUsageResponse,
+	SessionContextGraphResponse,
+	SessionContextPackResponse,
+	SessionContextRebuildResponse,
 	UpdateRunResponse,
 } from "@omp-deck/protocol";
 
@@ -108,5 +111,18 @@ export const api = {
 	},
 	runUpdate(): Promise<UpdateRunResponse> {
 		return request<UpdateRunResponse>("/update", { method: "POST" });
+	},
+	rebuildSessionContext(id: string): Promise<SessionContextRebuildResponse> {
+		return request<SessionContextRebuildResponse>(`/sessions/${encodeURIComponent(id)}/context/rebuild`, { method: "POST" });
+	},
+	getSessionContextPack(id: string, params: { q?: string; budget?: number } = {}): Promise<SessionContextPackResponse> {
+		const search = new URLSearchParams();
+		if (params.q) search.set("q", params.q);
+		if (params.budget) search.set("budget", String(params.budget));
+		const qs = search.toString();
+		return request<SessionContextPackResponse>(`/sessions/${encodeURIComponent(id)}/context-pack${qs ? `?${qs}` : ""}`);
+	},
+	getSessionContextGraph(id: string, limit = 200): Promise<SessionContextGraphResponse> {
+		return request<SessionContextGraphResponse>(`/sessions/${encodeURIComponent(id)}/context-graph?limit=${encodeURIComponent(String(limit))}`);
 	},
 };
