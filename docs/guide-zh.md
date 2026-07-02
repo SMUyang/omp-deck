@@ -1,6 +1,6 @@
 # omp-deck 中文安装与使用指南
 
-> 本指南适用于 [SMUyang/omp-deck](https://github.com/SMUyang/omp-deck) 分支（v0.6.1+）。
+> 本指南适用于 [SMUyang/omp-deck](https://github.com/SMUyang/omp-deck) 分支（v0.7.0+）。
 > 原项目：[bjb2/omp-deck](https://github.com/bjb2/omp-deck)（MIT 协议）
 
 ## 这是什么
