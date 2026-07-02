@@ -112,9 +112,9 @@ function artifactFromRow(row: ArtifactRow): SessionContextArtifact {
 export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 	const db = getDb();
 	const tx = db.transaction(() => {
-		db.run("DELETE FROM session_context_artifacts WHERE session_id = ?", input.sessionId);
-		db.run("DELETE FROM session_context_edges WHERE session_id = ?", input.sessionId);
-		db.run("DELETE FROM session_context_nodes WHERE session_id = ?", input.sessionId);
+		db.prepare("DELETE FROM session_context_artifacts WHERE session_id = ?").run(input.sessionId);
+		db.prepare("DELETE FROM session_context_edges WHERE session_id = ?").run(input.sessionId);
+		db.prepare("DELETE FROM session_context_nodes WHERE session_id = ?").run(input.sessionId);
 
 		const insertNode = db.prepare(`
 			INSERT INTO session_context_nodes (
@@ -178,18 +178,19 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 }
 
 export function upsertSessionContextCheckpoint(input: SessionContextCheckpointInput): void {
-	getDb().run(
+	getDb().prepare(
 		`INSERT INTO session_context_checkpoints (
 			session_id, source_path, source_mtime_ms, source_size_bytes,
 			node_count, edge_count, rebuilt_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(session_id) DO UPDATE SET
-			source_path = excluded.source_path,
-			source_mtime_ms = excluded.source_mtime_ms,
-			source_size_bytes = excluded.source_size_bytes,
-			node_count = excluded.node_count,
-			edge_count = excluded.edge_count,
-			rebuilt_at = excluded.rebuilt_at`,
+			ON CONFLICT(session_id) DO UPDATE SET
+				source_path = excluded.source_path,
+				source_mtime_ms = excluded.source_mtime_ms,
+				source_size_bytes = excluded.source_size_bytes,
+				node_count = excluded.node_count,
+				edge_count = excluded.edge_count,
+				rebuilt_at = excluded.rebuilt_at`,
+	).run(
 		input.sessionId,
 		input.sourcePath,
 		input.sourceMtimeMs,
