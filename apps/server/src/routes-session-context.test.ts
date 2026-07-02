@@ -142,6 +142,23 @@ describe("session context routes", () => {
 			expect(typeof body.sourceSizeBytes).toBe("number");
 			expect("nodes" in body).toBe(false);
 		});
+
+		test("returns 500 with error body when bridge.listSessions throws", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const app = buildSessionContextRouter({
+				getSession: () => undefined,
+				listSessions: async () => {
+					throw new Error("boom: list sessions failed");
+				},
+			} as unknown as AgentBridge);
+
+			const res = await app.request("/sessions/s1/context-status");
+
+			expect(res.status).toBe(500);
+			const body = (await res.json()) as { error: string };
+			expect(body.error).toContain("boom: list sessions failed");
+		});
 	});
 
 	describe("GET /sessions/:id/context-pack", () => {

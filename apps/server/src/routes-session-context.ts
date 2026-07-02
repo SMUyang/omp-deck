@@ -36,12 +36,17 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 
 	app.get("/sessions/:id/context-status", async (c) => {
 		const id = c.req.param("id");
-		const handle = bridge.getSession(id);
-		if (!handle) {
-			const sessions = await bridge.listSessions({});
-			if (!sessions.some((session) => session.id === id)) return c.json({ error: "session not found" }, 404);
+		try {
+			const handle = bridge.getSession(id);
+			if (!handle) {
+				const sessions = await bridge.listSessions({});
+				if (!sessions.some((session) => session.id === id)) return c.json({ error: "session not found" }, 404);
+			}
+			return c.json(getSessionContextStatus(id));
+		} catch (err) {
+			log.error("context status failed", err);
+			return c.json({ error: String((err as Error).message ?? err) }, 500);
 		}
-		return c.json(getSessionContextStatus(id));
 	});
 
 	app.get("/sessions/:id/context-pack", (c) => {
