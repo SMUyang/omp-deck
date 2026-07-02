@@ -1860,6 +1860,16 @@ export interface SessionContextRebuildResponse {
 	rebuiltAt: string;
 }
 
+export interface SessionContextStatusResponse {
+	sessionId: string;
+	built: boolean;
+	nodeCount: number;
+	edgeCount: number;
+	rebuiltAt?: string;
+	sourceMtimeMs?: number;
+	sourceSizeBytes?: number;
+}
+
 /**
  * Summary of what a pack omitted to fit its budget. `reason` values
  * currently include `"budget"` (nodes/edges were cut to fit) and `"none"`
