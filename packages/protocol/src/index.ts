@@ -284,6 +284,60 @@ export interface ProviderUsageResponse {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CPA usage (CLIProxyAPI collector — request/token telemetry, not provider quota)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CpaUsageTotals {
+	requests: number;
+	errors: number;
+	error_rate: number;
+	input_tokens: number;
+	output_tokens: number;
+	cached_tokens: number;
+	reasoning_tokens: number;
+	total_tokens: number;
+}
+
+export interface CpaUsageAggregate {
+	key_id?: string;
+	model?: string;
+	account?: string;
+	n: number;
+	input_tokens?: number;
+	output_tokens?: number;
+	cached_tokens?: number;
+	reasoning_tokens?: number;
+	total_tokens?: number;
+	errors?: number;
+}
+
+export interface CpaUsageWindow {
+	window_seconds: number;
+	totals: CpaUsageTotals;
+	per_api_key: CpaUsageAggregate[];
+	per_model: CpaUsageAggregate[];
+	per_account: CpaUsageAggregate[];
+}
+
+export interface CpaUsageHealth {
+	ok?: boolean;
+	status?: string;
+	[key: string]: unknown;
+}
+
+export interface CpaUsageResponse {
+	available: boolean;
+	generatedAt: number;
+	error?: string;
+	health?: CpaUsageHealth;
+	windows?: {
+		h1?: CpaUsageWindow;
+		h24?: CpaUsageWindow;
+		d7?: CpaUsageWindow;
+	};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Onboarding (first-run wizard)
 // ─────────────────────────────────────────────────────────────────────────────
 

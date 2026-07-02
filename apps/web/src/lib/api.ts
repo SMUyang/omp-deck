@@ -10,6 +10,7 @@ import type {
 	MemorySearchResponse,
 	MemoryStatusResponse,
 	ModelRef,
+	CpaUsageResponse,
 	ProviderUsageResponse,
 	UpdateRunResponse,
 } from "@omp-deck/protocol";
@@ -91,6 +92,9 @@ export const api = {
 	},
 	getProviderUsage(): Promise<ProviderUsageResponse> {
 		return request<ProviderUsageResponse>("/status/provider-usage");
+	},
+	getCpaUsage(): Promise<CpaUsageResponse> {
+		return request<CpaUsageResponse>("/status/cpa-usage");
 	},
 	getMemoryStatus(): Promise<MemoryStatusResponse> {
 		return request<MemoryStatusResponse>("/memory/status");
