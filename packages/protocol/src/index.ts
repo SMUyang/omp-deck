@@ -1766,6 +1766,117 @@ export interface OAuthPromptReplyRequest {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Session Context Topology (deck-owned context replacement layer)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SessionContextNodeKind =
+	| "goal"
+	| "user_intent"
+	| "constraint"
+	| "decision"
+	| "action"
+	| "artifact"
+	| "issue"
+	| "resolution"
+	| "evidence"
+	| "todo_state"
+	| "handoff_summary";
+
+export type SessionContextEdgeRelation =
+	| "caused_by"
+	| "fixed_by"
+	| "verified_by"
+	| "depends_on"
+	| "supersedes"
+	| "references_file"
+	| "continues"
+	| "contradicts"
+	| "blocks"
+	| "summarizes";
+
+export interface SessionContextNode {
+	id: string;
+	sessionId: string;
+	kind: SessionContextNodeKind;
+	title: string;
+	body: string;
+	compressedBody: string;
+	importance: number;
+	createdAt: string;
+	sourceMessageId?: string;
+	sourceTurnIndex?: number;
+	metadata: Record<string, unknown>;
+}
+
+export interface SessionContextEdge {
+	id: string;
+	sessionId: string;
+	sourceNodeId: string;
+	targetNodeId: string;
+	relation: SessionContextEdgeRelation;
+	weight: number;
+	evidenceMessageId?: string;
+	metadata: Record<string, unknown>;
+}
+
+export type SessionContextArtifactKind = "file" | "commit" | "url" | "test" | "command" | "api" | "log" | "image" | "other";
+
+export interface SessionContextArtifact {
+	id: string;
+	sessionId: string;
+	nodeId?: string;
+	kind: SessionContextArtifactKind;
+	ref: string;
+	label: string;
+	metadata: Record<string, unknown>;
+}
+
+export interface SessionContextRawRef {
+	messageId?: string;
+	turnIndex?: number;
+	artifactId?: string;
+	label: string;
+}
+
+export interface SessionContextRebuildResponse {
+	sessionId: string;
+	nodeCount: number;
+	edgeCount: number;
+	sourcePath: string;
+	rebuiltAt: string;
+}
+
+export interface SessionContextPackResponse {
+	sessionId: string;
+	query: string;
+	budget: number;
+	summary: string;
+	goals: SessionContextNode[];
+	constraints: SessionContextNode[];
+	decisions: SessionContextNode[];
+	issues: SessionContextNode[];
+	resolutions: SessionContextNode[];
+	artifacts: SessionContextArtifact[];
+	evidence: SessionContextNode[];
+	openTodos: SessionContextNode[];
+	rawRefs: SessionContextRawRef[];
+	omitted: {
+		nodeCount: number;
+		edgeCount: number;
+		reason: string;
+	};
+}
+
+export interface SessionContextGraphResponse {
+	sessionId: string;
+	nodes: SessionContextNode[];
+	edges: SessionContextEdge[];
+	artifacts: SessionContextArtifact[];
+	totalNodes: number;
+	truncated: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Memory Cockpit
 // ─────────────────────────────────────────────────────────────────────────────
 
