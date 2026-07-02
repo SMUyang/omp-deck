@@ -37,6 +37,7 @@ import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
 import { buildStatusRouter } from "./routes-status.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
+import { buildSessionContextRouter } from "./routes-session-context.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
 import type { BridgeSupervisor } from "./bridge-supervisor.ts";
 import type { MarketplaceService } from "./marketplace-service.ts";
@@ -270,6 +271,7 @@ export function buildRouter(
 	app.route("/", buildSkillsRouter(skills));
 	app.route("/", buildKbRouter(kb));
 	app.route("/", buildMemoryRouter(config));
+	app.route("/", buildSessionContextRouter(bridge));
 	app.route("/auth/oauth", buildAuthOAuthRouter());
 	app.route("/onboarding", buildOnboardingRouter());
 

@@ -1,6 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
-import { extractSessionContextFromJsonl, renderSessionContextPack } from "./session-context.ts";
+import { closeDb, openDb } from "./db/index.ts";
+import { getSessionContextGraph } from "./db/session-context.ts";
+import { extractSessionContextFromJsonl, rebuildSessionContextFromFile, renderSessionContextPack } from "./session-context.ts";
 
 const jsonl = [
 	JSON.stringify({ type: "title", v: 1, title: "Context topology" }),
@@ -103,4 +108,31 @@ describe("renderSessionContextPack budget coherence", () => {
 		expect(pack.omitted.nodeCount).toBeGreaterThanOrEqual(0);
 		if (pack.omitted.nodeCount > 0) expect(pack.omitted.reason).toBe("budget");
 	});
+});
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+	closeDb();
+	for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function tempDir(): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-context-service-"));
+	tempDirs.push(dir);
+	return dir;
+}
+
+test("rebuilds context store from a session file", async () => {
+	const dir = tempDir();
+	openDb({ path: path.join(dir, "deck.db") });
+	const sessionFile = path.join(dir, "s1.jsonl");
+	fs.writeFileSync(sessionFile, jsonl);
+
+	const rebuilt = await rebuildSessionContextFromFile({ sessionId: "s1", sessionFile });
+
+	expect(rebuilt.nodeCount).toBeGreaterThan(0);
+	expect(rebuilt.sourcePath).toBe(sessionFile);
+	const graph = getSessionContextGraph("s1", 50);
+	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
 });

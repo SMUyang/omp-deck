@@ -4,7 +4,14 @@ import type {
 	SessionContextNode,
 	SessionContextPackResponse,
 	SessionContextRawRef,
+	SessionContextRebuildResponse,
 } from "@omp-deck/protocol";
+
+import {
+	getSessionContextGraph,
+	replaceSessionContext,
+	upsertSessionContextCheckpoint,
+} from "./db/session-context.ts";
 
 export interface ExtractInput {
 	sessionId: string;
@@ -276,4 +283,48 @@ export function renderSessionContextPack(input: RenderPackInput): SessionContext
 			reason: selected.length < input.nodes.length ? "budget" : "none",
 		},
 	};
+}
+
+export async function rebuildSessionContextFromFile(input: {
+	sessionId: string;
+	sessionFile: string;
+}): Promise<SessionContextRebuildResponse> {
+	const file = Bun.file(input.sessionFile);
+	if (!(await file.exists())) throw new Error("session file not found");
+	const [content, stat] = await Promise.all([file.text(), file.stat()]);
+	const extracted = extractSessionContextFromJsonl({ sessionId: input.sessionId, content });
+	replaceSessionContext({ sessionId: input.sessionId, ...extracted });
+	const rebuiltAt = new Date().toISOString();
+	upsertSessionContextCheckpoint({
+		sessionId: input.sessionId,
+		sourcePath: input.sessionFile,
+		sourceMtimeMs: Math.trunc(stat.mtimeMs),
+		sourceSizeBytes: stat.size,
+		nodeCount: extracted.nodes.length,
+		edgeCount: extracted.edges.length,
+		rebuiltAt,
+	});
+	return {
+		sessionId: input.sessionId,
+		nodeCount: extracted.nodes.length,
+		edgeCount: extracted.edges.length,
+		sourcePath: input.sessionFile,
+		rebuiltAt,
+	};
+}
+
+export function getStoredSessionContextPack(input: {
+	sessionId: string;
+	query: string;
+	budget: number;
+}): SessionContextPackResponse {
+	const graph = getSessionContextGraph(input.sessionId, 500);
+	return renderSessionContextPack({
+		sessionId: input.sessionId,
+		query: input.query,
+		budget: input.budget,
+		nodes: graph.nodes,
+		edges: graph.edges,
+		artifacts: graph.artifacts,
+	});
 }
