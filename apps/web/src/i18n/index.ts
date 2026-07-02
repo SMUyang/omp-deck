@@ -256,7 +256,7 @@ void i18n.use(initReactI18next).init({
 						building: "构建中…",
 						failed: "构建失败",
 						unavailable: "不可用",
-						counts: "{{nodes}} nodes · {{edges}} edges",
+						counts: "{{nodes}} 节点 · {{edges}} 边",
 					},
 				},
 			},
