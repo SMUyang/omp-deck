@@ -394,19 +394,17 @@ export const useStore = create<StoreState>()(
 		},
 
 		async disposeSession(id: string) {
-			try {
-				await api.disposeSession(id);
-			} catch (err) {
-				console.warn("dispose failed", err);
-			}
+			await api.disposeSession(id);
 			set((s) => {
 				const next = { ...s.sessionsById };
 				delete next[id];
 				return {
 					sessionsById: next,
+					sessions: s.sessions.filter((session) => session.id !== id),
 					activeId: s.activeId === id ? undefined : s.activeId,
 				};
 			});
+			void get().refreshWorkspaces();
 		},
 
 		async renameSession(id, name) {

@@ -16,6 +16,7 @@ import { resolveRepoRoot, runUpdateSteps } from "./update-runner.ts";
 import type { AgentBridge } from "./bridge/types.ts";
 import { getDb } from "./db/index.ts";
 import { buildWorkspacesRouter } from "./routes-workspaces.ts";
+import { deletePersistedSession } from "./session-delete.ts";
 
 const log = logger("routes");
 
@@ -221,9 +222,13 @@ export function buildRouter(
 	app.delete("/sessions/:id", async (c) => {
 		const id = c.req.param("id");
 		const handle = bridge.getSession(id);
-		if (!handle) return c.json({ error: "session not found" }, 404);
 		try {
-			await handle.dispose();
+			if (handle) {
+				await handle.dispose();
+				return c.json({ ok: true });
+			}
+			const deleted = await deletePersistedSession(id, await bridge.listSessions({}));
+			if (!deleted) return c.json({ error: "session not found" }, 404);
 			return c.json({ ok: true });
 		} catch (err) {
 			log.error(`dispose failed`, err);

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import * as path from "node:path";
 
-import type { FilePathMatch, ListFilePathsResponse } from "@omp-deck/protocol";
+import type { BrowseDirectoryEntry, BrowseDirectoryResponse, FilePathMatch, ListFilePathsResponse } from "@omp-deck/protocol";
 
 import { logger } from "./log.ts";
 
@@ -54,6 +54,39 @@ export function buildFsRouter(): Hono {
 			matches: matches.map((e) => ({ path: e.path, name: e.name, isDir: e.isDir })),
 			cached: fromCache,
 		};
+		return c.json(body);
+	});
+
+	app.get("/fs/browse", async (c) => {
+		const rawCwd = c.req.query("cwd")?.trim();
+		const showHidden = c.req.query("showHidden") === "1";
+		if (!rawCwd || !path.isAbsolute(rawCwd)) {
+			return c.json({ error: "cwd query param must be an absolute path" }, 400);
+		}
+		const cwd = path.resolve(rawCwd);
+		if (!isCwdAllowed(cwd)) return c.json({ error: "cwd is not under an allowed root" }, 403);
+
+		let dirents;
+		try {
+			dirents = readdirSync(cwd, { withFileTypes: true });
+		} catch (err) {
+			log.warn(`browse failed for ${cwd}: ${String(err)}`);
+			return c.json({ error: "directory cannot be read" }, 500);
+		}
+
+		const entries: BrowseDirectoryEntry[] = dirents
+			.filter((entry) => entry.isDirectory())
+			.filter((entry) => showHidden || !entry.name.startsWith("."))
+			.map((entry) => ({
+				name: entry.name,
+				path: path.join(cwd, entry.name),
+				isDir: true,
+				hidden: entry.name.startsWith("."),
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		const parent = allowedParent(cwd);
+		const body: BrowseDirectoryResponse = parent ? { cwd, parent, entries } : { cwd, entries };
 		return c.json(body);
 	});
 
@@ -234,6 +267,12 @@ function score(entries: InventoryEntry[], rawQ: string, limit: number): Inventor
 }
 
 // ─── Sandboxing ────────────────────────────────────────────────────────────
+
+function allowedParent(cwd: string): string | undefined {
+	const parent = path.dirname(cwd);
+	if (parent === cwd) return undefined;
+	return isCwdAllowed(parent) ? parent : undefined;
+}
 
 function isCwdAllowed(cwd: string): boolean {
 	// Only allow cwds under the user's home directory. The deck is loopback-

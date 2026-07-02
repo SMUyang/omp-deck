@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { selectActiveSession, useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
+import { DirectoryPickerDialog } from "@/components/ui/DirectoryPickerDialog";
 
 /**
  * Rendered as the chat main pane when there is no active session selected.
@@ -26,6 +27,7 @@ export function SessionPicker() {
 
 	const [selectedCwd, setSelectedCwd] = useState<string>("");
 	const [busy, setBusy] = useState(false);
+	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
 	const cwdInUse = selectedCwd || defaultCwd;
 
 	const recent = useMemo(() => {
@@ -62,16 +64,15 @@ export function SessionPicker() {
 		}
 	}
 
-	async function handleAddWorkspace(): Promise<void> {
+	async function handlePickWorkspace(cwd: string): Promise<void> {
 		if (busy) return;
-		const cwd = window.prompt(t("sidebar.workspacePathPrompt"));
-		if (!cwd?.trim()) return;
 		const label = window.prompt(t("sidebar.workspaceLabelPrompt")) ?? undefined;
 		setBusy(true);
 		try {
-			const workspace = await createWorkspace({ cwd: cwd.trim(), label, createDirectory: true });
+			const workspace = await createWorkspace({ cwd, label, createDirectory: false });
 			setSelectedCwd(workspace.cwd);
 			void refreshSessions(workspace.cwd);
+			setWorkspacePickerOpen(false);
 		} catch (err) {
 			console.error(err);
 			alert(`${t("sidebar.workspaceCreateFailed")}: ${String(err)}`);
@@ -100,13 +101,20 @@ export function SessionPicker() {
 						<button
 							type="button"
 							className="text-ink-3 hover:text-ink"
-							onClick={() => void handleAddWorkspace()}
+							onClick={() => setWorkspacePickerOpen(true)}
 							aria-label={t("sidebar.addWorkspace")}
 							disabled={busy}
 						>
 							<Plus className="h-3 w-3" />
 						</button>
 					</div>
+					<DirectoryPickerDialog
+						open={workspacePickerOpen}
+						initialCwd={cwdInUse}
+						title={t("sidebar.addWorkspace")}
+						onClose={() => setWorkspacePickerOpen(false)}
+						onPick={(cwd) => void handlePickWorkspace(cwd)}
+					/>
 					<select
 						value={selectedCwd}
 						onChange={(e) => {

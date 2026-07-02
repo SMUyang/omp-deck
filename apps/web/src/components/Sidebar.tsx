@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
+import { DirectoryPickerDialog } from "@/components/ui/DirectoryPickerDialog";
 
 export function Sidebar() {
 	const workspaces = useStore((s) => s.workspaces);
@@ -14,6 +15,7 @@ export function Sidebar() {
 	const refreshSessions = useStore((s) => s.refreshSessions);
 	const refreshWorkspaces = useStore((s) => s.refreshWorkspaces);
 	const createWorkspace = useStore((s) => s.createWorkspace);
+	const disposeSession = useStore((s) => s.disposeSession);
 	const deleteWorkspace = useStore((s) => s.deleteWorkspace);
 	const createSession = useStore((s) => s.createSession);
 	const selectSession = useStore((s) => s.selectSession);
@@ -21,6 +23,7 @@ export function Sidebar() {
 	const [selectedCwd, setSelectedCwd] = useState<string | "">("");
 	const [creating, setCreating] = useState(false);
 	const [workspaceBusy, setWorkspaceBusy] = useState(false);
+	const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
 
 	const cwdInUse = selectedCwd || defaultCwd;
 	const selectedWorkspace = workspaces.find((workspace) => workspace.cwd === selectedCwd);
@@ -55,21 +58,31 @@ export function Sidebar() {
 		}
 	}
 
-	async function handleAddWorkspace(): Promise<void> {
+	async function handlePickWorkspace(cwd: string): Promise<void> {
 		if (workspaceBusy) return;
-		const cwd = window.prompt(t("sidebar.workspacePathPrompt"));
-		if (!cwd?.trim()) return;
 		const label = window.prompt(t("sidebar.workspaceLabelPrompt")) ?? undefined;
 		setWorkspaceBusy(true);
 		try {
-			const workspace = await createWorkspace({ cwd: cwd.trim(), label, createDirectory: true });
+			const workspace = await createWorkspace({ cwd, label, createDirectory: false });
 			setSelectedCwd(workspace.cwd);
 			void refreshSessions(workspace.cwd);
+			setWorkspacePickerOpen(false);
 		} catch (err) {
 			console.error(err);
 			alert(`${t("sidebar.workspaceCreateFailed")}: ${String(err)}`);
 		} finally {
 			setWorkspaceBusy(false);
+		}
+	}
+
+	async function handleDeleteSession(id: string, title: string): Promise<void> {
+		if (!window.confirm(t("sidebar.sessionDeleteConfirm", { title }))) return;
+		try {
+			await disposeSession(id);
+			void refreshSessions(selectedCwd || undefined);
+		} catch (err) {
+			console.error(err);
+			alert(`${t("sidebar.sessionDeleteFailed")}: ${String(err)}`);
 		}
 	}
 
@@ -102,7 +115,7 @@ export function Sidebar() {
 						<button
 							type="button"
 							className="text-ink-3 hover:text-ink"
-							onClick={() => void handleAddWorkspace()}
+							onClick={() => setWorkspacePickerOpen(true)}
 							aria-label={t("sidebar.addWorkspace")}
 							disabled={workspaceBusy}
 						>
@@ -171,7 +184,16 @@ export function Sidebar() {
 				</button>
 			</div>
 
+				<DirectoryPickerDialog
+					open={workspacePickerOpen}
+					initialCwd={cwdInUse}
+					title={t("sidebar.addWorkspace")}
+					onClose={() => setWorkspacePickerOpen(false)}
+					onPick={(cwd) => void handlePickWorkspace(cwd)}
+				/>
+
 			<div className="flex-1 overflow-y-auto px-1 pb-3">
+
 				{liveSessions.map((s) => (
 					<SessionRow
 						key={s.sessionId}
@@ -181,6 +203,7 @@ export function Sidebar() {
 						live
 						planMode={s.planMode?.enabled === true}
 						onClick={() => selectSession(s.sessionId)}
+						onDelete={() => void handleDeleteSession(s.sessionId, s.sessionName || formatSessionId(s.sessionId))}
 					/>
 				))}
 
@@ -195,6 +218,7 @@ export function Sidebar() {
 						subtitle={`${shortPath(s.cwd, 26)} · ${s.messageCount}m`}
 						meta={formatRelative(s.updatedAt || s.createdAt)}
 						onClick={() => void handleResume(s.path)}
+						onDelete={() => void handleDeleteSession(s.id, s.title || formatSessionId(s.id))}
 					/>
 				))}
 
@@ -216,6 +240,7 @@ function SessionRow({
 	live,
 	planMode,
 	onClick,
+	onDelete,
 }: {
 	title: string;
 	subtitle?: string;
@@ -224,42 +249,47 @@ function SessionRow({
 	live?: boolean;
 	planMode?: boolean;
 	onClick: () => void;
+	onDelete?: () => void;
 }) {
 	const { t } = useTranslation();
 	return (
-		<button
-			type="button"
-			onClick={onClick}
+		<div
 			className={cn(
-				"group block w-full rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
+				"group flex w-full items-start gap-1 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
 				active ? "bg-paper-3 text-ink" : "text-ink-2 hover:bg-paper-3/60",
 			)}
 		>
-			<div className="flex items-center gap-1.5">
-				{live ? (
-				<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label={t("sidebar.live")} />
-				) : (
-					<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
-				)}
-				<span className="truncate">{title}</span>
-				{planMode ? (
-					<span
-						className="ml-auto shrink-0 rounded border border-thinking/40 bg-thinking/10 px-1 py-px font-mono text-[10px] uppercase tracking-meta text-thinking"
-						title={t("sidebar.plan")}
-					>
-						{t("sidebar.plan")}
-					</span>
-				) : null}
-			</div>
-			{subtitle ? (
-				<div className="mt-0.5 truncate pl-3 font-mono text-2xs text-ink-3">
-					{subtitle}
+			<button type="button" onClick={onClick} className="min-w-0 flex-1 text-left">
+				<div className="flex items-center gap-1.5">
+					{live ? (
+						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label={t("sidebar.live")} />
+					) : (
+						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
+					)}
+					<span className="truncate">{title}</span>
+					{planMode ? (
+						<span
+							className="ml-auto shrink-0 rounded border border-thinking/40 bg-thinking/10 px-1 py-px font-mono text-[10px] uppercase tracking-meta text-thinking"
+							title={t("sidebar.plan")}
+						>
+							{t("sidebar.plan")}
+						</span>
+					) : null}
 				</div>
+				{subtitle ? <div className="mt-0.5 truncate pl-3 font-mono text-2xs text-ink-3">{subtitle}</div> : null}
+				{meta ? <div className="truncate pl-3 font-mono text-2xs text-ink-4">{meta}</div> : null}
+			</button>
+			{onDelete ? (
+				<button
+					type="button"
+					className="shrink-0 rounded p-1 text-ink-4 opacity-0 hover:bg-paper-4 hover:text-red-700 group-hover:opacity-100 focus:opacity-100"
+					onClick={onDelete}
+					aria-label={t("sidebar.deleteSession")}
+				>
+					<Trash2 className="h-3.5 w-3.5" />
+				</button>
 			) : null}
-			{meta ? (
-				<div className="truncate pl-3 font-mono text-2xs text-ink-4">{meta}</div>
-			) : null}
-		</button>
+		</div>
 	);
 }
 

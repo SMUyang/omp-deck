@@ -1,4 +1,5 @@
 import type {
+	BrowseDirectoryResponse,
 	CreateSessionRequest,
 	CreateSessionResponse,
 	CreateWorkspaceRequest,
@@ -49,6 +50,11 @@ export const api = {
 	},
 	deleteWorkspace(id: string): Promise<DeleteWorkspaceResponse> {
 		return request<DeleteWorkspaceResponse>(`/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+	},
+	browseDirectory(cwd: string, showHidden = false): Promise<BrowseDirectoryResponse> {
+		const params = new URLSearchParams({ cwd });
+		if (showHidden) params.set("showHidden", "1");
+		return request<BrowseDirectoryResponse>(`/fs/browse?${params.toString()}`);
 	},
 	listSessions(cwd?: string): Promise<ListSessionsResponse> {
 		const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";

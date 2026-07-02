@@ -86,6 +86,19 @@ export interface DeleteWorkspaceResponse extends ListWorkspacesResponse {
 	ok: true;
 }
 
+export interface BrowseDirectoryEntry {
+	name: string;
+	path: string;
+	isDir: boolean;
+	hidden: boolean;
+}
+
+export interface BrowseDirectoryResponse {
+	cwd: string;
+	parent?: string;
+	entries: BrowseDirectoryEntry[];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings / managed environment
 // ─────────────────────────────────────────────────────────────────────────────
