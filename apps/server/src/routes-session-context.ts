@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 
 import type { AgentBridge } from "./bridge/types.ts";
-import { getSessionContextGraph } from "./db/session-context.ts";
+import { getSessionContextGraph, getSessionContextStatus } from "./db/session-context.ts";
 import { logger } from "./log.ts";
 import { getStoredSessionContextPack, rebuildSessionContextFromFile } from "./session-context.ts";
 
@@ -32,6 +32,16 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			log.error("context rebuild failed", err);
 			return c.json({ error: String((err as Error).message ?? err) }, 500);
 		}
+	});
+
+	app.get("/sessions/:id/context-status", async (c) => {
+		const id = c.req.param("id");
+		const handle = bridge.getSession(id);
+		if (!handle) {
+			const sessions = await bridge.listSessions({});
+			if (!sessions.some((session) => session.id === id)) return c.json({ error: "session not found" }, 404);
+		}
+		return c.json(getSessionContextStatus(id));
 	});
 
 	app.get("/sessions/:id/context-pack", (c) => {
