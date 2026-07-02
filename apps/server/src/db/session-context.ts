@@ -201,7 +201,7 @@ export function upsertSessionContextCheckpoint(input: SessionContextCheckpointIn
 }
 
 export function getSessionContextGraph(sessionId: string, limit: number): SessionContextGraphResponse {
-	const boundedLimit = Math.min(Math.max(Math.trunc(limit) || 200, 1), 500);
+	const boundedLimit = Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 500) : 200;
 	const rows = getDb().query<NodeRow, [string, number]>(
 		`SELECT * FROM session_context_nodes WHERE session_id = ? ORDER BY importance DESC, created_at DESC LIMIT ?`,
 	).all(sessionId, boundedLimit);
@@ -222,7 +222,7 @@ export function getSessionContextGraph(sessionId: string, limit: number): Sessio
 		sessionId,
 		nodes,
 		edges,
-		artifacts: artifactRows.map(artifactFromRow),
+		artifacts: artifactRows.filter((artifact) => !artifact.node_id || nodeIds.has(artifact.node_id)).map(artifactFromRow),
 		totalNodes,
 		truncated: totalNodes > nodes.length,
 	};
