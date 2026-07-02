@@ -1769,6 +1769,13 @@ export interface OAuthPromptReplyRequest {
 // Session Context Topology (deck-owned context replacement layer)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Kind of a topology graph node. The `"artifact"` kind marks a node that is
+ * *about* an artifact (a decision referencing a file, an action tied to a
+ * commit). It is conceptually distinct from {@link SessionContextArtifact},
+ * which is a structured external reference (file path, commit SHA, URL, …)
+ * attachable to any node via `SessionContextArtifact.nodeId`.
+ */
 export type SessionContextNodeKind =
 	| "goal"
 	| "user_intent"
@@ -1831,6 +1838,13 @@ export interface SessionContextArtifact {
 	metadata: Record<string, unknown>;
 }
 
+/**
+ * Source pointer back to the raw message / turn / artifact that produced a
+ * pack entry. Carried alongside the compressed topology so the UI (or a
+ * recovery routine) can re-fetch the uncondensed original when a pack's
+ * summary is insufficient. In practice at least one of `messageId` /
+ * `turnIndex` / `artifactId` is set.
+ */
 export interface SessionContextRawRef {
 	messageId?: string;
 	turnIndex?: number;
@@ -1846,6 +1860,17 @@ export interface SessionContextRebuildResponse {
 	rebuiltAt: string;
 }
 
+/**
+ * Summary of what a pack omitted to fit its budget. `reason` values
+ * currently include `"budget"` (nodes/edges were cut to fit) and `"none"`
+ * (nothing was dropped).
+ */
+export interface SessionContextOmitted {
+	nodeCount: number;
+	edgeCount: number;
+	reason: string;
+}
+
 export interface SessionContextPackResponse {
 	sessionId: string;
 	query: string;
@@ -1858,13 +1883,10 @@ export interface SessionContextPackResponse {
 	resolutions: SessionContextNode[];
 	artifacts: SessionContextArtifact[];
 	evidence: SessionContextNode[];
+	/** Unresolved/open subset of `todo_state` nodes selected for this pack. */
 	openTodos: SessionContextNode[];
 	rawRefs: SessionContextRawRef[];
-	omitted: {
-		nodeCount: number;
-		edgeCount: number;
-		reason: string;
-	};
+	omitted: SessionContextOmitted;
 }
 
 export interface SessionContextGraphResponse {
