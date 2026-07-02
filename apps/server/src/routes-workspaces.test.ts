@@ -57,8 +57,21 @@ describe("workspace routes", () => {
 		const res = await app.request("/workspaces", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd, label: "Created", createDirectory: true }) });
 		expect(res.status).toBe(200);
 		expect((await fs.stat(cwd)).isDirectory()).toBe(true);
-		const body = (await res.json()) as ListWorkspacesResponse;
+		const body = (await res.json()) as import("@omp-deck/protocol").CreateWorkspaceResponse;
+		expect(body.workspace).toMatchObject({ cwd, label: "Created", source: "user" });
 		expect(body.workspaces.find((entry) => entry.cwd === cwd)).toMatchObject({ label: "Created", source: "user" });
+ 
+	});
+
+	test("POST returns the canonical resolved workspace path", async () => {
+		const { app, root } = await appWithSessions();
+		const canonical = path.join(root, "canonical");
+		const input = path.join(root, ".", "canonical", "");
+		const res = await app.request("/workspaces", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd: input, label: "Canonical", createDirectory: true }) });
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as import("@omp-deck/protocol").CreateWorkspaceResponse;
+		expect(body.workspace.cwd).toBe(canonical);
+		expect(body.workspaces.find((entry) => entry.cwd === canonical)).toBeTruthy();
 	});
 
 	test("POST rejects relative paths and file paths", async () => {

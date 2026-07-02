@@ -4,6 +4,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import type {
 	AgentSessionEventJson,
 	CreateWorkspaceRequest,
+	CreateWorkspaceResponse,
 	ExtUiDialogResponse,
 	ListSessionsResponse,
 	ListWorkspacesResponse,
@@ -214,7 +215,7 @@ interface StoreState {
 	connect(): void;
 	disconnect(): void;
 	refreshWorkspaces(): Promise<void>;
-	createWorkspace(opts: CreateWorkspaceRequest): Promise<void>;
+	createWorkspace(opts: CreateWorkspaceRequest): Promise<WorkspaceEntry>;
 	deleteWorkspace(id: string): Promise<void>;
 	refreshSessions(cwd?: string): Promise<void>;
 	createSession(opts: { cwd: string; resumeFromPath?: string }): Promise<string>;
@@ -314,8 +315,9 @@ export const useStore = create<StoreState>()(
 		},
 
 		async createWorkspace(opts) {
-			const resp = await api.createWorkspace(opts);
+			const resp: CreateWorkspaceResponse = await api.createWorkspace(opts);
 			set(workspaceStateFromResponse(resp));
+			return resp.workspace;
 		},
 
 		async deleteWorkspace(id) {

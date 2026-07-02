@@ -69,9 +69,9 @@ export function SessionPicker() {
 		const label = window.prompt(t("sidebar.workspaceLabelPrompt")) ?? undefined;
 		setBusy(true);
 		try {
-			await createWorkspace({ cwd: cwd.trim(), label, createDirectory: true });
-			setSelectedCwd(cwd.trim());
-			void refreshSessions(cwd.trim());
+			const workspace = await createWorkspace({ cwd: cwd.trim(), label, createDirectory: true });
+			setSelectedCwd(workspace.cwd);
+			void refreshSessions(workspace.cwd);
 		} catch (err) {
 			console.error(err);
 			alert(`${t("sidebar.workspaceCreateFailed")}: ${String(err)}`);

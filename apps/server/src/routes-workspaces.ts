@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import type { CreateWorkspaceRequest, ListWorkspacesResponse, WorkspaceEntry } from "@omp-deck/protocol";
+import type { CreateWorkspaceRequest, CreateWorkspaceResponse, DeleteWorkspaceResponse, ListWorkspacesResponse, WorkspaceEntry } from "@omp-deck/protocol";
 import type { Config } from "./config.ts";
 import type { AgentBridge } from "./bridge/types.ts";
 import { composeWorkspaceEntries, createUserWorkspace, deleteUserWorkspace, listUserWorkspaces } from "./workspaces.ts";
@@ -43,8 +43,10 @@ export function buildWorkspacesRouter(deps: WorkspacesRouterDeps): Hono {
 		}
 		if (!isCreateWorkspaceRequest(body)) return c.json({ error: "cwd is required" }, 400);
 		try {
-			await createUserWorkspace(deps.db, body);
-			return c.json(await listEntries(deps));
+			const workspace = await createUserWorkspace(deps.db, body);
+			const list = await listEntries(deps);
+			const response: CreateWorkspaceResponse = { ...list, workspace };
+			return c.json(response);
 		} catch (err) {
 			return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
 		}
@@ -52,7 +54,8 @@ export function buildWorkspacesRouter(deps: WorkspacesRouterDeps): Hono {
 	app.delete("/workspaces/:id", async (c) => {
 		const deleted = deleteUserWorkspace(deps.db, c.req.param("id"));
 		if (!deleted) return c.json({ error: "workspace not found" }, 404);
-		return c.json({ ok: true, ...(await listEntries(deps)) });
+		const response: DeleteWorkspaceResponse = { ok: true, ...(await listEntries(deps)) };
+		return c.json(response);
 	});
 	return app;
 }

@@ -78,6 +78,10 @@ export interface CreateWorkspaceRequest {
 	createDirectory?: boolean;
 }
 
+export interface CreateWorkspaceResponse extends ListWorkspacesResponse {
+	workspace: WorkspaceEntry;
+}
+
 export interface DeleteWorkspaceResponse extends ListWorkspacesResponse {
 	ok: true;
 }
