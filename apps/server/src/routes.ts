@@ -36,6 +36,7 @@ import { buildOrientationRouter } from "./routes-orientation.ts";
 import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
 import { buildStatusRouter } from "./routes-status.ts";
+import { buildCpaUsageRouter } from "./routes-cpa-usage.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
 import type { BridgeSupervisor } from "./bridge-supervisor.ts";
@@ -202,7 +203,7 @@ export function buildRouter(
 		try {
 			body = (await c.req.json()) as { name?: string; model?: { provider?: unknown; id?: unknown } };
 		} catch {
-			return c.json({ error: "invalid json" }, 400);
+			return c.json({ error: "invalid json body" }, 400);
 		}
 		try {
 			if (typeof body.name === "string") {
@@ -263,6 +264,7 @@ export function buildRouter(
 	app.route("/", buildSlashCommandsRouter());
 	app.route("/", buildFsRouter());
 	app.route("/", buildStatusRouter(config));
+	app.route("/", buildCpaUsageRouter(config));
 	app.route("/", buildSettingsRouter(bridge, config, opts));
 	app.route("/", buildOrientationRouter());
 	app.route("/", buildBridgesRouter(supervisor));
