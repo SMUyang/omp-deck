@@ -32,6 +32,7 @@ import { buildMarketplaceRouter } from "./routes-marketplace.ts";
 import { buildSkillsRouter } from "./routes-skills.ts";
 import { buildKbRouter } from "./routes-kb.ts";
 import { buildUploadsRouter } from "./routes-uploads.ts";
+import { buildAgentBlobsRouter } from "./routes-agent-blobs.ts";
 import { buildOrientationRouter } from "./routes-orientation.ts";
 import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
@@ -257,6 +258,7 @@ export function buildRouter(
 
 	app.route("/", buildTasksRouter());
 	app.route("/", buildUploadsRouter({ uploadsRoot: config.uploadsRoot }));
+	app.route("/", buildAgentBlobsRouter(config));
 	app.route("/", buildRoutinesRouter(runner));
 	app.route("/", buildHooksRouter(runner));
 	app.route("/", buildInboxRouter());

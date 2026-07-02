@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
 	clampImageIndex,
-	imageDataUrl,
+	imageSrc,
 	nextImageIndex,
 	normalizePreviewImages,
 	previousImageIndex,
@@ -10,11 +10,37 @@ import {
 
 describe("image preview helpers", () => {
 	test("builds data URLs from MIME type and base64 payload", () => {
-		expect(imageDataUrl({ data: "abc123", mimeType: "image/webp" })).toBe("data:image/webp;base64,abc123");
+		expect(imageSrc({ data: "abc123", mimeType: "image/webp" })).toBe("data:image/webp;base64,abc123");
 	});
 
 	test("defaults missing MIME types to image/png", () => {
-		expect(imageDataUrl({ data: "abc123" })).toBe("data:image/png;base64,abc123");
+		expect(imageSrc({ data: "abc123" })).toBe("data:image/png;base64,abc123");
+	});
+
+	test("builds deck blob URLs from OMP blob references", () => {
+		expect(
+			imageSrc({
+				data: "blob:sha256:2b0ba7df5527c8876babb0cccfcc410f3c7ee5719a48fee3ac81250b60c47631",
+				mimeType: "image/png",
+			}),
+		).toBe("/api/agent-blobs/2b0ba7df5527c8876babb0cccfcc410f3c7ee5719a48fee3ac81250b60c47631?mimeType=image%2Fpng");
+	});
+
+	test("defaults blob URL MIME hints to image/png", () => {
+		expect(
+			imageSrc({
+				data: "blob:sha256:2b0ba7df5527c8876babb0cccfcc410f3c7ee5719a48fee3ac81250b60c47631",
+			}),
+		).toBe("/api/agent-blobs/2b0ba7df5527c8876babb0cccfcc410f3c7ee5719a48fee3ac81250b60c47631?mimeType=image%2Fpng");
+	});
+
+	test("trims surrounding whitespace around OMP blob references", () => {
+		expect(
+			imageSrc({
+				data: "  blob:sha256:2b0ba7df5527c8876babb0cccfcc410f3c7ee5719a48fee3ac81250b60c47631\n",
+				mimeType: "image/png",
+			}),
+		).toBe("/api/agent-blobs/2b0ba7df5527c8876babb0cccfcc410f3c7ee5719a48fee3ac81250b60c47631?mimeType=image%2Fpng");
 	});
 
 	test("filters empty image payloads and assigns labels", () => {
