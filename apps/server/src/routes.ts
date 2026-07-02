@@ -4,10 +4,8 @@ import type {
 	CreateSessionResponse,
 	ListModelsResponse,
 	ListSessionsResponse,
-	ListWorkspacesResponse,
 	RestartServerResponse,
 	UpdateRunResponse,
-	WorkspaceEntry,
 } from "@omp-deck/protocol";
 
 import type { Config } from "./config.ts";
@@ -16,6 +14,8 @@ import { getBuildInfo, getUptimeSecs } from "./build-info.ts";
 import { getUpdateCheck } from "./update-check.ts";
 import { resolveRepoRoot, runUpdateSteps } from "./update-runner.ts";
 import type { AgentBridge } from "./bridge/types.ts";
+import { getDb } from "./db/index.ts";
+import { buildWorkspacesRouter } from "./routes-workspaces.ts";
 
 const log = logger("routes");
 
@@ -93,32 +93,7 @@ export function buildRouter(
 		return c.json(body, result.ok ? 200 : 500);
 	});
 
-	app.get("/workspaces", async (c) => {
-		const allSessions = await bridge.listSessions({});
-		const counts = new Map<string, number>();
-		for (const s of allSessions) {
-			if (!s.cwd) continue;
-			counts.set(s.cwd, (counts.get(s.cwd) ?? 0) + 1);
-		}
-
-		// Always include default + extras even if zero sessions.
-		const known = new Set<string>([config.defaultCwd, ...config.extraWorkspaces]);
-		for (const cwd of counts.keys()) known.add(cwd);
-
-		const workspaces: WorkspaceEntry[] = Array.from(known)
-			.map((cwd) => ({
-				cwd,
-				label: deriveLabel(cwd),
-				sessionCount: counts.get(cwd) ?? 0,
-			}))
-			.sort((a, b) => b.sessionCount - a.sessionCount || a.label.localeCompare(b.label));
-
-		const body: ListWorkspacesResponse = {
-			workspaces,
-			defaultCwd: config.defaultCwd,
-		};
-		return c.json(body);
-	});
+	app.route("/", buildWorkspacesRouter({ config, db: getDb(), bridge }));
 
 	app.get("/sessions", async (c) => {
 		const cwd = c.req.query("cwd");
@@ -278,10 +253,4 @@ export function buildRouter(
 	app.route("/onboarding", buildOnboardingRouter());
 
 	return app;
-}
-
-function deriveLabel(cwd: string): string {
-	if (!cwd) return "(unknown)";
-	const parts = cwd.split(/[\\/]/).filter(Boolean);
-	return parts[parts.length - 1] ?? cwd;
 }

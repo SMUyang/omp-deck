@@ -35,10 +35,14 @@ export interface SessionSummary {
 	messageCount: number;
 }
 
+export type WorkspaceSource = "default" | "env" | "user" | "session";
+
 export interface WorkspaceEntry {
 	cwd: string;
 	label: string;
 	sessionCount: number;
+	source: WorkspaceSource;
+	id?: string;
 }
 
 export interface CreateSessionRequest {
@@ -66,6 +70,16 @@ export interface ListSessionsResponse {
 export interface ListWorkspacesResponse {
 	workspaces: WorkspaceEntry[];
 	defaultCwd: string;
+}
+
+export interface CreateWorkspaceRequest {
+	cwd: string;
+	label?: string;
+	createDirectory?: boolean;
+}
+
+export interface DeleteWorkspaceResponse extends ListWorkspacesResponse {
+	ok: true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
