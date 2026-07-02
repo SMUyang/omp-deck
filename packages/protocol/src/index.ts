@@ -1766,6 +1766,139 @@ export interface OAuthPromptReplyRequest {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Session Context Topology (deck-owned context replacement layer)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Kind of a topology graph node. The `"artifact"` kind marks a node that is
+ * *about* an artifact (a decision referencing a file, an action tied to a
+ * commit). It is conceptually distinct from {@link SessionContextArtifact},
+ * which is a structured external reference (file path, commit SHA, URL, …)
+ * attachable to any node via `SessionContextArtifact.nodeId`.
+ */
+export type SessionContextNodeKind =
+	| "goal"
+	| "user_intent"
+	| "constraint"
+	| "decision"
+	| "action"
+	| "artifact"
+	| "issue"
+	| "resolution"
+	| "evidence"
+	| "todo_state"
+	| "handoff_summary";
+
+export type SessionContextEdgeRelation =
+	| "caused_by"
+	| "fixed_by"
+	| "verified_by"
+	| "depends_on"
+	| "supersedes"
+	| "references_file"
+	| "continues"
+	| "contradicts"
+	| "blocks"
+	| "summarizes";
+
+export interface SessionContextNode {
+	id: string;
+	sessionId: string;
+	kind: SessionContextNodeKind;
+	title: string;
+	body: string;
+	compressedBody: string;
+	importance: number;
+	createdAt: string;
+	sourceMessageId?: string;
+	sourceTurnIndex?: number;
+	metadata: Record<string, unknown>;
+}
+
+export interface SessionContextEdge {
+	id: string;
+	sessionId: string;
+	sourceNodeId: string;
+	targetNodeId: string;
+	relation: SessionContextEdgeRelation;
+	weight: number;
+	evidenceMessageId?: string;
+	metadata: Record<string, unknown>;
+}
+
+export type SessionContextArtifactKind = "file" | "commit" | "url" | "test" | "command" | "api" | "log" | "image" | "other";
+
+export interface SessionContextArtifact {
+	id: string;
+	sessionId: string;
+	nodeId?: string;
+	kind: SessionContextArtifactKind;
+	ref: string;
+	label: string;
+	metadata: Record<string, unknown>;
+}
+
+/**
+ * Source pointer back to the raw message / turn / artifact that produced a
+ * pack entry. Carried alongside the compressed topology so the UI (or a
+ * recovery routine) can re-fetch the uncondensed original when a pack's
+ * summary is insufficient. In practice at least one of `messageId` /
+ * `turnIndex` / `artifactId` is set.
+ */
+export interface SessionContextRawRef {
+	messageId?: string;
+	turnIndex?: number;
+	artifactId?: string;
+	label: string;
+}
+
+export interface SessionContextRebuildResponse {
+	sessionId: string;
+	nodeCount: number;
+	edgeCount: number;
+	sourcePath: string;
+	rebuiltAt: string;
+}
+
+/**
+ * Summary of what a pack omitted to fit its budget. `reason` values
+ * currently include `"budget"` (nodes/edges were cut to fit) and `"none"`
+ * (nothing was dropped).
+ */
+export interface SessionContextOmitted {
+	nodeCount: number;
+	edgeCount: number;
+	reason: string;
+}
+
+export interface SessionContextPackResponse {
+	sessionId: string;
+	query: string;
+	budget: number;
+	summary: string;
+	goals: SessionContextNode[];
+	constraints: SessionContextNode[];
+	decisions: SessionContextNode[];
+	issues: SessionContextNode[];
+	resolutions: SessionContextNode[];
+	artifacts: SessionContextArtifact[];
+	evidence: SessionContextNode[];
+	/** Unresolved/open subset of `todo_state` nodes selected for this pack. */
+	openTodos: SessionContextNode[];
+	rawRefs: SessionContextRawRef[];
+	omitted: SessionContextOmitted;
+}
+
+export interface SessionContextGraphResponse {
+	sessionId: string;
+	nodes: SessionContextNode[];
+	edges: SessionContextEdge[];
+	artifacts: SessionContextArtifact[];
+	totalNodes: number;
+	truncated: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Memory Cockpit
 // ─────────────────────────────────────────────────────────────────────────────
 
