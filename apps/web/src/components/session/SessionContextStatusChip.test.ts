@@ -22,4 +22,11 @@ describe("buildSessionContextStatusLabel", () => {
 		expect(buildSessionContextStatusLabel({ state: "failed", t: (key) => key })).toBe("sessionContext.sidebarStatus.label · sessionContext.sidebarStatus.failed");
 		expect(buildSessionContextStatusLabel({ state: "unavailable", t: (key) => key })).toBe("sessionContext.sidebarStatus.label · sessionContext.sidebarStatus.unavailable");
 	});
+
+	test("checking state is distinct from not built", () => {
+		const checking = buildSessionContextStatusLabel({ state: "checking", t: (key) => key });
+		expect(checking).toBe("sessionContext.sidebarStatus.label · sessionContext.sidebarStatus.checking");
+		expect(checking).not.toContain("notBuilt");
+		expect(checking).not.toContain("Not built");
+	});
 });
