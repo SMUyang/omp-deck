@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { Hono } from "hono";
 import type {
 	CreateSessionRequest,
@@ -224,7 +225,9 @@ export function buildRouter(
 		const handle = bridge.getSession(id);
 		try {
 			if (handle) {
+				const sessionFile = handle.sessionFile;
 				await handle.dispose();
+				if (sessionFile) await rm(sessionFile, { force: true });
 				return c.json({ ok: true });
 			}
 			const deleted = await deletePersistedSession(id, await bridge.listSessions({}));
