@@ -13,6 +13,11 @@ describe("image preview helpers", () => {
 		expect(imageSrc({ data: "abc123", mimeType: "image/webp" })).toBe("data:image/webp;base64,abc123");
 	});
 
+	test("keeps existing data image URLs unchanged", () => {
+		const dataUrl = "data:image/png;base64,abc123";
+		expect(imageSrc({ data: dataUrl, mimeType: "image/png" })).toBe(dataUrl);
+	});
+
 	test("defaults missing MIME types to image/png", () => {
 		expect(imageSrc({ data: "abc123" })).toBe("data:image/png;base64,abc123");
 	});
