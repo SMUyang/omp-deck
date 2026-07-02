@@ -3,6 +3,7 @@ import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
+import { SessionContextStatusChip } from "./session/SessionContextStatusChip";
 
 export function Sidebar() {
 	const workspaces = useStore((s) => s.workspaces);
@@ -113,6 +114,7 @@ export function Sidebar() {
 				{liveSessions.map((s) => (
 					<SessionRow
 						key={s.sessionId}
+						sessionId={s.sessionId}
 						title={s.sessionName || formatSessionId(s.sessionId)}
 						subtitle={shortPath(s.cwd, 30)}
 						active={s.sessionId === activeId}
@@ -129,6 +131,7 @@ export function Sidebar() {
 				{persisted.map((s) => (
 					<SessionRow
 						key={s.id}
+						sessionId={s.id}
 						title={s.title || formatSessionId(s.id)}
 						subtitle={`${shortPath(s.cwd, 26)} · ${s.messageCount}m`}
 						meta={formatRelative(s.updatedAt || s.createdAt)}
@@ -147,6 +150,7 @@ export function Sidebar() {
 }
 
 function SessionRow({
+	sessionId,
 	title,
 	subtitle,
 	meta,
@@ -155,6 +159,7 @@ function SessionRow({
 	planMode,
 	onClick,
 }: {
+	sessionId: string;
 	title: string;
 	subtitle?: string;
 	meta?: string;
@@ -165,39 +170,42 @@ function SessionRow({
 }) {
 	const { t } = useTranslation();
 	return (
-		<button
-			type="button"
-			onClick={onClick}
+		<div
 			className={cn(
-				"group block w-full rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
+				"group rounded-md px-2 py-1.5 text-[13px] transition-colors",
 				active ? "bg-paper-3 text-ink" : "text-ink-2 hover:bg-paper-3/60",
 			)}
 		>
-			<div className="flex items-center gap-1.5">
-				{live ? (
-				<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label={t("sidebar.live")} />
-				) : (
-					<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
-				)}
-				<span className="truncate">{title}</span>
-				{planMode ? (
-					<span
-						className="ml-auto shrink-0 rounded border border-thinking/40 bg-thinking/10 px-1 py-px font-mono text-[10px] uppercase tracking-meta text-thinking"
-						title={t("sidebar.plan")}
-					>
-						{t("sidebar.plan")}
-					</span>
-				) : null}
-			</div>
-			{subtitle ? (
-				<div className="mt-0.5 truncate pl-3 font-mono text-2xs text-ink-3">
-					{subtitle}
+			<button type="button" onClick={onClick} className="block w-full text-left">
+				<div className="flex items-center gap-1.5">
+					{live ? (
+					<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label={t("sidebar.live")} />
+					) : (
+						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
+					)}
+					<span className="truncate">{title}</span>
+					{planMode ? (
+						<span
+							className="ml-auto shrink-0 rounded border border-thinking/40 bg-thinking/10 px-1 py-px font-mono text-[10px] uppercase tracking-meta text-thinking"
+							title={t("sidebar.plan")}
+						>
+							{t("sidebar.plan")}
+						</span>
+					) : null}
 				</div>
-			) : null}
-			{meta ? (
-				<div className="truncate pl-3 font-mono text-2xs text-ink-4">{meta}</div>
-			) : null}
-		</button>
+				{subtitle ? (
+					<div className="mt-0.5 truncate pl-3 font-mono text-2xs text-ink-3">
+						{subtitle}
+					</div>
+				) : null}
+				{meta ? (
+					<div className="truncate pl-3 font-mono text-2xs text-ink-4">{meta}</div>
+				) : null}
+			</button>
+			<div className="pl-3">
+				<SessionContextStatusChip sessionId={sessionId} active={active} />
+			</div>
+		</div>
 	);
 }
 
