@@ -14,6 +14,7 @@ import type {
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
 	SessionContextRebuildResponse,
+	SessionContextStatusResponse,
 	UpdateRunResponse,
 } from "@omp-deck/protocol";
 
@@ -114,6 +115,9 @@ export const api = {
 	},
 	rebuildSessionContext(id: string): Promise<SessionContextRebuildResponse> {
 		return request<SessionContextRebuildResponse>(`/sessions/${encodeURIComponent(id)}/context/rebuild`, { method: "POST" });
+	},
+	getSessionContextStatus(id: string): Promise<SessionContextStatusResponse> {
+		return request<SessionContextStatusResponse>(`/sessions/${encodeURIComponent(id)}/context-status`);
 	},
 	getSessionContextPack(id: string, params: { q?: string; budget?: number } = {}): Promise<SessionContextPackResponse> {
 		const search = new URLSearchParams();
