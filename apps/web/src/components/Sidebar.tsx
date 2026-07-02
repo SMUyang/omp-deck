@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
@@ -13,13 +13,18 @@ export function Sidebar() {
 	const sessionsById = useStore((s) => s.sessionsById);
 	const refreshSessions = useStore((s) => s.refreshSessions);
 	const refreshWorkspaces = useStore((s) => s.refreshWorkspaces);
+	const createWorkspace = useStore((s) => s.createWorkspace);
+	const deleteWorkspace = useStore((s) => s.deleteWorkspace);
 	const createSession = useStore((s) => s.createSession);
 	const selectSession = useStore((s) => s.selectSession);
 
 	const [selectedCwd, setSelectedCwd] = useState<string | "">("");
 	const [creating, setCreating] = useState(false);
+	const [workspaceBusy, setWorkspaceBusy] = useState(false);
 
 	const cwdInUse = selectedCwd || defaultCwd;
+	const selectedWorkspace = workspaces.find((workspace) => workspace.cwd === selectedCwd);
+	const canDeleteSelectedWorkspace = selectedWorkspace?.source === "user" && Boolean(selectedWorkspace.id);
 
 	const filtered = useMemo(() => {
 		if (!selectedCwd) return sessions;
@@ -50,6 +55,41 @@ export function Sidebar() {
 		}
 	}
 
+	async function handleAddWorkspace(): Promise<void> {
+		if (workspaceBusy) return;
+		const cwd = window.prompt(t("sidebar.workspacePathPrompt"));
+		if (!cwd?.trim()) return;
+		const label = window.prompt(t("sidebar.workspaceLabelPrompt")) ?? undefined;
+		setWorkspaceBusy(true);
+		try {
+			await createWorkspace({ cwd: cwd.trim(), label, createDirectory: true });
+			setSelectedCwd(cwd.trim());
+			void refreshSessions(cwd.trim());
+		} catch (err) {
+			console.error(err);
+			alert(`${t("sidebar.workspaceCreateFailed")}: ${String(err)}`);
+		} finally {
+			setWorkspaceBusy(false);
+		}
+	}
+
+	async function handleDeleteWorkspace(): Promise<void> {
+		if (workspaceBusy) return;
+		if (!selectedWorkspace?.id || !canDeleteSelectedWorkspace) return;
+		if (!window.confirm(t("sidebar.workspaceRemoveConfirm"))) return;
+		setWorkspaceBusy(true);
+		try {
+			await deleteWorkspace(selectedWorkspace.id);
+			setSelectedCwd("");
+			void refreshSessions(undefined);
+		} catch (err) {
+			console.error(err);
+			alert(`${t("sidebar.workspaceDeleteFailed")}: ${String(err)}`);
+		} finally {
+			setWorkspaceBusy(false);
+		}
+	}
+
 	const liveSessions = Object.values(sessionsById);
 	const persisted = filtered.filter((s) => !sessionsById[s.id]);
 
@@ -58,14 +98,36 @@ export function Sidebar() {
 			<div className="space-y-3 px-3 py-3 border-b border-line">
 				<div className="flex items-center justify-between">
 					<div className="meta">{t("sidebar.workspace")}</div>
-					<button
-						type="button"
-						className="text-ink-3 hover:text-ink"
-						onClick={() => void refreshWorkspaces()}
-						aria-label={t("sidebar.refreshWorkspaces")}
-					>
-						<RefreshCw className="h-3 w-3" />
-					</button>
+					<div className="flex items-center gap-1">
+						<button
+							type="button"
+							className="text-ink-3 hover:text-ink"
+							onClick={() => void handleAddWorkspace()}
+							aria-label={t("sidebar.addWorkspace")}
+							disabled={workspaceBusy}
+						>
+							<Plus className="h-3 w-3" />
+						</button>
+						{canDeleteSelectedWorkspace ? (
+							<button
+								type="button"
+								className="text-ink-3 hover:text-ink"
+								onClick={() => void handleDeleteWorkspace()}
+								aria-label={t("sidebar.removeWorkspace")}
+								disabled={workspaceBusy}
+							>
+								<Trash2 className="h-3 w-3" />
+							</button>
+						) : null}
+						<button
+							type="button"
+							className="text-ink-3 hover:text-ink"
+							onClick={() => void refreshWorkspaces()}
+							aria-label={t("sidebar.refreshWorkspaces")}
+						>
+							<RefreshCw className="h-3 w-3" />
+						</button>
+					</div>
 				</div>
 
 				<select

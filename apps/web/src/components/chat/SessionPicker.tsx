@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Clock, ClipboardList, MessagesSquare, Plus } from "lucide-react";
 import type { SessionSummary } from "@omp-deck/protocol";
+import { useTranslation } from "react-i18next";
 
 import { selectActiveSession, useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
@@ -12,12 +13,14 @@ import { cn, shortPath } from "@/lib/utils";
  * so the user never has to open the sidebar just to start working.
  */
 export function SessionPicker() {
+	const { t } = useTranslation();
 	const session = useStore(selectActiveSession);
 	const workspaces = useStore((s) => s.workspaces);
 	const defaultCwd = useStore((s) => s.defaultCwd);
 	const sessions = useStore((s) => s.sessions);
 	const sessionsById = useStore((s) => s.sessionsById);
 	const createSession = useStore((s) => s.createSession);
+	const createWorkspace = useStore((s) => s.createWorkspace);
 	const selectSession = useStore((s) => s.selectSession);
 	const refreshSessions = useStore((s) => s.refreshSessions);
 
@@ -59,6 +62,24 @@ export function SessionPicker() {
 		}
 	}
 
+	async function handleAddWorkspace(): Promise<void> {
+		if (busy) return;
+		const cwd = window.prompt(t("sidebar.workspacePathPrompt"));
+		if (!cwd?.trim()) return;
+		const label = window.prompt(t("sidebar.workspaceLabelPrompt")) ?? undefined;
+		setBusy(true);
+		try {
+			await createWorkspace({ cwd: cwd.trim(), label, createDirectory: true });
+			setSelectedCwd(cwd.trim());
+			void refreshSessions(cwd.trim());
+		} catch (err) {
+			console.error(err);
+			alert(`${t("sidebar.workspaceCreateFailed")}: ${String(err)}`);
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	// Only render the picker when there is genuinely no active session.
 	if (session) return null;
 
@@ -74,7 +95,18 @@ export function SessionPicker() {
 
 				{/* Primary action — workspace picker + new session */}
 				<div className="rounded-lg border border-line bg-paper-2 p-4 shadow-[0_1px_2px_rgba(26,24,20,0.04)]">
-					<div className="meta mb-1.5">Workspace</div>
+					<div className="mb-1.5 flex items-center justify-between">
+						<div className="meta">Workspace</div>
+						<button
+							type="button"
+							className="text-ink-3 hover:text-ink"
+							onClick={() => void handleAddWorkspace()}
+							aria-label={t("sidebar.addWorkspace")}
+							disabled={busy}
+						>
+							<Plus className="h-3 w-3" />
+						</button>
+					</div>
 					<select
 						value={selectedCwd}
 						onChange={(e) => {
