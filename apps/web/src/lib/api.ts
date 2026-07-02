@@ -1,6 +1,8 @@
 import type {
 	CreateSessionRequest,
 	CreateSessionResponse,
+	CreateWorkspaceRequest,
+	DeleteWorkspaceResponse,
 	ListFilePathsResponse,
 	ListModelsResponse,
 	ListSessionsResponse,
@@ -40,6 +42,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
 	listWorkspaces(): Promise<ListWorkspacesResponse> {
 		return request<ListWorkspacesResponse>("/workspaces");
+	},
+	createWorkspace(body: CreateWorkspaceRequest): Promise<ListWorkspacesResponse> {
+		return request<ListWorkspacesResponse>("/workspaces", { method: "POST", body: JSON.stringify(body) });
+	},
+	deleteWorkspace(id: string): Promise<DeleteWorkspaceResponse> {
+		return request<DeleteWorkspaceResponse>(`/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
 	},
 	listSessions(cwd?: string): Promise<ListSessionsResponse> {
 		const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";

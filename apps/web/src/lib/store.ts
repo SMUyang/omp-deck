@@ -3,6 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 
 import type {
 	AgentSessionEventJson,
+	CreateWorkspaceRequest,
 	ExtUiDialogResponse,
 	ListSessionsResponse,
 	ListWorkspacesResponse,
@@ -78,6 +79,14 @@ export function applySessionSummarySnapshot(
 		return { ...session, title };
 	});
 	return changed ? next : sessions;
+}
+
+export function workspaceStateFromResponse(resp: ListWorkspacesResponse): { workspaces: WorkspaceEntry[]; defaultCwd: string } {
+	return { workspaces: resp.workspaces, defaultCwd: resp.defaultCwd };
+}
+
+export function selectedWorkspaceAfterDelete(selectedCwd: string, remaining: WorkspaceEntry[]): string {
+	return selectedCwd && !remaining.some((workspace) => workspace.cwd === selectedCwd) ? "" : selectedCwd;
 }
 
 export function getInitialStatusPanelOpen(storage: BoolStorage | undefined, desktop: boolean): boolean {
@@ -205,6 +214,8 @@ interface StoreState {
 	connect(): void;
 	disconnect(): void;
 	refreshWorkspaces(): Promise<void>;
+	createWorkspace(opts: CreateWorkspaceRequest): Promise<void>;
+	deleteWorkspace(id: string): Promise<void>;
 	refreshSessions(cwd?: string): Promise<void>;
 	createSession(opts: { cwd: string; resumeFromPath?: string }): Promise<string>;
 	selectSession(id: string): void;
@@ -296,10 +307,20 @@ export const useStore = create<StoreState>()(
 		async refreshWorkspaces() {
 			try {
 				const resp: ListWorkspacesResponse = await api.listWorkspaces();
-				set({ workspaces: resp.workspaces, defaultCwd: resp.defaultCwd });
+				set(workspaceStateFromResponse(resp));
 			} catch (err) {
 				console.warn("listWorkspaces failed", err);
 			}
+		},
+
+		async createWorkspace(opts) {
+			const resp = await api.createWorkspace(opts);
+			set(workspaceStateFromResponse(resp));
+		},
+
+		async deleteWorkspace(id) {
+			const resp = await api.deleteWorkspace(id);
+			set(workspaceStateFromResponse(resp));
 		},
 
 		async refreshSessions(cwd?: string) {
