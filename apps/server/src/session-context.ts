@@ -110,10 +110,19 @@ function classifyUserText(text: string): SessionContextNode["kind"] {
 }
 
 function classifyNonUserText(role: string, text: string): SessionContextNode["kind"] | undefined {
-	if (role === "tool" && /\b(?:pass|fail|error|exit|HTTP|status:)\b/i.test(text)) {
-		const zeroFailures = /\b0\s+(?:fail|failures?|errors?)\b/i.test(text);
-		const hasFailures = !zeroFailures && /\b(?:fail|failed|error|exit\s*[12])\b/i.test(text);
-		return hasFailures ? "issue" : "evidence";
+	if (role === "tool") {
+		// Strip benign zero-count summaries ("0 fail", "0 failures", "0 errors") so only
+		// genuine failure/error signals remain. This lets a mixed report like
+		// "Unit: 0 failures\nE2E: exit 1 error" still surface as an issue.
+		const stripped = text.replace(/\b0\s+(?:fails?|failures?|errors?)\b/gi, "");
+		// Stem-aware matchers catch inflected forms: fail, failure(s), failed, error(s).
+		const hasFailure =
+			/\bfail(?:ures?|ed)?\b/i.test(stripped) ||
+			/\berrors?\b/i.test(stripped) ||
+			/\bexit\s*[12]\b/i.test(stripped);
+		if (hasFailure) return "issue";
+		// Benign tool output: passing tests, status codes, HTTP responses without failure words.
+		if (/\b(?:pass|HTTP|status:)\b/i.test(text)) return "evidence";
 	}
 	if (/\b(?:decision|recommend|architecture|选择|推荐|决定)\b/i.test(text)) return "decision";
 	return undefined;
@@ -147,7 +156,7 @@ export function extractSessionContextFromJsonl(input: ExtractInput): ExtractedSe
 
 	const lines = input.content.split(/\r?\n/);
 	for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
-		const line = lines[lineNumber].trim();
+		const line = (lines[lineNumber] ?? "").trim();
 		if (!line) continue;
 		const record = parseJsonLine(line);
 		if (!record) continue;
@@ -236,6 +245,13 @@ export function renderSessionContextPack(input: RenderPackInput): SessionContext
 		if (selected.length > 0 && cost > remaining) continue;
 		selected.push(node);
 		remaining -= cost;
+		if (remaining < 0) {
+			// The mandatory anchor (first selected node) exceeded the budget: keep it and
+			// stop so `remaining` never goes negative, which would otherwise suppress every
+			// later node. Clamping to 0 keeps omitted counts coherent.
+			remaining = 0;
+			break;
+		}
 	}
 	const selectedIds = new Set(selected.map((node) => node.id));
 	const artifacts = input.artifacts.filter((artifact) => !artifact.nodeId || selectedIds.has(artifact.nodeId));

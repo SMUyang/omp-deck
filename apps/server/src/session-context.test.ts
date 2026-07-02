@@ -42,3 +42,65 @@ describe("session context extraction", () => {
 		expect(pack.omitted.reason).toBeString();
 	});
 });
+
+function toolJsonl(id: string, text: string): string {
+	return [
+		JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+		JSON.stringify({ type: "message", id, timestamp: "2026-07-02T00:00:10.000Z", message: { role: "tool", content: [{ type: "text", text }] } }),
+	].join("\n");
+}
+
+describe("classifyNonUserText edge cases", () => {
+	test("non-zero failure count like '3 pass 2 failures' is an issue", () => {
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", "3 pass 2 failures") });
+		expect(result.nodes.some((n) => n.kind === "issue")).toBe(true);
+		expect(result.nodes.some((n) => n.kind === "evidence")).toBe(false);
+	});
+
+	test("mixed output with a zero-failure line plus a real error is an issue", () => {
+		const text = "Unit: 0 failures\nE2E: exit 1 error";
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", text) });
+		expect(result.nodes.some((n) => n.kind === "issue")).toBe(true);
+	});
+
+	test("inflected 'Tests FAILED' creates an issue node instead of being skipped", () => {
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", "Tests FAILED") });
+		expect(result.nodes.some((n) => n.kind === "issue")).toBe(true);
+	});
+
+	test("inflected '2 errors found' creates an issue node instead of being skipped", () => {
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", "2 errors found") });
+		expect(result.nodes.some((n) => n.kind === "issue")).toBe(true);
+	});
+
+	test("pure zero-failure summary remains evidence", () => {
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", "bun test foo.test.ts\n10 pass 0 fail") });
+		expect(result.nodes.some((n) => n.kind === "evidence")).toBe(true);
+		expect(result.nodes.some((n) => n.kind === "issue")).toBe(false);
+	});
+});
+
+describe("renderSessionContextPack budget coherence", () => {
+	test("tiny budget yields a valid pack with coherent omitted counts", () => {
+		const big = "我希望" + "x".repeat(1300);
+		const extracted = extractSessionContextFromJsonl({
+			sessionId: "s1",
+			content: [
+				JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+				JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: big }] } }),
+				JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "small goal" }] } }),
+				JSON.stringify({ type: "message", id: "u3", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "another small goal" }] } }),
+			].join("\n"),
+		});
+		const pack = renderSessionContextPack({ sessionId: "s1", query: "", budget: 10, ...extracted });
+
+		expect(typeof pack.summary).toBe("string");
+		const selectedCount =
+			pack.goals.length + pack.constraints.length + pack.decisions.length +
+			pack.issues.length + pack.resolutions.length + pack.evidence.length + pack.openTodos.length;
+		expect(selectedCount).toBeGreaterThanOrEqual(1);
+		expect(pack.omitted.nodeCount).toBe(extracted.nodes.length - selectedCount);
+		expect(pack.omitted.nodeCount).toBeGreaterThanOrEqual(0);
+		if (pack.omitted.nodeCount > 0) expect(pack.omitted.reason).toBe("budget");
+	});
+});
