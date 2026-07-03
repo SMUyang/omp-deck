@@ -23,6 +23,7 @@ const log = logger("routes");
 import { buildTasksRouter } from "./routes-tasks.ts";
 import { buildSettingsRouter } from "./routes-settings.ts";
 import { buildModelRolesRouter } from "./routes-model-roles.ts";
+import { createConfigModelRolesStore } from "./config-model-roles.ts";
 import { buildRoutinesRouter } from "./routes-routines.ts";
 import { buildHooksRouter } from "./routes-hooks.ts";
 import { buildInboxRouter } from "./routes-inbox.ts";
@@ -252,7 +253,12 @@ export function buildRouter(
 	app.route("/", buildStatusRouter(config));
 	app.route("/", buildCpaUsageRouter(config));
 	app.route("/", buildSettingsRouter(bridge, config, opts));
-	app.route("/", buildModelRolesRouter({ ompSettings: bridge.modelRoles }));
+	app.route("/", buildModelRolesRouter({
+		ompSettings: bridge.modelRoles ?? createConfigModelRolesStore({
+			agentDir: config.agentDir,
+			listModels: () => bridge.listModels(),
+		}),
+	}));
 	app.route("/", buildOrientationRouter());
 	app.route("/", buildBridgesRouter(supervisor));
 	app.route("/", buildMarketplaceRouter(marketplace));
