@@ -563,7 +563,7 @@ class RpcSessionHandle implements SessionHandle {
 			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
 			const focus = renderPackAsCompactFocus(pack);
 			if (!focus) return;
-			contextSavingsTracker.recordTriggered(this.sessionId, usage);
+			contextSavingsTracker.recordTriggered(this.sessionId, usage, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);
 			await this.#transport.send({ type: "compact", focus });
 			log.info(`context replacement compact sent for ${this.sessionId} — savings will appear on next context usage update`);

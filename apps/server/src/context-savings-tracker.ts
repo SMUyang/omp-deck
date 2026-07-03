@@ -6,6 +6,7 @@ const log = logger("context-savings");
 export interface ReplacementRecord {
 	sessionId: string;
 	before: { tokens: number; percent: number };
+	focus?: string;
 	after?: { tokens: number; percent: number };
 	triggeredAt: number;
 	completedAt?: number;
@@ -35,17 +36,18 @@ interface PendingRpc {
 	triggeredAt: number;
 }
 
-class ContextSavingsTracker {
+export class ContextSavingsTracker {
 	#records: ReplacementRecord[] = [];
 	#pendingRpc: Map<string, PendingRpc> = new Map();
 	#maxRecent = 100;
 
-	recordTriggered(sessionId: string, before: ContextUsage): ReplacementRecord {
+	recordTriggered(sessionId: string, before: ContextUsage, focus?: string): ReplacementRecord {
 		const record: ReplacementRecord = {
 			sessionId,
 			before: { tokens: before.tokens ?? 0, percent: before.percent ?? 0 },
 			triggeredAt: Date.now(),
 		};
+		if (focus !== undefined) record.focus = focus;
 		this.#records.push(record);
 		this.#trim();
 		this.#pendingRpc.set(sessionId, {

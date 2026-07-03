@@ -934,7 +934,7 @@ export class InProcessSessionHandle implements SessionHandle {
 			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
 			const focus = renderPackAsCompactFocus(pack);
 			if (!focus) return;
-			contextSavingsTracker.recordTriggered(this.sessionId, before);
+			contextSavingsTracker.recordTriggered(this.sessionId, before, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${before.percent ?? 0}% / ${before.tokens ?? 0} tokens)`);
 			await this.session.compact(focus);
 			const after = this.session.getContextUsage?.();
