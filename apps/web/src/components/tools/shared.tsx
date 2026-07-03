@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { cn, truncate } from "@/lib/utils";
 import { CopyButton } from "@/lib/CopyButton";
+import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
 
 export function extractResultText(result: unknown): string {
 	if (result == null) return "";
@@ -70,28 +71,13 @@ export function extractResultImages(
  */
 export function ResultImages({ result }: { result: unknown }) {
 	const images = extractResultImages(result);
-	if (images.length === 0) return null;
 	return (
-		<div className="space-y-1.5">
-			{images.map((img, i) => {
-				const src = `data:${img.mimeType};base64,${img.data}`;
-				return (
-					<a
-						key={i}
-						href={src}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="block"
-					>
-						<img
-							src={src}
-							alt={`tool output ${i + 1}`}
-							className="max-h-96 w-auto rounded border border-line"
-						/>
-					</a>
-				);
-			})}
-		</div>
+		<ImagePreviewGrid
+			images={images}
+			altPrefix="tool output"
+			thumbnailClassName="max-h-96 w-auto rounded border border-line object-contain"
+			containerClassName="space-y-1.5"
+		/>
 	);
 }
 

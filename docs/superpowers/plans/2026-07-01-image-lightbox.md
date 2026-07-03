@@ -332,7 +332,7 @@ export function ImagePreviewGrid({
 			<div className={containerClassName}>
 				{items.map((item, i) => (
 					<button
-						key={i}
+						key={item.src}
 						type="button"
 						className="cursor-zoom-in overflow-hidden p-0 border-none bg-transparent"
 						onClick={() => setLightbox(i)}

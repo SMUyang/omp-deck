@@ -5,6 +5,7 @@ import type { QueuedPrompt } from "@/lib/types";
 import { Markdown } from "@/lib/markdown";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
 
 /**
  * Renders a prompt the user sent while the agent was mid-turn. The SDK has
@@ -114,18 +115,11 @@ export function QueuedMessage({ msg }: { msg: QueuedPrompt }) {
 				) : null}
 			</div>
 
-			{msg.images && msg.images.length > 0 ? (
-				<div className="flex flex-wrap gap-1.5">
-					{msg.images.map((img, i) => (
-						<img
-							key={i}
-							src={`data:${img.mimeType};base64,${img.data}`}
-							alt={`queued ${i + 1}`}
-							className="h-28 w-28 rounded border border-line object-cover"
-						/>
-					))}
-				</div>
-			) : null}
+			<ImagePreviewGrid
+				images={msg.images ?? []}
+				altPrefix="queued"
+				thumbnailClassName="h-28 w-28 rounded border border-line object-cover"
+			/>
 
 			{editing ? (
 				<div className="space-y-1.5">
