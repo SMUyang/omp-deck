@@ -3,6 +3,8 @@ import { subscribeWithSelector } from "zustand/middleware";
 
 import type {
 	AgentSessionEventJson,
+	CreateWorkspaceRequest,
+	CreateWorkspaceResponse,
 	ExtUiDialogResponse,
 	ListSessionsResponse,
 	ListWorkspacesResponse,
@@ -78,6 +80,14 @@ export function applySessionSummarySnapshot(
 		return { ...session, title };
 	});
 	return changed ? next : sessions;
+}
+
+export function workspaceStateFromResponse(resp: ListWorkspacesResponse): { workspaces: WorkspaceEntry[]; defaultCwd: string } {
+	return { workspaces: resp.workspaces, defaultCwd: resp.defaultCwd };
+}
+
+export function selectedWorkspaceAfterDelete(selectedCwd: string, remaining: WorkspaceEntry[]): string {
+	return selectedCwd && !remaining.some((workspace) => workspace.cwd === selectedCwd) ? "" : selectedCwd;
 }
 
 export function getInitialStatusPanelOpen(storage: BoolStorage | undefined, desktop: boolean): boolean {
@@ -205,6 +215,8 @@ interface StoreState {
 	connect(): void;
 	disconnect(): void;
 	refreshWorkspaces(): Promise<void>;
+	createWorkspace(opts: CreateWorkspaceRequest): Promise<WorkspaceEntry>;
+	deleteWorkspace(id: string): Promise<void>;
 	refreshSessions(cwd?: string): Promise<void>;
 	createSession(opts: { cwd: string; resumeFromPath?: string }): Promise<string>;
 	selectSession(id: string): void;
@@ -296,10 +308,21 @@ export const useStore = create<StoreState>()(
 		async refreshWorkspaces() {
 			try {
 				const resp: ListWorkspacesResponse = await api.listWorkspaces();
-				set({ workspaces: resp.workspaces, defaultCwd: resp.defaultCwd });
+				set(workspaceStateFromResponse(resp));
 			} catch (err) {
 				console.warn("listWorkspaces failed", err);
 			}
+		},
+
+		async createWorkspace(opts) {
+			const resp: CreateWorkspaceResponse = await api.createWorkspace(opts);
+			set(workspaceStateFromResponse(resp));
+			return resp.workspace;
+		},
+
+		async deleteWorkspace(id) {
+			const resp = await api.deleteWorkspace(id);
+			set(workspaceStateFromResponse(resp));
 		},
 
 		async refreshSessions(cwd?: string) {
@@ -371,19 +394,17 @@ export const useStore = create<StoreState>()(
 		},
 
 		async disposeSession(id: string) {
-			try {
-				await api.disposeSession(id);
-			} catch (err) {
-				console.warn("dispose failed", err);
-			}
+			await api.disposeSession(id);
 			set((s) => {
 				const next = { ...s.sessionsById };
 				delete next[id];
 				return {
 					sessionsById: next,
+					sessions: s.sessions.filter((session) => session.id !== id),
 					activeId: s.activeId === id ? undefined : s.activeId,
 				};
 			});
+			void get().refreshWorkspaces();
 		},
 
 		async renameSession(id, name) {

@@ -6,7 +6,7 @@ The [`omp`](https://github.com/can1357/oh-my-pi) terminal agent is excellent at 
 
 pi is known for its flexibility and omp applies some opinions on how to leverage it more effectively. omp-deck is best understood as a web interface for omp with a small set of additional opinions applied on top of omp. 
 
-> **Status:** v0.6.1 — RPC backend (external `omp --mode rpc`), auto-update scripts, memory topology cockpit. Fork of [bjb2/omp-deck](https://github.com/bjb2/omp-deck). See [CHANGELOG.md](./CHANGELOG.md).
+> **Status:** v0.7.0 — RPC backend, image lightbox, CPA actual usage status, and memory topology cockpit. Fork of [bjb2/omp-deck](https://github.com/bjb2/omp-deck). See [CHANGELOG.md](./CHANGELOG.md).
 
 ![omp-deck chat surface — live tool calls + orientation summary](./docs/screenshots/00-hero-chat-paper.png)
 

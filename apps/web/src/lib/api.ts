@@ -1,6 +1,10 @@
 import type {
+	BrowseDirectoryResponse,
 	CreateSessionRequest,
 	CreateSessionResponse,
+	CreateWorkspaceRequest,
+	CreateWorkspaceResponse,
+	DeleteWorkspaceResponse,
 	ListFilePathsResponse,
 	ListModelsResponse,
 	ListSessionsResponse,
@@ -10,6 +14,7 @@ import type {
 	MemorySearchResponse,
 	MemoryStatusResponse,
 	ModelRef,
+	CpaUsageResponse,
 	ProviderUsageResponse,
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
@@ -43,6 +48,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
 	listWorkspaces(): Promise<ListWorkspacesResponse> {
 		return request<ListWorkspacesResponse>("/workspaces");
+	},
+	createWorkspace(body: CreateWorkspaceRequest): Promise<CreateWorkspaceResponse> {
+		return request<CreateWorkspaceResponse>("/workspaces", { method: "POST", body: JSON.stringify(body) });
+	},
+	deleteWorkspace(id: string): Promise<DeleteWorkspaceResponse> {
+		return request<DeleteWorkspaceResponse>(`/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+	},
+	browseDirectory(cwd: string, showHidden = false): Promise<BrowseDirectoryResponse> {
+		const params = new URLSearchParams({ cwd });
+		if (showHidden) params.set("showHidden", "1");
+		return request<BrowseDirectoryResponse>(`/fs/browse?${params.toString()}`);
 	},
 	listSessions(cwd?: string): Promise<ListSessionsResponse> {
 		const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
@@ -95,6 +111,9 @@ export const api = {
 	},
 	getProviderUsage(): Promise<ProviderUsageResponse> {
 		return request<ProviderUsageResponse>("/status/provider-usage");
+	},
+	getCpaUsage(): Promise<CpaUsageResponse> {
+		return request<CpaUsageResponse>("/status/cpa-usage");
 	},
 	getMemoryStatus(): Promise<MemoryStatusResponse> {
 		return request<MemoryStatusResponse>("/memory/status");

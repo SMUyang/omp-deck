@@ -236,6 +236,41 @@ export const ENV_SCHEMA: EnvSchemaEntry[] = [
 		description:
 			"Deck-session org root the maintenance-gate uses to anchor captures. Set automatically by the server to ~/kb unless overridden or disabled.",
 	},
+	{
+		key: "CPA_USAGE_BASE_URL",
+		valueType: "string",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: true,
+		description:
+			"Base URL of the CLIProxyAPI usage collector, e.g. https://api.hyanapi.xyz/collector. Required for CPA usage to appear in the Status panel.",
+	},
+	{
+		key: "CPA_USAGE_USERNAME",
+		valueType: "string",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: true,
+		description: "Basic-auth username for the CPA usage collector (e.g. \"cpa\").",
+	},
+	{
+		key: "CPA_USAGE_PASSWORD",
+		valueType: "string",
+		sensitive: true,
+		restartRequired: false,
+		hotApply: true,
+		description:
+			"Basic-auth password for the CPA usage collector. Server-side only; never exposed to the browser, logs, or error messages.",
+	},
+	{
+		key: "CPA_USAGE_TIMEOUT_MS",
+		defaultValue: "10000",
+		valueType: "int",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: true,
+		description: "Per-request timeout in milliseconds for CPA collector fetches.",
+	},
 ];
 
 export const ENV_SCHEMA_BY_KEY = new Map(ENV_SCHEMA.map((entry) => [entry.key, entry]));

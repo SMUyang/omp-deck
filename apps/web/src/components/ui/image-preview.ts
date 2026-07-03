@@ -8,7 +8,14 @@ export interface ImagePreviewItem {
 	alt: string;
 }
 
-export function imageDataUrl(image: ImagePreviewSource): string {
+const OMP_BLOB_REF_RE = /^blob:sha256:([a-f0-9]{64})$/i;
+
+export function imageSrc(image: ImagePreviewSource): string {
+	const blobMatch = image.data.trim().match(OMP_BLOB_REF_RE);
+	if (blobMatch) {
+		const mimeType = encodeURIComponent(image.mimeType || "image/png");
+		return `/api/agent-blobs/${blobMatch[1]!.toLowerCase()}?mimeType=${mimeType}`;
+	}
 	return `data:${image.mimeType || "image/png"};base64,${image.data}`;
 }
 
@@ -17,9 +24,9 @@ export function normalizePreviewImages(
 	altPrefix: string,
 ): ImagePreviewItem[] {
 	const valid = images.filter((image) => image.data.trim().length > 0);
-	if (valid.length === 1) return [{ src: imageDataUrl(valid[0]!), alt: altPrefix }];
+	if (valid.length === 1) return [{ src: imageSrc(valid[0]!), alt: altPrefix }];
 	return valid.map((image, index) => ({
-		src: imageDataUrl(image),
+		src: imageSrc(image),
 		alt: `${altPrefix} ${index + 1} of ${valid.length}`,
 	}));
 }

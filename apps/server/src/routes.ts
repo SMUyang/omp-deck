@@ -4,10 +4,8 @@ import type {
 	CreateSessionResponse,
 	ListModelsResponse,
 	ListSessionsResponse,
-	ListWorkspacesResponse,
 	RestartServerResponse,
 	UpdateRunResponse,
-	WorkspaceEntry,
 } from "@omp-deck/protocol";
 
 import type { Config } from "./config.ts";
@@ -16,6 +14,9 @@ import { getBuildInfo, getUptimeSecs } from "./build-info.ts";
 import { getUpdateCheck } from "./update-check.ts";
 import { resolveRepoRoot, runUpdateSteps } from "./update-runner.ts";
 import type { AgentBridge } from "./bridge/types.ts";
+import { getDb } from "./db/index.ts";
+import { buildWorkspacesRouter } from "./routes-workspaces.ts";
+import { deletePersistedSession } from "./session-delete.ts";
 
 const log = logger("routes");
 
@@ -32,10 +33,12 @@ import { buildMarketplaceRouter } from "./routes-marketplace.ts";
 import { buildSkillsRouter } from "./routes-skills.ts";
 import { buildKbRouter } from "./routes-kb.ts";
 import { buildUploadsRouter } from "./routes-uploads.ts";
+import { buildAgentBlobsRouter } from "./routes-agent-blobs.ts";
 import { buildOrientationRouter } from "./routes-orientation.ts";
 import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
 import { buildStatusRouter } from "./routes-status.ts";
+import { buildCpaUsageRouter } from "./routes-cpa-usage.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
 import { buildSessionContextRouter } from "./routes-session-context.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
@@ -92,32 +95,7 @@ export function buildRouter(
 		return c.json(body, result.ok ? 200 : 500);
 	});
 
-	app.get("/workspaces", async (c) => {
-		const allSessions = await bridge.listSessions({});
-		const counts = new Map<string, number>();
-		for (const s of allSessions) {
-			if (!s.cwd) continue;
-			counts.set(s.cwd, (counts.get(s.cwd) ?? 0) + 1);
-		}
-
-		// Always include default + extras even if zero sessions.
-		const known = new Set<string>([config.defaultCwd, ...config.extraWorkspaces]);
-		for (const cwd of counts.keys()) known.add(cwd);
-
-		const workspaces: WorkspaceEntry[] = Array.from(known)
-			.map((cwd) => ({
-				cwd,
-				label: deriveLabel(cwd),
-				sessionCount: counts.get(cwd) ?? 0,
-			}))
-			.sort((a, b) => b.sessionCount - a.sessionCount || a.label.localeCompare(b.label));
-
-		const body: ListWorkspacesResponse = {
-			workspaces,
-			defaultCwd: config.defaultCwd,
-		};
-		return c.json(body);
-	});
+	app.route("/", buildWorkspacesRouter({ config, db: getDb(), bridge }));
 
 	app.get("/sessions", async (c) => {
 		const cwd = c.req.query("cwd");
@@ -203,7 +181,7 @@ export function buildRouter(
 		try {
 			body = (await c.req.json()) as { name?: string; model?: { provider?: unknown; id?: unknown } };
 		} catch {
-			return c.json({ error: "invalid json" }, 400);
+			return c.json({ error: "invalid json body" }, 400);
 		}
 		try {
 			if (typeof body.name === "string") {
@@ -245,9 +223,13 @@ export function buildRouter(
 	app.delete("/sessions/:id", async (c) => {
 		const id = c.req.param("id");
 		const handle = bridge.getSession(id);
-		if (!handle) return c.json({ error: "session not found" }, 404);
 		try {
-			await handle.dispose();
+			if (handle) {
+				await handle.dispose();
+				return c.json({ ok: true });
+			}
+			const deleted = await deletePersistedSession(id, await bridge.listSessions({}));
+			if (!deleted) return c.json({ error: "session not found" }, 404);
 			return c.json({ ok: true });
 		} catch (err) {
 			log.error(`dispose failed`, err);
@@ -257,6 +239,7 @@ export function buildRouter(
 
 	app.route("/", buildTasksRouter());
 	app.route("/", buildUploadsRouter({ uploadsRoot: config.uploadsRoot }));
+	app.route("/", buildAgentBlobsRouter(config));
 	app.route("/", buildRoutinesRouter(runner));
 	app.route("/", buildHooksRouter(runner));
 	app.route("/", buildInboxRouter());
@@ -264,6 +247,7 @@ export function buildRouter(
 	app.route("/", buildSlashCommandsRouter());
 	app.route("/", buildFsRouter());
 	app.route("/", buildStatusRouter(config));
+	app.route("/", buildCpaUsageRouter(config));
 	app.route("/", buildSettingsRouter(bridge, config, opts));
 	app.route("/", buildOrientationRouter());
 	app.route("/", buildBridgesRouter(supervisor));
@@ -276,10 +260,4 @@ export function buildRouter(
 	app.route("/onboarding", buildOnboardingRouter());
 
 	return app;
-}
-
-function deriveLabel(cwd: string): string {
-	if (!cwd) return "(unknown)";
-	const parts = cwd.split(/[\\/]/).filter(Boolean);
-	return parts[parts.length - 1] ?? cwd;
 }

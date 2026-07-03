@@ -5,6 +5,25 @@ All notable changes to omp-deck. The format is loosely based on
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-02 — CPA usage status and image lightbox
+
+This fork release ships the current web cockpit state used by the RPC deck: unified image previews, RPC session-title/history fixes, and CLIProxyAPI/CPA actual request usage in the Status panel.
+
+### Added
+
+- **CPA usage Status panel** backed by `GET /api/status/cpa-usage`. The server reads `CPA_USAGE_BASE_URL`, `CPA_USAGE_USERNAME`, `CPA_USAGE_PASSWORD`, and optional `CPA_USAGE_TIMEOUT_MS`, calls the external collector with Basic Auth, and returns sanitized `1h` / `24h` / `7d` request usage windows. The UI labels this clearly as `CLIProxyAPI request usage, not remaining quota.`
+- **Unified image lightbox** for pasted images and tool-generated screenshots/images. Images render inline first, then open in an accessible in-deck preview with keyboard/backdrop close, focus restoration, scroll lock, and multi-image navigation.
+- **Next-roadmap plan** at `docs/superpowers/plans/2026-07-02-next-roadmap.md` covering subagent invocation visibility, session topology memory/auto-compact, workspace/session lifecycle, image-rendering diagnosis, and future release hygiene.
+
+### Fixed
+
+- RPC session discovery now handles OMP 16 title-slot JSONL files and syncs auto-generated session titles into the web sidebar/history without a refresh.
+- RPC session resume uses the session file's actual cwd instead of treating the session path as cwd.
+
+### Security
+
+- CPA collector credentials stay server-side. The password is marked sensitive in env schema, is never sent to the browser, and is not written into launcher command lines or generated scripts.
+
 ## [0.6.1] — 2026-05-29 — In-app update notification
 
 Small follow-up to v0.6.0. Adds a passive update-check pill in the StatusBar so future releases (this one and onward) become discoverable from inside the deck instead of requiring users to run `npm outdated -g`.
