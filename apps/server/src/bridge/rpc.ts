@@ -48,6 +48,7 @@ import * as path from "node:path";
 import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
+import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { hasSessionContextPack, getStoredSessionContextPack, renderPackAsCompactFocus, shouldReplaceContext } from "../session-context.ts";
 
 const log = logger("rpc-bridge");
@@ -473,6 +474,7 @@ class RpcSessionHandle implements SessionHandle {
 				this.#emitSessionUpdated();
 			}
 			if (state.contextUsage) {
+				this.#maybeRecordRpcSavings(state.contextUsage);
 				this.#emit({ type: "context_usage", contextUsage: state.contextUsage } as unknown as AgentSessionEventJson);
 			}
 		} catch (err) {
@@ -561,14 +563,17 @@ class RpcSessionHandle implements SessionHandle {
 			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
 			const focus = renderPackAsCompactFocus(pack);
 			if (!focus) return;
-			const beforeTokens = usage.tokens ?? 0;
-			const beforePct = usage.percent ?? 0;
-			log.info(`context replacement triggered for ${this.sessionId} (${beforePct}% / ${beforeTokens} tokens)`);
+			contextSavingsTracker.recordTriggered(this.sessionId, usage);
+			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);
 			await this.#transport.send({ type: "compact", focus });
 			log.info(`context replacement compact sent for ${this.sessionId} — savings will appear on next context usage update`);
 		} catch (err) {
 			log.warn(`context replacement failed for ${this.sessionId}`, err);
 		}
+	}
+
+	#maybeRecordRpcSavings(usage: ContextUsage): void {
+		contextSavingsTracker.maybeCompleteFromRpcUpdate(this.sessionId, usage);
 	}
 	isStreamingNow(): boolean {
 		return this.#state.isStreaming;

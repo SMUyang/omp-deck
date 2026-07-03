@@ -41,6 +41,7 @@ import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
 import { buildStatusRouter } from "./routes-status.ts";
 import { buildCpaUsageRouter } from "./routes-cpa-usage.ts";
+import { buildContextSavingsRouter } from "./routes-context-savings.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
 import { buildSessionContextRouter } from "./routes-session-context.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
@@ -265,6 +266,7 @@ export function buildRouter(
 	app.route("/", buildSkillsRouter(skills));
 	app.route("/", buildKbRouter(kb));
 	app.route("/", buildMemoryRouter(config));
+	app.route("/", buildContextSavingsRouter());
 	app.route("/", buildSessionContextRouter(bridge));
 	app.route("/auth/oauth", buildAuthOAuthRouter());
 	app.route("/onboarding", buildOnboardingRouter());

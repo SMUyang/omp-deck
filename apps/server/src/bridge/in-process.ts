@@ -36,6 +36,7 @@ import type { DeckSlashResult } from "../deck-slash-commands.ts";
 import { logger } from "../log.ts";
 import { getDeckModelRegistry } from "../auth-singleton.ts";
 import { looksLikePlaceholderKey } from "../credential-quality.ts";
+import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { getEffectivePrelude } from "../orientation-store.ts";
 import { hasSessionContextPack, getStoredSessionContextPack, renderPackAsCompactFocus, shouldReplaceContext } from "../session-context.ts";
 import { notificationService } from "../notifications/index.ts";
@@ -933,15 +934,15 @@ export class InProcessSessionHandle implements SessionHandle {
 			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
 			const focus = renderPackAsCompactFocus(pack);
 			if (!focus) return;
-			const beforeTokens = before.tokens ?? 0;
-			const beforePct = before.percent ?? 0;
-			log.info(`context replacement triggered for ${this.sessionId} (${beforePct}% / ${beforeTokens} tokens)`);
+			contextSavingsTracker.recordTriggered(this.sessionId, before);
+			log.info(`context replacement triggered for ${this.sessionId} (${before.percent ?? 0}% / ${before.tokens ?? 0} tokens)`);
 			await this.session.compact(focus);
 			const after = this.session.getContextUsage?.();
+			if (after) contextSavingsTracker.recordCompleted(this.sessionId, after);
+			const beforeTokens = before.tokens ?? 0;
 			const afterTokens = after?.tokens ?? 0;
-			const afterPct = after?.percent ?? 0;
 			const saved = Math.max(0, beforeTokens - afterTokens);
-			log.info(`context replacement done for ${this.sessionId}: ${beforePct}% → ${afterPct}%, saved ~${saved} tokens`);
+			log.info(`context replacement done for ${this.sessionId}: ${before.percent ?? 0}% → ${after?.percent ?? 0}%, saved ~${saved} tokens`);
 		} catch (err) {
 			log.warn(`context replacement failed for ${this.sessionId}`, err);
 		}
