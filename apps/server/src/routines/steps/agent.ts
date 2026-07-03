@@ -32,7 +32,6 @@ export async function executeAgentStep(
 	signal: AbortSignal,
 	defaultCwd: string,
 ): Promise<StepResult> {
-	const startedMs = Date.now();
 	let prompt = renderString(step.prompt, context as unknown as Record<string, unknown>);
 	if (step.structured_output) {
 		const schemaJson = JSON.stringify(step.structured_output.schema);
@@ -42,14 +41,60 @@ export async function executeAgentStep(
 		prompt = prompt.slice(0, MAX_PROMPT_CHARS) + `\n[prompt truncated at ${MAX_PROMPT_CHARS} chars]`;
 	}
 
-	const args = ["-p", prompt];
-	if (step.model) {
-		args.push("-m", step.model);
+	const models = buildModelAttempts(step.model, step.fallback_models);
+	const failures: AgentAttemptFailure[] = [];
+	for (const model of models) {
+		const result = await runAgentAttempt({ step, prompt, model, signal, defaultCwd });
+		if (result.status === "success" || result.status === "aborted") return result;
+		failures.push({
+			model,
+			error: result.error ?? "unknown failure",
+			stderr: result.stderrExcerpt,
+		});
+	}
+
+	const last = failures.at(-1);
+	return {
+		status: "failed",
+		stdoutExcerpt: "",
+		stderrExcerpt: last?.stderr ?? "",
+		error: formatAttemptFailures(failures),
+		durationMs: 0,
+	};
+}
+
+interface AgentAttemptFailure {
+	model: string | undefined;
+	error: string;
+	stderr: string;
+}
+
+interface AgentAttemptInput {
+	step: Extract<RoutineStep, { type: "agent" }>;
+	prompt: string;
+	model: string | undefined;
+	signal: AbortSignal;
+	defaultCwd: string;
+}
+
+function buildModelAttempts(model: string | undefined, fallbackModels: string[] | undefined): Array<string | undefined> {
+	const attempts: Array<string | undefined> = [model];
+	for (const fallback of fallbackModels ?? []) {
+		if (!attempts.includes(fallback)) attempts.push(fallback);
+	}
+	return attempts;
+}
+
+async function runAgentAttempt(input: AgentAttemptInput): Promise<StepResult> {
+	const startedMs = Date.now();
+	const args = ["-p", input.prompt];
+	if (input.model) {
+		args.push("-m", input.model);
 	}
 
 	try {
 		const proc = Bun.spawn(["omp", ...args], {
-			cwd: defaultCwd,
+			cwd: input.defaultCwd,
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
@@ -62,7 +107,7 @@ export async function executeAgentStep(
 				/* already gone */
 			}
 		};
-		signal.addEventListener("abort", onAbort);
+		input.signal.addEventListener("abort", onAbort);
 		try {
 			const [stdout, stderr, exitCode] = await Promise.all([
 				readClipped(proc.stdout),
@@ -70,13 +115,14 @@ export async function executeAgentStep(
 				proc.exited,
 			]);
 			const durationMs = Date.now() - startedMs;
-			if (signal.aborted) {
+			if (input.signal.aborted) {
 				return {
 					status: "aborted",
 					stdoutExcerpt: stdout,
 					stderrExcerpt: stderr,
 					error: "aborted",
 					durationMs,
+					model: input.model,
 				};
 			}
 			if (exitCode !== 0) {
@@ -86,32 +132,33 @@ export async function executeAgentStep(
 					stderrExcerpt: stderr,
 					error: `omp exit code ${exitCode}`,
 					durationMs,
+					model: input.model,
 				};
 			}
 
 			// Estimate tokens for budget tracking. Conservative — model token
 			// counts are not exposed by `omp -p` stdout; the V1 estimate is
 			// good enough for max_llm_cost_usd to fire on runaway calls.
-			const tokensIn = Math.ceil(prompt.length / CHARS_PER_TOKEN);
+			const tokensIn = Math.ceil(input.prompt.length / CHARS_PER_TOKEN);
 			const tokensOut = Math.ceil(stdout.length / CHARS_PER_TOKEN);
-			const cost = costMicros(step.model, tokensIn, tokensOut);
+			const cost = costMicros(input.model, tokensIn, tokensOut);
 
 			let json: unknown;
 			let parseError: string | undefined;
-			if (step.structured_output) {
+			if (input.step.structured_output) {
 				try {
 					json = JSON.parse(stdout.trim());
 				} catch (err) {
 					parseError = `structured_output parse failure: ${String(err)}`;
 				}
-				if (step.structured_output.strict !== false && parseError) {
+				if (input.step.structured_output.strict !== false && parseError) {
 					return {
 						status: "failed",
 						stdoutExcerpt: stdout,
 						stderrExcerpt: stderr,
 						error: parseError,
 						durationMs,
-						model: step.model,
+						model: input.model,
 						llmTokensIn: tokensIn,
 						llmTokensOut: tokensOut,
 						llmCostMicros: cost,
@@ -125,13 +172,13 @@ export async function executeAgentStep(
 				stderrExcerpt: stderr,
 				json,
 				durationMs,
-				model: step.model,
+				model: input.model,
 				llmTokensIn: tokensIn,
 				llmTokensOut: tokensOut,
 				llmCostMicros: cost,
 			};
 		} finally {
-			signal.removeEventListener("abort", onAbort);
+			input.signal.removeEventListener("abort", onAbort);
 		}
 	} catch (err) {
 		return {
@@ -140,8 +187,20 @@ export async function executeAgentStep(
 			stderrExcerpt: "",
 			error: String(err),
 			durationMs: Date.now() - startedMs,
+			model: input.model,
 		};
 	}
+}
+
+function formatAttemptFailures(failures: AgentAttemptFailure[]): string {
+	if (failures.length === 0) return "agent step failed before any model attempt";
+	return failures
+		.map((failure) => {
+			const model = failure.model ?? "<default>";
+			const stderr = failure.stderr ? `; stderr: ${failure.stderr}` : "";
+			return `${model}: ${failure.error}${stderr}`;
+		})
+		.join(" | ");
 }
 
 async function readClipped(stream: ReadableStream<Uint8Array> | null): Promise<string> {

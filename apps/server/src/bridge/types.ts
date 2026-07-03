@@ -33,6 +33,9 @@ export interface AgentBridge {
 	applyEnvUpdate?(update: RuntimeEnvUpdate): void;
 	/** Catalog of models the SDK knows about, plus a marker on the current one when sessionId is given. */
 	listModels(opts?: { sessionId?: string }): Promise<ModelInfo[]>;
+	/** OMP settings-backed model role management. Only available for in-process backend; RPC lacks a set_model_role command. */
+	modelRoles?: ModelRolesCapability;
+
 	/**
 	 * Subscribe to extension-UI dialog frames for `sessionId` (open + cancel).
 	 * Returns an unsubscribe function. Implementations MAY immediately replay
@@ -73,6 +76,12 @@ export interface AgentBridge {
 		response: PlanApprovalResponse,
 	): Promise<"settled" | "unknown">;
 	dispose(): Promise<void>;
+}
+
+export interface ModelRolesCapability {
+	get(): Promise<{ roles: Record<string, string>; models: ModelInfo[] }>;
+	patch(updates: { roles?: Record<string, string | null> }): Promise<{ roles: Record<string, string>; models: ModelInfo[] }>;
+	put(roles: Record<string, string>): Promise<{ roles: Record<string, string>; models: ModelInfo[] }>;
 }
 
 export interface RuntimeEnvUpdate {

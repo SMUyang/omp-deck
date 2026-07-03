@@ -1537,6 +1537,7 @@ export type RoutineStep =
 			type: "agent";
 			prompt: string;
 			model?: string;
+			fallback_models?: string[];
 			structured_output?: { schema: unknown; strict?: boolean };
 			skills_allowed?: string[];
 			mcp_servers_allowed?: string[];

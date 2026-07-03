@@ -5,6 +5,7 @@ import type {
 	RestartServerResponse,
 	RevealEnvValueResponse,
 } from "@omp-deck/protocol";
+import type { ModelRolesPatchRequest, ModelRolesResponse } from "@/views/model-roles";
 
 const BASE = "/api";
 
@@ -32,6 +33,15 @@ export const settingsApi = {
 	},
 	revealEnv(key: string): Promise<RevealEnvValueResponse> {
 		return req<RevealEnvValueResponse>(`/settings/env/${encodeURIComponent(key)}?reveal=1`);
+	},
+	listModelRoles(): Promise<ModelRolesResponse> {
+		return req<ModelRolesResponse>("/settings/model-roles");
+	},
+	patchModelRoles(updates: ModelRolesPatchRequest["roles"]): Promise<ModelRolesResponse> {
+		return req<ModelRolesResponse>("/settings/model-roles", {
+			method: "PATCH",
+			body: JSON.stringify({ roles: updates } satisfies ModelRolesPatchRequest),
+		});
 	},
 	restartServer(): Promise<RestartServerResponse> {
 		return req<RestartServerResponse>("/server/restart", { method: "POST" });

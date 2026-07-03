@@ -12,7 +12,7 @@ import type {
 	PreludeResponse,
 	StartCommand,
 } from "@omp-deck/protocol";
-import type { ProviderInfo, VersionInfo } from "@omp-deck/protocol";
+import type { ModelInfo, ModelRef, ProviderInfo, VersionInfo } from "@omp-deck/protocol";
 
 import { Layout } from "@/components/Layout";
 import { Badge } from "@/components/ui/Badge";
@@ -29,12 +29,21 @@ import { useNotificationPermission } from "@/lib/notifications";
 import { useStore, type NotificationItem } from "@/lib/store";
 import { THEMES, useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import {
+	buildPatchRequest,
+	formatModelRef,
+	parseModelRef,
+	roleEntriesFromResponse,
+	type ModelRoleEntry,
+	type ModelRolesResponse,
+} from "./model-roles";
 
 const SECTIONS = [
 	{ id: "env", label: "Env", description: "Process and deck-managed variables" },
 	{ id: "providers", label: "Providers", description: "OAuth sign-in and API-key state" },
 	{ id: "messaging", label: "Messaging", description: "Telegram and future chat bridges" },
 	{ id: "orientation", label: "Orientation", description: "Prelude, /start, maintenance gate" },
+	{ id: "model-roles", label: "Model Roles", description: "OMP model role bindings" },
 	{ id: "appearance", label: "Appearance", description: "Themes, colors, fonts" },
 	{ id: "workspaces", label: "Workspaces", description: "Pinned roots and display names" },
 	{ id: "notifications", label: "Notifications", description: "Idle alerts and quiet hours" },
@@ -93,6 +102,8 @@ export function SettingsView() {
 								<OrientationSection />
 							) : selected === "appearance" ? (
 								<AppearanceSection />
+							) : selected === "model-roles" ? (
+								<ModelRolesSection />
 							) : selected === "notifications" ? (
 								<NotificationsSection />
 							) : selected === "about" ? (
@@ -1638,6 +1649,175 @@ function GateKnobInput({
 			</div>
 		</label>
 	);
+}
+
+function ModelRolesSection() {
+	const [data, setData] = useState<ModelRolesResponse | null>(null);
+	const [draft, setDraft] = useState<Record<string, string>>({});
+	const [newRole, setNewRole] = useState("");
+	const [newModel, setNewModel] = useState("");
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+
+	async function refresh(): Promise<void> {
+		try {
+			const next = await settingsApi.listModelRoles();
+			setData(next);
+			setDraft({ ...next.roles });
+			setError(undefined);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	useEffect(() => {
+		void refresh();
+	}, []);
+
+	const entries = useMemo(() => roleEntriesFromResponse({ roles: draft, models: data?.models ?? [] }), [draft, data]);
+	const modelOptions = useMemo(() => normalizeModelOptions(data?.models ?? []), [data]);
+
+	async function saveRole(role: string): Promise<void> {
+		const value = draft[role];
+		const ref = value ? parseModelRef(value) : null;
+		setSaving(true);
+		try {
+			const next = await settingsApi.patchModelRoles(buildPatchRequest({ [role]: ref }).roles);
+			setData(next);
+			setDraft({ ...next.roles });
+			setError(undefined);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function removeRole(role: string): Promise<void> {
+		setSaving(true);
+		try {
+			const next = await settingsApi.patchModelRoles(buildPatchRequest({ [role]: null }).roles);
+			setData(next);
+			setDraft({ ...next.roles });
+			setError(undefined);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	function addDraftRole(): void {
+		const role = newRole.trim();
+		if (!role || !newModel) return;
+		setDraft((current) => ({ ...current, [role]: newModel }));
+		setNewRole("");
+		setNewModel("");
+	}
+
+	return (
+		<div className="mx-auto max-w-5xl space-y-4">
+			<div>
+				<h1 className="text-xl font-semibold tracking-tight">OMP model roles</h1>
+				<p className="mt-1 max-w-3xl text-sm text-ink-3">
+					These bindings write to OMP's native modelRoles config. Role names are dynamic, so custom roles such as advisor or adviser are preserved.
+				</p>
+			</div>
+			{error ? <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">{error}</div> : null}
+			{loading ? <div className="text-sm text-ink-3">Loading...</div> : null}
+			<div className="overflow-hidden rounded-md border border-line bg-paper">
+				<div className="border-b border-line px-3 py-2">
+					<div className="meta">Configured roles</div>
+				</div>
+				<div className="divide-y divide-line">
+					{entries.map((entry) => (
+						<ModelRoleRow
+							key={entry.name}
+							entry={entry}
+							value={draft[entry.name] ?? formatModelRef(entry.model)}
+							models={modelOptions}
+							saving={saving}
+							onChange={(value) => setDraft((current) => ({ ...current, [entry.name]: value }))}
+							onSave={() => void saveRole(entry.name)}
+							onRemove={() => void removeRole(entry.name)}
+						/>
+					))}
+					{entries.length === 0 ? <div className="px-3 py-4 text-sm text-ink-3">No model roles configured yet.</div> : null}
+				</div>
+			</div>
+			<div className="rounded-md border border-line bg-paper p-3">
+				<div className="meta">Add custom role</div>
+				<div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
+					<input
+						type="text"
+						value={newRole}
+						onChange={(e) => setNewRole(e.target.value)}
+						placeholder="advisor"
+						className="rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+					/>
+					<select
+						value={newModel}
+						onChange={(e) => setNewModel(e.target.value)}
+						className="rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+					>
+						<option value="">Choose model...</option>
+						{modelOptions.map((model) => (
+							<option key={model.value} value={model.value}>{model.label}</option>
+						))}
+					</select>
+					<Button size="sm" onClick={addDraftRole} disabled={!newRole.trim() || !newModel}>Add</Button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function ModelRoleRow({
+	entry,
+	value,
+	models,
+	saving,
+	onChange,
+	onSave,
+	onRemove,
+}: {
+	entry: ModelRoleEntry;
+	value: string;
+	models: Array<{ value: string; label: string }>;
+	saving: boolean;
+	onChange: (value: string) => void;
+	onSave: () => void;
+	onRemove: () => void;
+}) {
+	return (
+		<div className="grid gap-3 px-3 py-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-center">
+			<div>
+				<div className="font-mono text-sm text-ink">{entry.name}</div>
+				<div className="mt-1">{entry.dynamic ? <Badge tone="muted">custom</Badge> : <Badge tone="accent">built-in</Badge>}</div>
+			</div>
+			<select value={value} onChange={(e) => onChange(e.target.value)} className="rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink">
+				{models.map((model) => (
+					<option key={model.value} value={model.value}>{model.label}</option>
+				))}
+			</select>
+			<div className="flex gap-2">
+				<Button size="sm" onClick={onSave} disabled={saving || !value}>Save</Button>
+				{entry.dynamic ? <Button size="sm" variant="ghost" onClick={onRemove} disabled={saving}><X className="h-3.5 w-3.5" />Remove</Button> : null}
+			</div>
+		</div>
+	);
+}
+
+function normalizeModelOptions(models: unknown[]): Array<{ value: string; label: string }> {
+	return models.flatMap((model) => {
+		const info = model as Partial<ModelInfo>;
+		if (typeof info.provider !== "string" || typeof info.id !== "string") return [];
+		const ref: ModelRef = { provider: info.provider, id: info.id };
+		return [{ value: formatModelRef(ref), label: `${info.label ?? info.id} (${formatModelRef(ref)})` }];
+	});
 }
 
 function StubSection({ section }: { section: Exclude<SectionId, "env" | "messaging" | "appearance" | "notifications"> }) {

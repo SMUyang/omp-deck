@@ -45,6 +45,7 @@ import type {
 	AgentBridge,
 	CreateSessionOpts,
 	EventListener,
+	ModelRolesCapability,
 	PlanApprovalResponse,
 	ResumeSessionOpts,
 	RuntimeEnvUpdate,
@@ -92,6 +93,22 @@ export class InProcessAgentBridge implements AgentBridge {
 	private modelRegistry: ModelRegistry | undefined;
 	private modelRegistryPromise: Promise<ModelRegistry> | undefined;
 	private readonly ompBin: string;
+	readonly modelRoles: ModelRolesCapability = {
+		get: async () => this.buildModelRolesSnapshot(),
+		patch: async (updates) => {
+			const next = normalizeModelRoles(ompSettings.getModelRoles());
+			for (const [role, value] of Object.entries(updates.roles ?? {})) {
+				if (value === null) delete next[role];
+				else next[role] = value;
+			}
+			await this.persistModelRoles(next);
+			return this.buildModelRolesSnapshot();
+		},
+		put: async (roles) => {
+			await this.persistModelRoles(roles);
+			return this.buildModelRolesSnapshot();
+		},
+	};
 
 	constructor(opts: {
 		idleTimeoutMs?: number;
@@ -198,6 +215,33 @@ export class InProcessAgentBridge implements AgentBridge {
 		const current = opts.sessionId ? this.active.get(opts.sessionId)?.handle.snapshot().model : undefined;
 		return registry.getAll().map((model) => modelInfoFromSdk(model as unknown as SdkModel, registry, current));
 	}
+
+	private async buildModelRolesSnapshot(): Promise<{ roles: Record<string, string>; models: ModelInfo[] }> {
+		return {
+			roles: normalizeModelRoles(ompSettings.getModelRoles()),
+			models: await this.listModels(),
+		};
+	}
+
+	private async persistModelRoles(roles: Record<string, string>): Promise<void> {
+		const registry = await this.ensureModelRegistry();
+		for (const [role, modelId] of Object.entries(roles)) {
+			if (!this.isKnownModelRoleValue(modelId, registry)) {
+				throw new Error(`unknown model for role ${role}: ${modelId}`);
+			}
+		}
+		ompSettings.set("modelRoles", { ...roles });
+		await ompSettings.flush();
+	}
+
+	private isKnownModelRoleValue(modelId: string, registry: ModelRegistry): boolean {
+		const slash = modelId.indexOf("/");
+		if (slash <= 0 || slash === modelId.length - 1) return false;
+		const provider = modelId.slice(0, slash);
+		const id = modelId.slice(slash + 1);
+		return registry.find(provider, id) !== undefined;
+	}
+
 
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
@@ -601,6 +645,14 @@ export class InProcessAgentBridge implements AgentBridge {
 			source: `bridge:auth-fallback`,
 		});
 	}
+}
+
+function normalizeModelRoles(input: Record<string, string | undefined>): Record<string, string> {
+	const roles: Record<string, string> = {};
+	for (const [role, modelId] of Object.entries(input)) {
+		if (typeof modelId === "string") roles[role] = modelId;
+	}
+	return roles;
 }
 
 export class InProcessSessionHandle implements SessionHandle {

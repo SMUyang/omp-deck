@@ -20,6 +20,11 @@
           "type": "string",
           "description": "Model id (e.g. claude-sonnet-4-6). Defaults to the deck's active model setting."
         },
+        "fallback_models": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Ordered fallback model ids to try when the primary model fails. The first successful model stops the chain."
+        },
         "structured_output": {
           "type": "object",
           "required": ["schema"],

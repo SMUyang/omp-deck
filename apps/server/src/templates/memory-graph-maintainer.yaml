@@ -55,6 +55,9 @@ steps:
   # LLM step: review the graph and identify gaps
   - id: analyze
     type: agent
+    fallback_models:
+      - deepseek/deepseek-v4-flash
+      - deepseek/deepseek-v4-pro
     when: steps.compute_stats.json.analyze === true
     timeout_secs: 120
     prompt: |
