@@ -561,13 +561,15 @@ class RpcSessionHandle implements SessionHandle {
 			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
 			const focus = renderPackAsCompactFocus(pack);
 			if (!focus) return;
-			log.info(`auto context replacement for session ${this.sessionId} (${percent}% used)`);
+			const beforeTokens = usage.tokens ?? 0;
+			const beforePct = usage.percent ?? 0;
+			log.info(`context replacement triggered for ${this.sessionId} (${beforePct}% / ${beforeTokens} tokens)`);
 			await this.#transport.send({ type: "compact", focus });
+			log.info(`context replacement compact sent for ${this.sessionId} — savings will appear on next context usage update`);
 		} catch (err) {
-			log.warn(`auto context replacement failed for ${this.sessionId}`, err);
+			log.warn(`context replacement failed for ${this.sessionId}`, err);
 		}
 	}
-
 	isStreamingNow(): boolean {
 		return this.#state.isStreaming;
 	}

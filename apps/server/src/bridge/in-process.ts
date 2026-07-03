@@ -925,18 +925,25 @@ export class InProcessSessionHandle implements SessionHandle {
 
 	private async maybeAutoCompactContext(): Promise<void> {
 		try {
-			const usage = this.session.getContextUsage?.();
-			if (!usage) return;
-			const percent = typeof usage.percent === "number" ? usage.percent : null;
+			const before = this.session.getContextUsage?.();
+			if (!before) return;
+			const percent = typeof before.percent === "number" ? before.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
 			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
 			const focus = renderPackAsCompactFocus(pack);
 			if (!focus) return;
-			log.info(`auto context replacement for session ${this.sessionId} (${percent}% used)`);
+			const beforeTokens = before.tokens ?? 0;
+			const beforePct = before.percent ?? 0;
+			log.info(`context replacement triggered for ${this.sessionId} (${beforePct}% / ${beforeTokens} tokens)`);
 			await this.session.compact(focus);
+			const after = this.session.getContextUsage?.();
+			const afterTokens = after?.tokens ?? 0;
+			const afterPct = after?.percent ?? 0;
+			const saved = Math.max(0, beforeTokens - afterTokens);
+			log.info(`context replacement done for ${this.sessionId}: ${beforePct}% → ${afterPct}%, saved ~${saved} tokens`);
 		} catch (err) {
-			log.warn(`auto context replacement failed for ${this.sessionId}`, err);
+			log.warn(`context replacement failed for ${this.sessionId}`, err);
 		}
 	}
 
