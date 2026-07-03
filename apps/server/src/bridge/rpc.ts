@@ -48,6 +48,7 @@ import * as path from "node:path";
 import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
+import { hasSessionContextPack, getStoredSessionContextPack, renderPackAsCompactFocus, shouldReplaceContext } from "../session-context.ts";
 
 const log = logger("rpc-bridge");
 
@@ -542,11 +543,29 @@ class RpcSessionHandle implements SessionHandle {
 		text: string,
 		opts?: { streamingBehavior?: "steer" | "followUp"; images?: ImageAttachment[] },
 	): Promise<void> {
+		await this.maybeAutoCompactContext();
 		const command: RpcCommandBody = opts?.streamingBehavior
 			? { type: "prompt", message: text, streamingBehavior: opts.streamingBehavior }
 			: { type: "prompt", message: text };
 		await this.#transport.send(command);
 		this.#ensureAutoSessionName(text);
+	}
+
+	async maybeAutoCompactContext(): Promise<void> {
+		try {
+			const usage = this.#state.contextUsage;
+			if (!usage) return;
+			const percent = typeof usage.percent === "number" ? usage.percent : null;
+			if (!shouldReplaceContext(percent)) return;
+			if (!hasSessionContextPack(this.sessionId)) return;
+			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
+			const focus = renderPackAsCompactFocus(pack);
+			if (!focus) return;
+			log.info(`auto context replacement for session ${this.sessionId} (${percent}% used)`);
+			await this.#transport.send({ type: "compact", focus });
+		} catch (err) {
+			log.warn(`auto context replacement failed for ${this.sessionId}`, err);
+		}
 	}
 
 	isStreamingNow(): boolean {

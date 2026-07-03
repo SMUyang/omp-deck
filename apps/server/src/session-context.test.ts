@@ -203,3 +203,63 @@ test("rebuilds context store from a session file", async () => {
 	const graph = getSessionContextGraph("s1", 50);
 	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
 });
+
+import { renderPackAsCompactFocus, shouldReplaceContext } from "./session-context.ts";
+import type { SessionContextPackResponse } from "@omp-deck/protocol";
+
+describe("context replacement", () => {
+	test("shouldReplaceContext triggers at or above 15%", () => {
+		expect(shouldReplaceContext(14, 15)).toBe(false);
+		expect(shouldReplaceContext(15, 15)).toBe(true);
+		expect(shouldReplaceContext(50, 15)).toBe(true);
+		expect(shouldReplaceContext(null, 15)).toBe(false);
+		expect(shouldReplaceContext(undefined, 15)).toBe(false);
+	});
+
+	test("renderPackAsCompactFocus formats goals constraints decisions", () => {
+		const pack: SessionContextPackResponse = {
+			sessionId: "s1",
+			query: "",
+			budget: 1000,
+			summary: "",
+			goals: [
+				{ id: "g1", sessionId: "s1", kind: "goal", sourceMessageId: "m1", sourceTurnIndex: 1, title: "A", body: "A", compressedBody: "Build X", importance: 1, createdAt: "", metadata: {} },
+			],
+			constraints: [
+				{ id: "c1", sessionId: "s1", kind: "constraint", sourceMessageId: "m2", sourceTurnIndex: 2, title: "C", body: "C", compressedBody: "No React", importance: 1, createdAt: "", metadata: {} },
+			],
+			decisions: [],
+			issues: [],
+			resolutions: [],
+			evidence: [],
+			artifacts: [],
+			openTodos: [],
+			rawRefs: [],
+			omitted: { nodeCount: 0, edgeCount: 0, reason: "none" },
+		};
+		const focus = renderPackAsCompactFocus(pack);
+		expect(focus).toContain("Build X");
+		expect(focus).toContain("No React");
+		expect(focus).toContain("Preserve these key session facts");
+	});
+
+	test("renderPackAsCompactFocus returns empty for empty pack", () => {
+		const pack: SessionContextPackResponse = {
+			sessionId: "s1",
+			query: "",
+			budget: 1000,
+			summary: "",
+			goals: [],
+			constraints: [],
+			decisions: [],
+			issues: [],
+			resolutions: [],
+			evidence: [],
+			artifacts: [],
+			openTodos: [],
+			rawRefs: [],
+			omitted: { nodeCount: 0, edgeCount: 0, reason: "none" },
+		};
+		expect(renderPackAsCompactFocus(pack)).toBe("");
+	});
+});

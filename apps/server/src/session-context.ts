@@ -9,6 +9,7 @@ import type {
 
 import {
 	getSessionContextGraph,
+	getSessionContextStatus,
 	replaceSessionContext,
 	upsertSessionContextCheckpoint,
 } from "./db/session-context.ts";
@@ -359,4 +360,60 @@ export function getStoredSessionContextPack(input: {
 		edges: graph.edges,
 		artifacts: graph.artifacts,
 	});
+}
+
+/** Default threshold: trigger context replacement when usage exceeds 15% of context window. */
+export const CONTEXT_REPLACEMENT_THRESHOLD_PERCENT = 15;
+
+/**
+ * Render a context pack as compact focus text for OMP compaction.
+ * This text guides the LLM summarizer to preserve key structured information
+ * while compacting verbose old transcript away.
+ */
+export function renderPackAsCompactFocus(pack: SessionContextPackResponse): string {
+	const sections: string[] = [];
+	if (pack.goals.length > 0) {
+		sections.push("Goals: " + pack.goals.map((n) => n.compressedBody).join("; "));
+	}
+	if (pack.constraints.length > 0) {
+		sections.push("Constraints: " + pack.constraints.map((n) => n.compressedBody).join("; "));
+	}
+	if (pack.decisions.length > 0) {
+		sections.push("Decisions: " + pack.decisions.map((n) => n.compressedBody).join("; "));
+	}
+	if (pack.issues.length > 0) {
+		sections.push("Issues: " + pack.issues.map((n) => n.compressedBody).join("; "));
+	}
+	if (pack.resolutions.length > 0) {
+		sections.push("Resolutions: " + pack.resolutions.map((n) => n.compressedBody).join("; "));
+	}
+	if (pack.evidence.length > 0) {
+		sections.push("Evidence: " + pack.evidence.map((n) => n.compressedBody).join("; "));
+	}
+	const files = pack.artifacts.filter((a) => a.kind === "file").map((a) => a.ref);
+	if (files.length > 0) {
+		sections.push("Files: " + [...new Set(files)].join(", "));
+	}
+	if (sections.length === 0) return "";
+	return `Preserve these key session facts when summarizing:\n${sections.join("\n")}`;
+}
+
+/**
+ * Check whether a session should trigger context replacement.
+ * Returns true when context usage exceeds the threshold percentage.
+ */
+export function shouldReplaceContext(
+	percent: number | null | undefined,
+	thresholdPercent = CONTEXT_REPLACEMENT_THRESHOLD_PERCENT,
+): boolean {
+	if (percent === null || percent === undefined) return false;
+	return percent >= thresholdPercent;
+}
+
+/**
+ * Check if a session has a built context pack available for replacement.
+ */
+export function hasSessionContextPack(sessionId: string): boolean {
+	const status = getSessionContextStatus(sessionId);
+	return status.nodeCount > 0;
 }

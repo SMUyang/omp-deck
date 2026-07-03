@@ -37,6 +37,7 @@ import { logger } from "../log.ts";
 import { getDeckModelRegistry } from "../auth-singleton.ts";
 import { looksLikePlaceholderKey } from "../credential-quality.ts";
 import { getEffectivePrelude } from "../orientation-store.ts";
+import { hasSessionContextPack, getStoredSessionContextPack, renderPackAsCompactFocus, shouldReplaceContext } from "../session-context.ts";
 import { notificationService } from "../notifications/index.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { ExtensionUIBridge } from "./ext-ui-bridge.ts";
@@ -922,6 +923,23 @@ export class InProcessSessionHandle implements SessionHandle {
 		} as unknown as AgentSessionEventJson);
 	}
 
+	private async maybeAutoCompactContext(): Promise<void> {
+		try {
+			const usage = this.session.getContextUsage?.();
+			if (!usage) return;
+			const percent = typeof usage.percent === "number" ? usage.percent : null;
+			if (!shouldReplaceContext(percent)) return;
+			if (!hasSessionContextPack(this.sessionId)) return;
+			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
+			const focus = renderPackAsCompactFocus(pack);
+			if (!focus) return;
+			log.info(`auto context replacement for session ${this.sessionId} (${percent}% used)`);
+			await this.session.compact(focus);
+		} catch (err) {
+			log.warn(`auto context replacement failed for ${this.sessionId}`, err);
+		}
+	}
+
 	async prompt(
 		text: string,
 		opts?: { streamingBehavior?: "steer" | "followUp"; images?: import("@omp-deck/protocol").ImageAttachment[] },
@@ -935,6 +953,7 @@ export class InProcessSessionHandle implements SessionHandle {
 		const promptOpts: Record<string, unknown> = {};
 		if (opts?.streamingBehavior) promptOpts.streamingBehavior = opts.streamingBehavior;
 		if (opts?.images && opts.images.length > 0) promptOpts.images = opts.images;
+		await this.maybeAutoCompactContext();
 		await this.session.prompt(text, Object.keys(promptOpts).length > 0 ? (promptOpts as any) : undefined);
 		if (wasStreaming) {
 			const queuedId = crypto.randomUUID();
