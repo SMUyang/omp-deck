@@ -1,6 +1,7 @@
 import type {
 	SessionContextArtifact,
 	SessionContextEdge,
+	SessionContextGraphResponse,
 	SessionContextNode,
 	SessionContextPackResponse,
 	SessionContextRawRef,
@@ -360,6 +361,87 @@ export function getStoredSessionContextPack(input: {
 		edges: graph.edges,
 		artifacts: graph.artifacts,
 	});
+}
+
+export interface SessionTopologyFocusInput {
+	sessionId: string;
+	query: string;
+	nodeLimit?: number;
+	edgeLimit?: number;
+	artifactLimit?: number;
+}
+
+function topologyNodeBody(node: SessionContextNode): string {
+	return node.compressedBody || node.body;
+}
+
+export function renderTopologyGraphAsCompactFocus(
+	graph: SessionContextGraphResponse,
+	query = "",
+	limits: { nodeLimit?: number; edgeLimit?: number; artifactLimit?: number } = {},
+): string {
+	if (graph.nodes.length === 0) return "";
+	const nodeLimit = limits.nodeLimit ?? 10;
+	const edgeLimit = limits.edgeLimit ?? 18;
+	const artifactLimit = limits.artifactLimit ?? 12;
+	const nodes = graph.nodes.slice(0, nodeLimit);
+	const nodeIds = new Set(nodes.map((node) => node.id));
+	const edges = graph.edges
+		.filter((edge) => nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId))
+		.slice(0, edgeLimit)
+		.map((edge) => ({
+			sourceNodeId: edge.sourceNodeId,
+			relation: edge.relation,
+			targetNodeId: edge.targetNodeId,
+		}));
+	const artifacts = graph.artifacts
+		.filter((artifact) => !artifact.nodeId || nodeIds.has(artifact.nodeId))
+		.slice(0, artifactLimit)
+		.map((artifact) => ({
+			kind: artifact.kind,
+			ref: artifact.ref,
+			...(artifact.nodeId ? { nodeId: artifact.nodeId } : {}),
+			...(artifact.label ? { label: artifact.label } : {}),
+		}));
+	const payload = {
+		type: "session_topology_subgraph",
+		schemaVersion: 1,
+		sessionId: graph.sessionId,
+		query,
+		nodes: nodes.map((node) => ({
+			id: node.id,
+			kind: node.kind,
+			title: node.title,
+			body: topologyNodeBody(node),
+			source: {
+				messageId: node.sourceMessageId,
+				turnIndex: node.sourceTurnIndex,
+			},
+		})),
+		edges,
+		artifacts,
+		omitted: {
+			nodeCount: Math.max(0, graph.totalNodes - nodes.length),
+			edgeCount: Math.max(0, graph.edges.length - edges.length),
+			reason: graph.truncated || graph.totalNodes > nodes.length ? "budget" : "none",
+		},
+	};
+	return [
+		"Use the following session topology subgraph as source-grounded memory.",
+		"Interpretation rules:",
+		"1. Each node is a fact extracted from prior conversation turns.",
+		"2. Each edge states a relationship between facts.",
+		"3. Prefer connected facts over isolated facts, and prefer resolution/evidence paths over old issue-only nodes.",
+		"4. Do not invent facts outside this subgraph. If detail is missing, say what is missing.",
+		"<session_topology_subgraph>",
+		JSON.stringify(payload),
+		"</session_topology_subgraph>",
+	].join("\n");
+}
+
+export function getStoredSessionTopologyFocus(input: SessionTopologyFocusInput): string {
+	const graph = getSessionContextGraph(input.sessionId, input.nodeLimit ?? 200);
+	return renderTopologyGraphAsCompactFocus(graph, input.query, input);
 }
 
 /** Default threshold: trigger context replacement when usage exceeds 15% of context window. */

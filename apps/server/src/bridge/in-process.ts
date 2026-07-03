@@ -38,7 +38,7 @@ import { getDeckModelRegistry } from "../auth-singleton.ts";
 import { looksLikePlaceholderKey } from "../credential-quality.ts";
 import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { getEffectivePrelude } from "../orientation-store.ts";
-import { hasSessionContextPack, getStoredSessionContextPack, renderPackAsCompactFocus, shouldReplaceContext } from "../session-context.ts";
+import { hasSessionContextPack, getStoredSessionTopologyFocus, shouldReplaceContext } from "../session-context.ts";
 import { notificationService } from "../notifications/index.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { ExtensionUIBridge } from "./ext-ui-bridge.ts";
@@ -931,8 +931,7 @@ export class InProcessSessionHandle implements SessionHandle {
 			const percent = typeof before.percent === "number" ? before.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
-			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
-			const focus = renderPackAsCompactFocus(pack);
+			const focus = getStoredSessionTopologyFocus({ sessionId: this.sessionId, query: "", nodeLimit: 10, edgeLimit: 18, artifactLimit: 12 });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, before, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${before.percent ?? 0}% / ${before.tokens ?? 0} tokens)`);

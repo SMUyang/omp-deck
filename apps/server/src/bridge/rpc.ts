@@ -49,7 +49,7 @@ import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { contextSavingsTracker } from "../context-savings-tracker.ts";
-import { hasSessionContextPack, getStoredSessionContextPack, renderPackAsCompactFocus, shouldReplaceContext } from "../session-context.ts";
+import { hasSessionContextPack, getStoredSessionTopologyFocus, shouldReplaceContext } from "../session-context.ts";
 
 const log = logger("rpc-bridge");
 
@@ -560,8 +560,7 @@ class RpcSessionHandle implements SessionHandle {
 			const percent = typeof usage.percent === "number" ? usage.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
-			const pack = getStoredSessionContextPack({ sessionId: this.sessionId, query: "", budget: 4000 });
-			const focus = renderPackAsCompactFocus(pack);
+			const focus = getStoredSessionTopologyFocus({ sessionId: this.sessionId, query: "", nodeLimit: 10, edgeLimit: 18, artifactLimit: 12 });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, usage, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);

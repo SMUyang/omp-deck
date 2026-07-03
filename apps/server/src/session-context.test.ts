@@ -204,8 +204,8 @@ test("rebuilds context store from a session file", async () => {
 	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
 });
 
-import { renderPackAsCompactFocus, shouldReplaceContext } from "./session-context.ts";
-import type { SessionContextPackResponse } from "@omp-deck/protocol";
+import { renderPackAsCompactFocus, renderTopologyGraphAsCompactFocus, shouldReplaceContext } from "./session-context.ts";
+import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
 
 describe("context replacement", () => {
 	test("shouldReplaceContext triggers at or above 15%", () => {
@@ -261,5 +261,34 @@ describe("context replacement", () => {
 			omitted: { nodeCount: 0, edgeCount: 0, reason: "none" },
 		};
 		expect(renderPackAsCompactFocus(pack)).toBe("");
+	});
+
+	test("renderTopologyGraphAsCompactFocus sends clean topology json without scores", () => {
+		const graph: SessionContextGraphResponse = {
+			sessionId: "s1",
+			nodes: [
+				{ id: "n1", sessionId: "s1", kind: "goal", sourceMessageId: "m1", sourceTurnIndex: 1, title: "Goal", body: "Build graph memory", compressedBody: "Build graph memory", importance: 1, createdAt: "", metadata: { confidence: 0.9 } },
+				{ id: "n2", sessionId: "s1", kind: "evidence", sourceMessageId: "m2", sourceTurnIndex: 2, title: "Evidence", body: "Tests passed", compressedBody: "Tests passed", importance: 0.8, createdAt: "", metadata: {} },
+			],
+			edges: [
+				{ id: "n1:verified_by:n2", sessionId: "s1", sourceNodeId: "n1", targetNodeId: "n2", relation: "verified_by", weight: 0.9, evidenceMessageId: "m2", metadata: {} },
+			],
+			artifacts: [
+				{ id: "a1", sessionId: "s1", nodeId: "n2", kind: "test", ref: "bun test", label: "targeted test", metadata: {} },
+			],
+			totalNodes: 2,
+			truncated: false,
+		};
+		const focus = renderTopologyGraphAsCompactFocus(graph, "current question");
+		expect(focus).toContain("<session_topology_subgraph>");
+		expect(focus).toContain("verified_by");
+		expect(focus).not.toContain("importance");
+		expect(focus).not.toContain("weight");
+		expect(focus).not.toContain("confidence");
+		const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(json).toBeDefined();
+		const payload = JSON.parse(json!);
+		expect(payload.nodes).toEqual([{ id: "n1", kind: "goal", title: "Goal", body: "Build graph memory", source: { messageId: "m1", turnIndex: 1 } }, { id: "n2", kind: "evidence", title: "Evidence", body: "Tests passed", source: { messageId: "m2", turnIndex: 2 } }]);
+		expect(payload.edges).toEqual([{ sourceNodeId: "n1", relation: "verified_by", targetNodeId: "n2" }]);
 	});
 });
