@@ -38,7 +38,7 @@ import { getDeckModelRegistry } from "../auth-singleton.ts";
 import { looksLikePlaceholderKey } from "../credential-quality.ts";
 import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { getEffectivePrelude } from "../orientation-store.ts";
-import { hasSessionContextPack, getStoredSessionTopologyFocus, shouldReplaceContext } from "../session-context.ts";
+import { hasSessionContextPack, getStoredQueryTopologyFocus, shouldReplaceContext } from "../session-context.ts";
 import { notificationService } from "../notifications/index.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { ExtensionUIBridge } from "./ext-ui-bridge.ts";
@@ -924,14 +924,14 @@ export class InProcessSessionHandle implements SessionHandle {
 		} as unknown as AgentSessionEventJson);
 	}
 
-	private async maybeAutoCompactContext(): Promise<void> {
+	private async maybeAutoCompactContext(currentQuery = ""): Promise<void> {
 		try {
 			const before = this.session.getContextUsage?.();
 			if (!before) return;
 			const percent = typeof before.percent === "number" ? before.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
-			const focus = getStoredSessionTopologyFocus({ sessionId: this.sessionId, query: "", nodeLimit: 10, edgeLimit: 18, artifactLimit: 12 });
+			const focus = getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: before.percent ?? null });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, before, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${before.percent ?? 0}% / ${before.tokens ?? 0} tokens)`);
@@ -960,7 +960,7 @@ export class InProcessSessionHandle implements SessionHandle {
 		const promptOpts: Record<string, unknown> = {};
 		if (opts?.streamingBehavior) promptOpts.streamingBehavior = opts.streamingBehavior;
 		if (opts?.images && opts.images.length > 0) promptOpts.images = opts.images;
-		await this.maybeAutoCompactContext();
+		await this.maybeAutoCompactContext(text);
 		await this.session.prompt(text, Object.keys(promptOpts).length > 0 ? (promptOpts as any) : undefined);
 		if (wasStreaming) {
 			const queuedId = crypto.randomUUID();

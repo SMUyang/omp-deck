@@ -15,6 +15,8 @@ import {
 	upsertSessionContextCheckpoint,
 } from "./db/session-context.ts";
 
+import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
+
 export interface ExtractInput {
 	sessionId: string;
 	content: string;
@@ -442,6 +444,78 @@ export function renderTopologyGraphAsCompactFocus(
 export function getStoredSessionTopologyFocus(input: SessionTopologyFocusInput): string {
 	const graph = getSessionContextGraph(input.sessionId, input.nodeLimit ?? 200);
 	return renderTopologyGraphAsCompactFocus(graph, input.query, input);
+}
+export interface GetStoredQueryTopologyFocusInput {
+	sessionId: string;
+	query: string;
+	contextPercent?: number | null;
+}
+
+export function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): string {
+	const graph = getSessionContextGraph(input.sessionId, 200);
+	if (graph.nodes.length === 0) return "";
+	const retrieved = retrieveTopology(
+		{
+			sessionId: input.sessionId,
+			query: input.query,
+			candidateNodeLimit: 50,
+			expansionHops: 1,
+			outputNodeLimit: 10,
+			outputEdgeLimit: 18,
+			outputArtifactLimit: 12,
+		},
+		graph,
+	);
+	if (!retrieved) return "";
+	return renderRetrievedTopologyAsFocus(input.sessionId, input.query, retrieved);
+}
+
+function renderRetrievedTopologyAsFocus(sessionId: string, query: string, retrieved: RetrievedTopology): string {
+	const fullGraph = getSessionContextGraph(sessionId, 200);
+	const nodeById = new Map(fullGraph.nodes.map((node) => [node.id, node]));
+	const edgeById = new Map(fullGraph.edges.map((edge) => [edge.id, edge]));
+	const nodes = retrieved.selectedNodeIds
+		.map((id) => nodeById.get(id))
+		.filter((n): n is NonNullable<typeof n> => Boolean(n))
+		.map((node) => ({
+			id: node.id,
+			kind: node.kind,
+			title: node.title,
+			body: node.compressedBody || node.body,
+			source: {
+				messageId: node.sourceMessageId,
+				turnIndex: node.sourceTurnIndex,
+			},
+		}));
+	const edges = retrieved.selectedEdgeIds
+		.map((id) => edgeById.get(id))
+		.filter((e): e is NonNullable<typeof e> => Boolean(e))
+		.map((edge) => ({
+			sourceNodeId: edge.sourceNodeId,
+			relation: edge.relation,
+			targetNodeId: edge.targetNodeId,
+		}));
+	const payload = {
+		type: "session_topology_subgraph",
+		schemaVersion: 1,
+		sessionId,
+		query,
+		nodes,
+		edges,
+		artifacts: retrieved.artifacts,
+		omitted: retrieved.omitted,
+	};
+	return [
+		"Use the following session topology subgraph as source-grounded memory.",
+		"Interpretation rules:",
+		"1. Each node is a fact extracted from prior conversation turns.",
+		"2. Each edge states a relationship between facts.",
+		"3. Prefer connected facts over isolated facts, and prefer resolution/evidence paths over old issue-only nodes.",
+		"4. Do not invent facts outside this subgraph. If detail is missing, say what is missing.",
+		"<session_topology_subgraph>",
+		JSON.stringify(payload),
+		"</session_topology_subgraph>",
+	].join("\n");
 }
 
 /** Default threshold: trigger context replacement when usage exceeds 15% of context window. */

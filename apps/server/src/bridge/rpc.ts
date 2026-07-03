@@ -49,7 +49,7 @@ import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { contextSavingsTracker } from "../context-savings-tracker.ts";
-import { hasSessionContextPack, getStoredSessionTopologyFocus, shouldReplaceContext } from "../session-context.ts";
+import { hasSessionContextPack, getStoredQueryTopologyFocus, shouldReplaceContext } from "../session-context.ts";
 
 const log = logger("rpc-bridge");
 
@@ -545,7 +545,7 @@ class RpcSessionHandle implements SessionHandle {
 		text: string,
 		opts?: { streamingBehavior?: "steer" | "followUp"; images?: ImageAttachment[] },
 	): Promise<void> {
-		await this.maybeAutoCompactContext();
+		await this.maybeAutoCompactContext(text);
 		const command: RpcCommandBody = opts?.streamingBehavior
 			? { type: "prompt", message: text, streamingBehavior: opts.streamingBehavior }
 			: { type: "prompt", message: text };
@@ -553,14 +553,14 @@ class RpcSessionHandle implements SessionHandle {
 		this.#ensureAutoSessionName(text);
 	}
 
-	async maybeAutoCompactContext(): Promise<void> {
+	async maybeAutoCompactContext(currentQuery = ""): Promise<void> {
 		try {
 			const usage = this.#state.contextUsage;
 			if (!usage) return;
 			const percent = typeof usage.percent === "number" ? usage.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
-			const focus = getStoredSessionTopologyFocus({ sessionId: this.sessionId, query: "", nodeLimit: 10, edgeLimit: 18, artifactLimit: 12 });
+			const focus = getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: usage.percent ?? null });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, usage, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);
