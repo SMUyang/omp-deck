@@ -3,9 +3,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import type { SessionContextNode } from "@omp-deck/protocol";
+import type { SessionContextNode, SessionContextStatusResponse } from "@omp-deck/protocol";
 import { closeDb, openDb } from "./index.ts";
 import {
+	getSessionContextStatus,
 	getSessionContextGraph,
 	replaceSessionContext,
 	upsertSessionContextCheckpoint,
@@ -143,5 +144,44 @@ describe("session context store", () => {
 		const graph = getSessionContextGraph("s1", 1);
 		expect(graph.nodes.map((n) => n.id)).toEqual(["n1"]);
 		expect(graph.artifacts.map((a) => a.id)).toEqual(["a-session"]);
+	});
+});
+
+describe("session context status", () => {
+	test("returns unbuilt status when a session has no checkpoint", () => {
+		openTempDeckDb();
+
+		const status = getSessionContextStatus("s-missing");
+
+		expect(status).toEqual<SessionContextStatusResponse>({
+			sessionId: "s-missing",
+			built: false,
+			nodeCount: 0,
+			edgeCount: 0,
+		});
+	});
+
+	test("returns checkpoint counts for built session context", () => {
+		openTempDeckDb();
+
+		upsertSessionContextCheckpoint({
+			sessionId: "s1",
+			sourcePath: "/tmp/s1.jsonl",
+			sourceMtimeMs: 1234,
+			sourceSizeBytes: 5678,
+			nodeCount: 12,
+			edgeCount: 3,
+			rebuiltAt: "2026-07-02T00:00:00.000Z",
+		});
+
+		expect(getSessionContextStatus("s1")).toEqual<SessionContextStatusResponse>({
+			sessionId: "s1",
+			built: true,
+			nodeCount: 12,
+			edgeCount: 3,
+			rebuiltAt: "2026-07-02T00:00:00.000Z",
+			sourceMtimeMs: 1234,
+			sourceSizeBytes: 5678,
+		});
 	});
 });

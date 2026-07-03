@@ -3,6 +3,7 @@ import type {
 	SessionContextEdge,
 	SessionContextGraphResponse,
 	SessionContextNode,
+	SessionContextStatusResponse,
 } from "@omp-deck/protocol";
 
 import { getDb } from "./index.ts";
@@ -40,6 +41,16 @@ interface ArtifactRow {
 	ref: string;
 	label: string;
 	metadata_json: string;
+}
+
+interface CheckpointRow {
+	session_id: string;
+	source_path: string;
+	source_mtime_ms: number;
+	source_size_bytes: number;
+	node_count: number;
+	edge_count: number;
+	rebuilt_at: string;
 }
 
 export interface ReplaceSessionContextInput {
@@ -199,6 +210,31 @@ export function upsertSessionContextCheckpoint(input: SessionContextCheckpointIn
 		input.edgeCount,
 		input.rebuiltAt,
 	);
+}
+
+export function getSessionContextStatus(sessionId: string): SessionContextStatusResponse {
+	const row = getDb()
+		.prepare(
+			"SELECT session_id, source_path, source_mtime_ms, source_size_bytes, node_count, edge_count, rebuilt_at FROM session_context_checkpoints WHERE session_id = ?",
+		)
+		.get(sessionId) as CheckpointRow | undefined;
+	if (!row) {
+		return {
+			sessionId,
+			built: false,
+			nodeCount: 0,
+			edgeCount: 0,
+		};
+	}
+	return {
+		sessionId: row.session_id,
+		built: true,
+		nodeCount: row.node_count,
+		edgeCount: row.edge_count,
+		rebuiltAt: row.rebuilt_at,
+		sourceMtimeMs: row.source_mtime_ms,
+		sourceSizeBytes: row.source_size_bytes,
+	};
 }
 
 export function getSessionContextGraph(sessionId: string, limit: number): SessionContextGraphResponse {

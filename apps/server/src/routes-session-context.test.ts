@@ -9,6 +9,7 @@ import type {
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
 	SessionContextRebuildResponse,
+	SessionContextStatusResponse,
 } from "@omp-deck/protocol";
 
 import type { AgentBridge } from "./bridge/types.ts";
@@ -42,8 +43,19 @@ interface StubHandle {
 	sessionFile?: string;
 }
 
-function makeBridge(handle: StubHandle | undefined): AgentBridge {
-	return { getSession: () => handle } as unknown as AgentBridge;
+function makeBridge(handle: StubHandle | undefined, persistedIds: string[] = []): AgentBridge {
+	return {
+		getSession: () => handle,
+		listSessions: async () => persistedIds.map((id) => ({
+			id,
+			path: `/tmp/${id}.jsonl`,
+			cwd: "/repo",
+			title: id,
+			createdAt: "2026-07-02T00:00:00.000Z",
+			updatedAt: "2026-07-02T00:00:00.000Z",
+			messageCount: 1,
+		})),
+	} as unknown as AgentBridge;
 }
 
 function setupSession(): { app: Hono; sessionFile: string } {
@@ -77,6 +89,75 @@ describe("session context routes", () => {
 			expect(body.nodeCount).toBeGreaterThan(0);
 			expect(body.sourcePath).toBe(sessionFile);
 			expect(body.sessionId).toBe("s1");
+		});
+	});
+
+	describe("GET /sessions/:id/context-status", () => {
+		test("returns 404 when session not found in active or persisted sessions", async () => {
+			const app = buildSessionContextRouter(makeBridge(undefined, ["other"]));
+			const res = await app.request("/sessions/missing/context-status");
+			expect(res.status).toBe(404);
+		});
+
+		test("returns unbuilt status for an active session with no checkpoint", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const app = buildSessionContextRouter(makeBridge({ sessionId: "s1", sessionFile: path.join(dir, "s1.jsonl") }));
+
+			const res = await app.request("/sessions/s1/context-status");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextStatusResponse;
+			expect(body).toEqual({ sessionId: "s1", built: false, nodeCount: 0, edgeCount: 0 });
+			expect("nodes" in body).toBe(false);
+			expect("artifacts" in body).toBe(false);
+		});
+
+		test("returns unbuilt status for a persisted session row with no active handle", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const app = buildSessionContextRouter(makeBridge(undefined, ["persisted-s1"]));
+
+			const res = await app.request("/sessions/persisted-s1/context-status");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextStatusResponse;
+			expect(body).toEqual({ sessionId: "persisted-s1", built: false, nodeCount: 0, edgeCount: 0 });
+		});
+
+		test("returns built status after rebuild", async () => {
+			const { app } = setupSession();
+			await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+
+			const res = await app.request("/sessions/s1/context-status");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextStatusResponse;
+			expect(body.sessionId).toBe("s1");
+			expect(body.built).toBe(true);
+			expect(body.nodeCount).toBeGreaterThan(0);
+			expect(body.edgeCount).toBeGreaterThanOrEqual(0);
+			expect(typeof body.rebuiltAt).toBe("string");
+			expect(typeof body.sourceMtimeMs).toBe("number");
+			expect(typeof body.sourceSizeBytes).toBe("number");
+			expect("nodes" in body).toBe(false);
+		});
+
+		test("returns 500 with error body when bridge.listSessions throws", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const app = buildSessionContextRouter({
+				getSession: () => undefined,
+				listSessions: async () => {
+					throw new Error("boom: list sessions failed");
+				},
+			} as unknown as AgentBridge);
+
+			const res = await app.request("/sessions/s1/context-status");
+
+			expect(res.status).toBe(500);
+			const body = (await res.json()) as { error: string };
+			expect(body.error).toContain("boom: list sessions failed");
 		});
 	});
 
