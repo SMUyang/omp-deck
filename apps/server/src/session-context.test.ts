@@ -85,6 +85,73 @@ describe("classifyNonUserText edge cases", () => {
 	});
 });
 
+describe("extractor role and edge generation", () => {
+	test("toolResult role with passing test output is classified as evidence with a test artifact", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr1", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "bun test apps/server/src/session-context.test.ts\n10 pass 0 fail" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+
+		expect(result.nodes).toEqual(expect.arrayContaining([
+			expect.objectContaining({ kind: "evidence", sourceMessageId: "tr1" }),
+		]));
+		expect(result.artifacts).toEqual(expect.arrayContaining([
+			expect.objectContaining({ kind: "test", ref: "bun test apps/server/src/session-context.test.ts" }),
+		]));
+	});
+
+	test("consecutive user goals create a continues edge from the later goal to the previous goal", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "g1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Set up the memory topology graph" }] } }),
+			JSON.stringify({ type: "message", id: "g2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "Add embedding similarity to the topology graph" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+
+		const goals = result.nodes.filter((n) => n.kind === "goal");
+		expect(goals.length).toBe(2);
+		const first = goals.find((n) => n.sourceMessageId === "g1");
+		const second = goals.find((n) => n.sourceMessageId === "g2");
+		const continues = result.edges.find((edge) =>
+			edge.relation === "continues" &&
+			edge.sourceNodeId === second?.id &&
+			edge.targetNodeId === first?.id,
+		);
+		expect(continues).toBeDefined();
+	});
+
+	test("assistant decision after a user goal creates a depends_on edge to that goal", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "g1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Design the storage layout for the topology" }] } }),
+			JSON.stringify({ type: "message", id: "d1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "I recommend using a single SQLite table with an embedding column." }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+
+		const goal = result.nodes.find((n) => n.kind === "goal");
+		const decision = result.nodes.find((n) => n.kind === "decision");
+		expect(goal).toBeDefined();
+		expect(decision).toBeDefined();
+		const dependsOn = result.edges.find((edge) =>
+			edge.relation === "depends_on" &&
+			edge.sourceNodeId === decision?.id &&
+			edge.targetNodeId === goal?.id,
+		);
+		expect(dependsOn).toBeDefined();
+	});
+
+	test("skill-doc toolResult with YAML frontmatter is not classified as decision", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "sd1", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "---\nname: memory-topology\ndescription: Skill for architecture and recommendation of the memory graph.\n---\nUse this skill to recall the topology." }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+
+		expect(result.nodes.some((n) => n.kind === "decision")).toBe(false);
+	});
+});
+
 describe("renderSessionContextPack budget coherence", () => {
 	test("tiny budget yields a valid pack with coherent omitted counts", () => {
 		const big = "我希望" + "x".repeat(1300);

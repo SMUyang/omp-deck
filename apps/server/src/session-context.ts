@@ -116,8 +116,12 @@ function classifyUserText(text: string): SessionContextNode["kind"] {
 	return "goal";
 }
 
+function isToolRole(role: string): boolean {
+	return role === "tool" || role === "toolResult";
+}
+
 function classifyNonUserText(role: string, text: string): SessionContextNode["kind"] | undefined {
-	if (role === "tool") {
+	if (isToolRole(role)) {
 		// Strip benign zero-count summaries ("0 fail", "0 failures", "0 errors") so only
 		// genuine failure/error signals remain. This lets a mixed report like
 		// "Unit: 0 failures\nE2E: exit 1 error" still surface as an issue.
@@ -130,6 +134,7 @@ function classifyNonUserText(role: string, text: string): SessionContextNode["ki
 		if (hasFailure) return "issue";
 		// Benign tool output: passing tests, status codes, HTTP responses without failure words.
 		if (/\b(?:pass|HTTP|status:)\b/i.test(text)) return "evidence";
+		return undefined;
 	}
 	if (/\b(?:decision|recommend|architecture|选择|推荐|决定)\b/i.test(text)) return "decision";
 	return undefined;
@@ -187,8 +192,35 @@ export function extractSessionContextFromJsonl(input: ExtractInput): ExtractedSe
 		nodes.push(node);
 		artifacts.push(...artifactMatches(input.sessionId, node.id, message.text));
 
-		if (kind === "goal") lastGoal = node;
+		const previousGoal = lastGoal;
+		if (kind === "goal") {
+			if (previousGoal) {
+				edges.push({
+					id: `${node.id}:continues:${previousGoal.id}`,
+					sessionId: input.sessionId,
+					sourceNodeId: node.id,
+					targetNodeId: previousGoal.id,
+					relation: "continues",
+					weight: 0.65,
+					evidenceMessageId: message.id,
+					metadata: {},
+				});
+			}
+			lastGoal = node;
+		}
 		if (kind === "issue") lastIssue = node;
+		if (kind === "decision" && previousGoal) {
+			edges.push({
+				id: `${node.id}:depends_on:${previousGoal.id}`,
+				sessionId: input.sessionId,
+				sourceNodeId: node.id,
+				targetNodeId: previousGoal.id,
+				relation: "depends_on",
+				weight: 0.7,
+				evidenceMessageId: message.id,
+				metadata: {},
+			});
+		}
 		if (kind === "user_intent" && lastGoal) {
 			edges.push({
 				id: `${node.id}:supersedes:${lastGoal.id}`,
