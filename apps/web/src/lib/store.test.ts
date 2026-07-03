@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ListWorkspacesResponse, SessionSummary, SessionSnapshot } from "@omp-deck/protocol";
-import { applySessionSummarySnapshot, selectedWorkspaceAfterDelete, workspaceStateFromResponse } from "./store";
+import { applySessionDisposed, applySessionSummarySnapshot, selectedWorkspaceAfterDelete, workspaceStateFromResponse } from "./store";
 
 const baseSummary: SessionSummary = {
 	id: "s1",
@@ -35,6 +35,20 @@ describe("applySessionSummarySnapshot", () => {
 		const summaries = [baseSummary];
 		expect(applySessionSummarySnapshot(summaries, baseSnapshot)).toBe(summaries);
 	});
+});
+
+test("applySessionDisposed removes live and persisted session state", () => {
+	const next = applySessionDisposed({
+		sessions: [baseSummary, { ...baseSummary, id: "s2" }],
+		sessionsById: { s1: baseSnapshot, s2: { ...baseSnapshot, sessionId: "s2" } },
+		pendingDialogs: { s1: [], s2: [] },
+		activeId: "s1",
+	}, "s1");
+
+	expect(next.sessions.map((session) => session.id)).toEqual(["s2"]);
+	expect(Object.keys(next.sessionsById)).toEqual(["s2"]);
+	expect(Object.keys(next.pendingDialogs)).toEqual(["s2"]);
+	expect(next.activeId).toBeUndefined();
 });
 
 const workspaceResponse: ListWorkspacesResponse = {

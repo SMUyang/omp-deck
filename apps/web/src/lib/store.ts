@@ -90,6 +90,26 @@ export function selectedWorkspaceAfterDelete(selectedCwd: string, remaining: Wor
 	return selectedCwd && !remaining.some((workspace) => workspace.cwd === selectedCwd) ? "" : selectedCwd;
 }
 
+export interface SessionDisposedState {
+	sessions: SessionSummary[];
+	sessionsById: Record<string, SessionUi>;
+	pendingDialogs: StoreState["pendingDialogs"];
+	activeId?: string;
+}
+
+export function applySessionDisposed(state: SessionDisposedState, sessionId: string): SessionDisposedState {
+	const nextSessionsById = { ...state.sessionsById };
+	delete nextSessionsById[sessionId];
+	const nextDialogs = { ...state.pendingDialogs };
+	delete nextDialogs[sessionId];
+	return {
+		sessions: state.sessions.filter((session) => session.id !== sessionId),
+		sessionsById: nextSessionsById,
+		pendingDialogs: nextDialogs,
+		activeId: state.activeId === sessionId ? undefined : state.activeId,
+	};
+}
+
 export function getInitialStatusPanelOpen(storage: BoolStorage | undefined, desktop: boolean): boolean {
 	if (!desktop) return false;
 	const raw = storage?.getItem(STATUS_PANEL_STORAGE_KEY) ?? null;
@@ -665,17 +685,7 @@ function handleFrame(
 			return;
 
 		case "session_disposed":
-			set((s) => {
-				const nextSessions = { ...s.sessionsById };
-				delete nextSessions[frame.sessionId];
-				const nextDialogs = { ...s.pendingDialogs };
-				delete nextDialogs[frame.sessionId];
-				return {
-					sessionsById: nextSessions,
-					pendingDialogs: nextDialogs,
-					activeId: s.activeId === frame.sessionId ? undefined : s.activeId,
-				};
-			});
+			set((s) => applySessionDisposed(s, frame.sessionId));
 			return;
 
 		case "error":

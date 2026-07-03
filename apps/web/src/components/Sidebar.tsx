@@ -108,7 +108,15 @@ export function Sidebar() {
 	const persisted = filtered.filter((s) => !sessionsById[s.id]);
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<>
+			<DirectoryPickerDialog
+				open={workspacePickerOpen}
+				initialCwd={cwdInUse}
+				title={t("sidebar.addWorkspace")}
+				onClose={() => setWorkspacePickerOpen(false)}
+				onPick={(cwd) => void handlePickWorkspace(cwd)}
+			/>
+			<div className="flex h-full min-h-0 flex-col">
 			<div className="space-y-3 px-3 py-3 border-b border-line">
 				<div className="flex items-center justify-between">
 					<div className="meta">{t("sidebar.workspace")}</div>
@@ -185,13 +193,6 @@ export function Sidebar() {
 				</button>
 			</div>
 
-				<DirectoryPickerDialog
-					open={workspacePickerOpen}
-					initialCwd={cwdInUse}
-					title={t("sidebar.addWorkspace")}
-					onClose={() => setWorkspacePickerOpen(false)}
-					onPick={(cwd) => void handlePickWorkspace(cwd)}
-				/>
 
 			<div className="flex-1 overflow-y-auto px-1 pb-3">
 
@@ -231,7 +232,8 @@ export function Sidebar() {
 					</div>
 				) : null}
 			</div>
-		</div>
+			</div>
+		</>
 	);
 }
 

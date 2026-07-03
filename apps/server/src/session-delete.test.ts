@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { SessionSummary } from "@omp-deck/protocol";
 
-import { deletePersistedSession } from "./session-delete.ts";
+import { deleteActiveSessionFile, deletePersistedSession } from "./session-delete.ts";
 
 let tmp: string | undefined;
 
@@ -46,5 +46,24 @@ describe("deletePersistedSession", () => {
 	test("rejects non-jsonl session paths", async () => {
 		const { summary } = await boot();
 		await expect(deletePersistedSession("s1", [{ ...summary, path: path.join(tmp!, "not-json.txt") }])).rejects.toThrow(/jsonl/);
+	});
+});
+
+describe("deleteActiveSessionFile", () => {
+	test("removes the jsonl file for an active session path", async () => {
+		const { file } = await boot();
+		await deleteActiveSessionFile(file);
+		await expect(fs.stat(file)).rejects.toThrow();
+	});
+
+	test("ignores undefined as a no-op and leaves existing files untouched", async () => {
+		const { file } = await boot();
+		await deleteActiveSessionFile(undefined);
+		expect((await fs.stat(file)).isFile()).toBe(true);
+	});
+
+	test("rejects a non-jsonl path", async () => {
+		await boot();
+		await expect(deleteActiveSessionFile(path.join(tmp!, "not-json.txt"))).rejects.toThrow(/jsonl/);
 	});
 });
