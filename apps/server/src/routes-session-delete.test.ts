@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { SessionSummary } from "@omp-deck/protocol";
 
 import type { AgentBridge } from "./bridge/types.ts";
 import type { BridgeSupervisor } from "./bridge-supervisor.ts";
@@ -29,13 +30,25 @@ function tempDir(): string {
 interface ActiveHandle {
 	sessionId: string;
 	sessionFile: string;
+	cwd: string;
 	dispose(): Promise<void>;
 }
 
 function makeBridge(handle: ActiveHandle): AgentBridge {
 	return {
 		getSession: (id: string) => (id === handle.sessionId ? handle : undefined),
-		listSessions: async () => [],
+		listSessions: async () => {
+			if (!fs.existsSync(handle.sessionFile)) return [];
+			const summary: SessionSummary = {
+				id: handle.sessionId,
+				path: handle.sessionFile,
+				cwd: handle.cwd,
+				createdAt: "2026-01-01T00:00:00.000Z",
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				messageCount: 1,
+			};
+			return [summary];
+		},
 	} as unknown as AgentBridge;
 }
 
@@ -56,7 +69,7 @@ function makeConfig(dir: string): Config {
 }
 
 describe("DELETE /sessions/:id", () => {
-	test("active-session branch disposes the handle and unlinks its sessionFile", async () => {
+	test("active-session branch disposes the handle, unlinks its sessionFile, and removes it from listings", async () => {
 		const dir = tempDir();
 		openDb({ path: path.join(dir, "deck.db") });
 		const sessionFile = path.join(dir, "active.jsonl");
@@ -66,6 +79,7 @@ describe("DELETE /sessions/:id", () => {
 		const handle: ActiveHandle = {
 			sessionId: "active",
 			sessionFile,
+			cwd: dir,
 			async dispose() {
 				disposed = true;
 			},
@@ -83,15 +97,12 @@ describe("DELETE /sessions/:id", () => {
 
 		const res = await app.request("/sessions/active", { method: "DELETE" });
 
-		// These two hold in BOTH the buggy and fixed states: the active branch
-		// (routes.ts) already calls dispose() and returns 200.
 		expect(res.status).toBe(200);
 		expect(disposed).toBe(true);
-
-		// Regression-specific assertion: the active branch historically called
-		// dispose() then returned { ok: true } WITHOUT unlinking
-		// handle.sessionFile, unlike the persisted path (deletePersistedSession).
-		// The .jsonl file MUST be removed from disk — stat() must reject.
 		await expect(fs.promises.stat(sessionFile)).rejects.toThrow();
+
+		const listRes = await app.request("/sessions");
+		const body = (await listRes.json()) as { sessions: Array<{ id: string }> };
+		expect(body.sessions.some((session) => session.id === "active")).toBe(false);
 	});
 });

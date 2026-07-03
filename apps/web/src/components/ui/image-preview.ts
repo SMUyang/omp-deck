@@ -9,9 +9,12 @@ export interface ImagePreviewItem {
 }
 
 const OMP_BLOB_REF_RE = /^blob:sha256:([a-f0-9]{64})$/i;
+const DATA_IMAGE_URL_RE = /^data:image\/[a-z0-9.+-]+;base64,/i;
 
 export function imageSrc(image: ImagePreviewSource): string {
-	const blobMatch = image.data.trim().match(OMP_BLOB_REF_RE);
+	const data = image.data.trim();
+	if (DATA_IMAGE_URL_RE.test(data)) return data;
+	const blobMatch = data.match(OMP_BLOB_REF_RE);
 	if (blobMatch) {
 		const mimeType = encodeURIComponent(image.mimeType || "image/png");
 		return `/api/agent-blobs/${blobMatch[1]!.toLowerCase()}?mimeType=${mimeType}`;
