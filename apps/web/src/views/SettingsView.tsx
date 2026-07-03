@@ -34,6 +34,7 @@ import {
 	formatModelRef,
 	parseModelRef,
 	roleEntriesFromResponse,
+	stripThinkingSuffix,
 	type ModelRoleEntry,
 	type ModelRolesResponse,
 } from "./model-roles";
@@ -1733,18 +1734,26 @@ function ModelRolesSection() {
 					<div className="meta">Configured roles</div>
 				</div>
 				<div className="divide-y divide-line">
-					{entries.map((entry) => (
+				{entries.map((entry) => {
+					const rawValue = draft[entry.name] ?? entry.value;
+					const { base: selectValue } = stripThinkingSuffix(rawValue);
+					return (
 						<ModelRoleRow
 							key={entry.name}
 							entry={entry}
-							value={draft[entry.name] ?? formatModelRef(entry.model)}
+							selectValue={selectValue}
+							thinking={entry.thinking}
 							models={modelOptions}
 							saving={saving}
-							onChange={(value) => setDraft((current) => ({ ...current, [entry.name]: value }))}
+							onChange={(baseRef) => {
+								const next = entry.thinking ? `${baseRef}:${entry.thinking}` : baseRef;
+								setDraft((current) => ({ ...current, [entry.name]: next }));
+							}}
 							onSave={() => void saveRole(entry.name)}
 							onRemove={() => void removeRole(entry.name)}
 						/>
-					))}
+					);
+				})}
 					{entries.length === 0 ? <div className="px-3 py-4 text-sm text-ink-3">No model roles configured yet.</div> : null}
 				</div>
 			</div>
@@ -1777,7 +1786,8 @@ function ModelRolesSection() {
 
 function ModelRoleRow({
 	entry,
-	value,
+	selectValue,
+	thinking,
 	models,
 	saving,
 	onChange,
@@ -1785,10 +1795,11 @@ function ModelRoleRow({
 	onRemove,
 }: {
 	entry: ModelRoleEntry;
-	value: string;
+	selectValue: string;
+	thinking?: string;
 	models: Array<{ value: string; label: string }>;
 	saving: boolean;
-	onChange: (value: string) => void;
+	onChange: (baseRef: string) => void;
 	onSave: () => void;
 	onRemove: () => void;
 }) {
@@ -1796,15 +1807,21 @@ function ModelRoleRow({
 		<div className="grid gap-3 px-3 py-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-center">
 			<div>
 				<div className="font-mono text-sm text-ink">{entry.name}</div>
-				<div className="mt-1">{entry.dynamic ? <Badge tone="muted">custom</Badge> : <Badge tone="accent">built-in</Badge>}</div>
+				<div className="mt-1 flex items-center gap-1">
+					{entry.dynamic ? <Badge tone="muted">custom</Badge> : <Badge tone="accent">built-in</Badge>}
+					{thinking ? <Badge tone="default">:{thinking}</Badge> : null}
+				</div>
 			</div>
-			<select value={value} onChange={(e) => onChange(e.target.value)} className="rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink">
+			<select value={selectValue} onChange={(e) => onChange(e.target.value)} className="rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink">
+				{selectValue && !models.some((m) => m.value === selectValue) ? (
+					<option value={selectValue}>{selectValue}</option>
+				) : null}
 				{models.map((model) => (
 					<option key={model.value} value={model.value}>{model.label}</option>
 				))}
 			</select>
 			<div className="flex gap-2">
-				<Button size="sm" onClick={onSave} disabled={saving || !value}>Save</Button>
+				<Button size="sm" onClick={onSave} disabled={saving || !selectValue}>Save</Button>
 				{entry.dynamic ? <Button size="sm" variant="ghost" onClick={onRemove} disabled={saving}><X className="h-3.5 w-3.5" />Remove</Button> : null}
 			</div>
 		</div>

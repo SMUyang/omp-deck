@@ -102,12 +102,33 @@ describe("roleEntriesFromResponse", () => {
 		expect(entries).toContainEqual({
 			name: "advisor",
 			model: { provider: "anthropic", id: "claude-3-5-sonnet" },
+			value: "anthropic/claude-3-5-sonnet",
+			baseModelRef: "anthropic/claude-3-5-sonnet",
+			thinking: undefined,
 			dynamic: true,
 		});
 		expect(entries).toContainEqual({
 			name: "default",
 			model: { provider: "zai", id: "glm-5.2" },
+			value: "zai/glm-5.2",
+			baseModelRef: "zai/glm-5.2",
+			thinking: undefined,
 			dynamic: false,
+		});
+	});
+
+	test("preserves thinking suffix in value and baseModelRef", () => {
+		const entries = roleEntriesFromResponse({
+			roles: { advisor: "zai/glm-5.2:xhigh" },
+			models: [],
+		} satisfies ModelRolesResponse);
+
+		expect(entries[0]).toMatchObject({
+			name: "advisor",
+			value: "zai/glm-5.2:xhigh",
+			baseModelRef: "zai/glm-5.2",
+			thinking: "xhigh",
+			model: { provider: "zai", id: "glm-5.2" },
 		});
 	});
 

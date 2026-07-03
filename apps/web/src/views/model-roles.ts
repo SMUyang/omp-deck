@@ -8,6 +8,12 @@ export interface ModelRolesResponse {
 export interface ModelRoleEntry {
 	name: string;
 	model: ModelRef;
+	/** Full OMP-native value including thinking suffix, e.g. "haochi/gpt-5.5:high". */
+	value: string;
+	/** Base model ref without thinking suffix, e.g. "haochi/gpt-5.5". */
+	baseModelRef: string;
+	/** Thinking level if present, e.g. "high", "low", "xhigh". */
+	thinking?: string;
 	dynamic: boolean;
 }
 
@@ -27,6 +33,15 @@ export function parseModelRef(value: string): ModelRef {
 	return { provider: value.slice(0, slash), id: value.slice(slash + 1) };
 }
 
+export function stripThinkingSuffix(value: string): { base: string; thinking?: string } {
+	const slash = value.indexOf("/");
+	if (slash < 0) return { base: value };
+	const idPart = value.slice(slash + 1);
+	const colon = idPart.lastIndexOf(":");
+	if (colon <= 0) return { base: value };
+	return { base: value.slice(0, slash + 1 + colon), thinking: idPart.slice(colon + 1) };
+}
+
 export function isDynamicRole(role: string): boolean {
 	return !BUILT_IN_ROLES.has(role);
 }
@@ -34,11 +49,17 @@ export function isDynamicRole(role: string): boolean {
 export function roleEntriesFromResponse(response: ModelRolesResponse): ModelRoleEntry[] {
 	return Object.entries(response.roles)
 		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([name, model]) => ({
-			name,
-			model: parseModelRef(model),
-			dynamic: isDynamicRole(name),
-		}));
+		.map(([name, value]) => {
+			const { base, thinking } = stripThinkingSuffix(value);
+			return {
+				name,
+				model: parseModelRef(base),
+				value,
+				baseModelRef: base,
+				thinking,
+				dynamic: isDynamicRole(name),
+			};
+		});
 }
 
 export function buildPatchRequest(updates: Record<string, ModelRef | null>): ModelRolesPatchRequest {
