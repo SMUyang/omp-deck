@@ -22,6 +22,15 @@ export interface RpcCommandBody {
 	readonly [key: string]: unknown;
 }
 
+export interface RpcSendOptions {
+	timeoutMs?: number;
+}
+
+export function getRpcCommandTimeoutMs(command: RpcCommandBody, opts: RpcSendOptions = {}): number {
+	if (opts.timeoutMs !== undefined) return opts.timeoutMs;
+	return command.type === "compact" ? 180_000 : 60_000;
+}
+
 /** A correlated response from omp on stdout. */
 export interface RpcResponse {
 	readonly id?: string;
@@ -164,7 +173,7 @@ export class OmpRpcTransport {
 	}
 
 	/** Send a command and await its correlated response. */
-	async send<T = unknown>(command: RpcCommandBody): Promise<T> {
+	async send<T = unknown>(command: RpcCommandBody, opts: RpcSendOptions = {}): Promise<T> {
 		if (!this.#stdin) throw new Error("transport not started or stdin closed");
 		const id = `r${++this.#requestCounter}`;
 		const line = JSON.stringify({ ...command, id }) + "\n";
@@ -177,7 +186,7 @@ export class OmpRpcTransport {
 					`RPC timeout: command "${command.type}" (${id}). Stderr: ${this.#getStderrPreview()}`,
 				),
 			);
-		}, 60_000);
+		}, getRpcCommandTimeoutMs(command, opts));
 
 		this.#pending.set(id, {
 			command: command.type,

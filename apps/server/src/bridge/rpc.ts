@@ -42,7 +42,7 @@ import type {
 	RuntimeEnvUpdate,
 } from "./types.ts";
 
-import type { RpcCommandBody, RpcEvent } from "./rpc-transport.ts";
+import type { OmpRpcTransportOptions, RpcCommandBody, RpcEvent } from "./rpc-transport.ts";
 import { OmpRpcTransport } from "./rpc-transport.ts";
 import * as path from "node:path";
 import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
@@ -52,6 +52,25 @@ import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { hasSessionContextPack, getStoredQueryTopologyFocus, shouldReplaceContext } from "../session-context.ts";
 
 const log = logger("rpc-bridge");
+
+const RESUME_READY_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function buildResumeTransportOptions(ompBin: string, cwd: string, sessionPath: string): OmpRpcTransportOptions {
+	return {
+		bin: ompBin,
+		cwd,
+		extraArgs: ["--resume", sessionPath],
+		readyTimeoutMs: RESUME_READY_TIMEOUT_MS,
+	};
+}
+
+export function buildCreateTransportOptions(ompBin: string, cwd: string, extraArgs: readonly string[]): OmpRpcTransportOptions {
+	return {
+		bin: ompBin,
+		cwd,
+		extraArgs,
+	};
+}
 
 // ─── RPC response shapes (subset of the omp --mode rpc protocol) ──────
 
@@ -99,6 +118,33 @@ async function enableSubagentProgress(transport: OmpRpcTransport): Promise<void>
 	} catch (err) {
 		log.warn("set_subagent_subscription failed", err);
 	}
+}
+
+export function buildRpcCompactCommand(focus?: string): RpcCommandBody {
+	return { type: "compact", customInstructions: focus };
+}
+
+export const RPC_AUTO_COMPACT_TIMEOUT_MS = 10_000;
+export const RPC_AUTO_COMPACT_REMOTE_COOLDOWN_MS = 180_000;
+
+export function buildRpcManualCompactRequest(focus?: string): { command: RpcCommandBody } {
+	return { command: buildRpcCompactCommand(focus) };
+}
+
+export function buildRpcAutoCompactRequest(focus: string): { command: RpcCommandBody; opts: { timeoutMs: number } } {
+	return { command: buildRpcCompactCommand(focus), opts: { timeoutMs: RPC_AUTO_COMPACT_TIMEOUT_MS } };
+}
+
+export function buildRpcAutoCompactSendOptions(): { timeoutMs: number } {
+	return buildRpcAutoCompactRequest("").opts;
+}
+
+export function rpcAutoCompactCooldownUntil(now = Date.now()): number {
+	return now + RPC_AUTO_COMPACT_REMOTE_COOLDOWN_MS;
+}
+
+export function shouldSkipRpcAutoCompact(inFlightUntil: number, now = Date.now()): boolean {
+	return inFlightUntil > now;
 }
 
 // ─── Conversion ───────────────────────────────────────────────────────
@@ -409,6 +455,7 @@ class RpcSessionHandle implements SessionHandle {
 	readonly #ompBin: string;
 	#disposed = false;
 	#autoTitleInFlight = false;
+	#autoCompactInFlightUntil = 0;
 	readonly #onDispose: () => void;
 
 	constructor(opts: RpcSessionOpts) {
@@ -445,6 +492,7 @@ class RpcSessionHandle implements SessionHandle {
 		this.#emit(event as unknown as AgentSessionEventJson);
 
 		if (type === "turn_end" || type === "agent_end" || type === "compaction_complete") {
+			if (type === "compaction_complete") this.#autoCompactInFlightUntil = 0;
 			void this.#refreshStateFromRpc();
 		}
 	}
@@ -554,17 +602,20 @@ class RpcSessionHandle implements SessionHandle {
 	}
 
 	async maybeAutoCompactContext(currentQuery = ""): Promise<void> {
+		if (shouldSkipRpcAutoCompact(this.#autoCompactInFlightUntil)) return;
 		try {
 			const usage = this.#state.contextUsage;
 			if (!usage) return;
 			const percent = typeof usage.percent === "number" ? usage.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
-			const focus = getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: usage.percent ?? null });
+			const focus = await getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: usage.percent ?? null });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, usage, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);
-			await this.#transport.send({ type: "compact", focus });
+			this.#autoCompactInFlightUntil = rpcAutoCompactCooldownUntil();
+			const autoCompact = buildRpcAutoCompactRequest(focus);
+			await this.#transport.send(autoCompact.command, autoCompact.opts);
 			log.info(`context replacement compact sent for ${this.sessionId} — savings will appear on next context usage update`);
 		} catch (err) {
 			log.warn(`context replacement failed for ${this.sessionId}`, err);
@@ -614,7 +665,8 @@ class RpcSessionHandle implements SessionHandle {
 	}
 
 	async compact(focus?: string): Promise<void> {
-		await this.#transport.send({ type: "compact", customInstructions: focus });
+		const compact = buildRpcManualCompactRequest(focus);
+		await this.#transport.send(compact.command);
 	}
 
 	async setModel(ref: ModelRef): Promise<void> {
@@ -758,11 +810,7 @@ export class RpcAgentBridge implements AgentBridge {
 			extraArgs.push("--model", `${opts.model.provider}/${opts.model.id}`);
 		}
 
-		const transport = new OmpRpcTransport({
-			bin: this.#ompBin,
-			cwd: opts.cwd,
-			extraArgs,
-		});
+		const transport = new OmpRpcTransport(buildCreateTransportOptions(this.#ompBin, opts.cwd, extraArgs));
 		await transport.start();
 		await enableSubagentProgress(transport);
 
@@ -800,11 +848,7 @@ export class RpcAgentBridge implements AgentBridge {
 	}
 
 	async resumeSession(opts: ResumeSessionOpts): Promise<SessionHandle> {
-		const transport = new OmpRpcTransport({
-			bin: this.#ompBin,
-			cwd: this.#cwd,
-			extraArgs: ["--resume", opts.sessionPath],
-		});
+		const transport = new OmpRpcTransport(buildResumeTransportOptions(this.#ompBin, this.#cwd, opts.sessionPath));
 		await transport.start();
 		await enableSubagentProgress(transport);
 

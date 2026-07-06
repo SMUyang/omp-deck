@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { selectPendingResponseKey } from "./rpc-transport.ts";
+import { getRpcCommandTimeoutMs, selectPendingResponseKey } from "./rpc-transport.ts";
 
 describe("RPC transport response correlation", () => {
 	test("matches an idless legacy response to the sole pending command of that type", () => {
@@ -24,5 +24,16 @@ describe("RPC transport response correlation", () => {
 		);
 
 		expect(key).toBeUndefined();
+	});
+});
+
+describe("RPC transport command timeouts", () => {
+	test("allows compact to run longer than ordinary RPC commands", () => {
+		expect(getRpcCommandTimeoutMs({ type: "get_state" })).toBe(60_000);
+		expect(getRpcCommandTimeoutMs({ type: "compact" })).toBeGreaterThan(120_000);
+	});
+
+	test("allows auto compact callers to apply a shorter local budget", () => {
+		expect(getRpcCommandTimeoutMs({ type: "compact" }, { timeoutMs: 10_000 })).toBe(10_000);
 	});
 });

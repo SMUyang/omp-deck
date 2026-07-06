@@ -1,8 +1,28 @@
 import { describe, expect, test } from "bun:test";
 
-import { deriveAutoSessionName, deriveAutoSessionNameFromMessages, resumeCwdFromState, sessionSummaryFromJsonl } from "./rpc.ts";
+import { buildCreateTransportOptions, buildResumeTransportOptions, buildRpcAutoCompactSendOptions, buildRpcCompactCommand, deriveAutoSessionName, deriveAutoSessionNameFromMessages, resumeCwdFromState, rpcAutoCompactCooldownUntil, shouldSkipRpcAutoCompact, sessionSummaryFromJsonl } from "./rpc.ts";
 
 const SESSION_FILE = "/Users/example/.omp/agent/sessions/-repo/session.jsonl";
+
+describe("RPC compact command", () => {
+	test("uses customInstructions for compact focus payloads", () => {
+		expect(buildRpcCompactCommand("topology focus")).toEqual({ type: "compact", customInstructions: "topology focus" });
+	});
+});
+
+describe("RPC auto compact guard", () => {
+	test("uses a short pre-prompt wait budget while leaving manual compact command shape unchanged", () => {
+		expect(buildRpcAutoCompactSendOptions()).toEqual({ timeoutMs: 10_000 });
+		expect(buildRpcCompactCommand("topology focus")).toEqual({ type: "compact", customInstructions: "topology focus" });
+	});
+
+	test("skips duplicate auto compacts while the remote compact cooldown is active", () => {
+		const now = 1_000;
+		const until = rpcAutoCompactCooldownUntil(now);
+		expect(shouldSkipRpcAutoCompact(until, now + 1)).toBe(true);
+		expect(shouldSkipRpcAutoCompact(until, until)).toBe(false);
+	});
+});
 
 describe("RPC session listing", () => {
 	test("reads current title from the mutable title slot", () => {
@@ -57,6 +77,22 @@ describe("RPC session listing", () => {
 
 	test("uses the resumed session cwd from state instead of the jsonl path", () => {
 		expect(resumeCwdFromState({ cwd: "/repo" }, "/fallback")).toBe("/repo");
+	});
+
+	test("builds resume transport options with a startup timeout long enough for historical sessions", () => {
+		const opts = buildResumeTransportOptions("/usr/local/bin/omp", "/home/user/repo", "/tmp/persisted-s1.jsonl");
+		expect(opts.bin).toBe("/usr/local/bin/omp");
+		expect(opts.cwd).toBe("/home/user/repo");
+		expect(opts.extraArgs).toEqual(["--resume", "/tmp/persisted-s1.jsonl"]);
+		expect(opts.readyTimeoutMs).toBe(15 * 60 * 1000);
+	});
+
+	test("builds create transport options without overriding the startup timeout", () => {
+		const opts = buildCreateTransportOptions("/usr/local/bin/omp", "/home/user/repo", ["--model", "zai/glm-5.2"]);
+		expect(opts.bin).toBe("/usr/local/bin/omp");
+		expect(opts.cwd).toBe("/home/user/repo");
+		expect(opts.extraArgs).toEqual(["--model", "zai/glm-5.2"]);
+		expect(opts.readyTimeoutMs).toBeUndefined();
 	});
 });
 
