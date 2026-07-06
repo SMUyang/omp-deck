@@ -10,11 +10,12 @@ import {
 	readMaintenanceGateState,
 	readPreludeOverride,
 	readStartCommand,
+	readTopologyContextInjectionState,
+	readTopologyRerankConfig,
 	renderMaintenanceReminder,
 	writePreludeOverride,
 	writeStartCommand,
 } from "./orientation-store.ts";
-
 const ENV_KEYS = [
 	"OMP_DECK_DATA_DIR",
 	"OMP_DECK_MAINTENANCE_GATE_DISABLED",
@@ -22,7 +23,17 @@ const ENV_KEYS = [
 	"OMP_MAINTENANCE_GATE_MIN_RELEASE_AGE_MS",
 	"OMP_MAINTENANCE_GATE_FIRE_FLOOR_MS",
 	"OMP_DECK_ORG_ROOT",
+	"OMP_DECK_TOPOLOGY_CONTEXT_ENABLED",
+	"OMP_DECK_TOPOLOGY_CONTEXT_MAX_FOCUS_CHARS",
+	"OMP_DECK_TOPOLOGY_CONTEXT_TIMEOUT_MS",
+	"OMP_DECK_API_BASE",
+	"OMP_DECK_TOPOLOGY_RERANK_ENABLED",
+	"OMP_DECK_TOPOLOGY_RERANK_MIN_CONTEXT_PERCENT",
+	"OMP_DECK_TOPOLOGY_RERANK_MIN_CANDIDATE_NODES",
+	"OMP_DECK_TOPOLOGY_RERANK_LOCAL_CONFIDENCE_BELOW",
+	"OMP_DECK_TOPOLOGY_RERANK_TIMEOUT_MS",
 	"HOME",
+	"OMP_AGENT_DIR",
 	"USERPROFILE",
 ];
 
@@ -95,6 +106,16 @@ describe("start command", () => {
 		expect(cmd.description).toBe("");
 		expect(cmd.body).toBe("");
 		expect(cmd.path.endsWith(path.join(".omp", "agent", "commands", "start.md"))).toBe(true);
+	});
+
+	test("resolves start command under OMP_AGENT_DIR when configured", () => {
+		const agentDir = path.join(tmpHomeDir, "custom-agent");
+		process.env.OMP_AGENT_DIR = agentDir;
+
+		const cmd = readStartCommand();
+
+		expect(cmd.path).toBe(path.join(agentDir, "commands", "start.md"));
+		expect(cmd.exists).toBe(false);
 	});
 
 	test("write + read round-trips description and body verbatim", () => {
@@ -195,5 +216,116 @@ describe("maintenance gate state", () => {
 		expect(deck).not.toContain("knowledge/<subfolder>");
 		expect(flat).toContain("inbox/captures/<item>.md");
 		expect(flat).not.toContain("POST /api/inbox");
+	});
+});
+
+describe("topology context injection state", () => {
+	test("defaults to disabled and inactive", () => {
+		const state = readTopologyContextInjectionState();
+		expect(state.enabled).toBe(false);
+		expect(state.active).toBe(false);
+		expect(state.inactiveReason).toBe("disabled");
+		expect(state.apiBase.value).toBe("http://127.0.0.1:8787");
+		expect(state.apiBase.source).toBe("default");
+		expect(state.maxFocusChars.value).toBe(50_000);
+		expect(state.timeoutMs.value).toBe(1500);
+		expect(state.installedExtensionPath).toContain("topology-context");
+	});
+
+	test("enabled requires an explicit api base", () => {
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = "1";
+		delete process.env.OMP_DECK_API_BASE;
+		const state = readTopologyContextInjectionState();
+		expect(state.enabled).toBe(true);
+		expect(state.active).toBe(false);
+		expect(state.inactiveReason).toBe("missing_api_base");
+		expect(state.apiBase.value).toBe("http://127.0.0.1:8787");
+		expect(state.apiBase.source).toBe("default");
+	});
+
+	test("enabled with loopback api base becomes active when extension is installed", () => {
+		const installed = path.join(tmpHomeDir, ".omp", "agent", "extensions", "topology-context", "index.ts");
+		mkdirSync(path.dirname(installed), { recursive: true });
+		writeFileSync(installed, "export default function extension() {}\n");
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = "1";
+		process.env.OMP_DECK_API_BASE = "http://127.0.0.1:8787/api";
+		const state = readTopologyContextInjectionState();
+		expect(state.enabled).toBe(true);
+		expect(state.active).toBe(true);
+		expect(state.inactiveReason).toBeUndefined();
+		expect(state.apiBase.value).toBe("http://127.0.0.1:8787");
+		expect(state.installedExtensionPresent).toBe(true);
+	});
+
+	test("enabled with IPv6 loopback api base becomes active", () => {
+		const installed = path.join(tmpHomeDir, ".omp", "agent", "extensions", "topology-context", "index.ts");
+		mkdirSync(path.dirname(installed), { recursive: true });
+		writeFileSync(installed, "export default function extension() {}\n");
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = "1";
+		process.env.OMP_DECK_API_BASE = "http://[::1]:8787/api";
+		const state = readTopologyContextInjectionState();
+		expect(state.enabled).toBe(true);
+		expect(state.active).toBe(true);
+		expect(state.apiBase.value).toBe("http://[::1]:8787");
+	});
+
+	test("enabled with remote api base is inactive", () => {
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = "1";
+		process.env.OMP_DECK_API_BASE = "https://example.com/api";
+		const state = readTopologyContextInjectionState();
+		expect(state.enabled).toBe(true);
+		expect(state.active).toBe(false);
+		expect(state.inactiveReason).toBe("invalid_api_base");
+	});
+
+	test("knob override surfaces in value source and raw", () => {
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_MAX_FOCUS_CHARS = "9000";
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_TIMEOUT_MS = "2500";
+		const state = readTopologyContextInjectionState();
+		expect(state.maxFocusChars.value).toBe(9000);
+		expect(state.maxFocusChars.rawValue).toBe("9000");
+		expect(state.maxFocusChars.source).toBe("process-env");
+		expect(state.timeoutMs.value).toBe(2500);
+		expect(state.timeoutMs.rawValue).toBe("2500");
+		expect(state.timeoutMs.source).toBe("process-env");
+	});
+
+	test("decimal knob override falls back instead of truncating", () => {
+		process.env.OMP_DECK_TOPOLOGY_CONTEXT_MAX_FOCUS_CHARS = "9000.7";
+		const state = readTopologyContextInjectionState();
+		expect(state.maxFocusChars.value).toBe(50_000);
+		expect(state.maxFocusChars.rawValue).toBe("9000.7");
+		expect(state.maxFocusChars.source).toBe("process-env");
+	});
+});
+
+describe("topology rerank config", () => {
+	test("defaults to enabled with bundled values", () => {
+		const state = readTopologyRerankConfig();
+		expect(state.enabled).toBe(true);
+		expect(state.enabledSource).toBe("default");
+		expect(state.rerankModelRole).toBe("topology_query_reranker");
+		expect(state.rerankModelRoleSource).toBe("default");
+		expect(state.minContextPercent.value).toBe(12);
+		expect(state.minCandidateNodes.value).toBe(16);
+		expect(state.localConfidenceBelow.value).toBe(0.72);
+		expect(state.timeoutMs.value).toBe(30_000);
+	});
+
+	test("overrides surface correct source", () => {
+		process.env.OMP_DECK_TOPOLOGY_RERANK_ENABLED = "0";
+		process.env.OMP_DECK_TOPOLOGY_RERANK_MIN_CANDIDATE_NODES = "32";
+		process.env.OMP_DECK_TOPOLOGY_RERANK_LOCAL_CONFIDENCE_BELOW = "0.5";
+		const state = readTopologyRerankConfig();
+		expect(state.enabled).toBe(false);
+		expect(state.enabledSource).toBe("process-env");
+		expect(state.minCandidateNodes.value).toBe(32);
+		expect(state.localConfidenceBelow.value).toBe(0.5);
+	});
+
+	test("displays non-negative percent not int", () => {
+		process.env.OMP_DECK_TOPOLOGY_RERANK_MIN_CONTEXT_PERCENT = "12.5";
+		const state = readTopologyRerankConfig();
+		expect(state.minContextPercent.value).toBe(12.5);
 	});
 });

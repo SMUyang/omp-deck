@@ -225,6 +225,115 @@ export interface UpdateMaintenanceGateRequest {
 	fireFloorMs?: number | null;
 }
 
+export interface TopologyContextInjectionState {
+	enabled: boolean;
+	enabledRaw: string | null;
+	enabledSource: GateValueSource;
+	active: boolean;
+	inactiveReason?: "disabled" | "missing_api_base" | "invalid_api_base" | "extension_missing";
+	apiBase: {
+		value: string;
+		default: string;
+		rawValue: string | null;
+		source: GateValueSource;
+	};
+	maxFocusChars: GateKnob;
+	timeoutMs: GateKnob;
+	installedExtensionPresent: boolean;
+	installedExtensionPath: string;
+	bundledExtensionPresent: boolean;
+	bundledExtensionPath: string;
+	installedHash: string | null;
+	bundledHash: string | null;
+	installStatus: "missing" | "current" | "user-owned-or-outdated";
+}
+
+export interface UpdateTopologyContextInjectionRequest {
+	enabled?: boolean;
+	apiBase?: string | null;
+	maxFocusChars?: number | null;
+	timeoutMs?: number | null;
+}
+
+export type TopologyRerankProvider = "model_role" | "http";
+
+export type TopologyRerankHttpProtocol = "deck-internal" | "siliconflow-rerank";
+
+export interface TopologyRerankStringKnob {
+	value: string;
+	default: string;
+	rawValue: string | null;
+	source: GateValueSource;
+}
+
+export interface TopologyRerankProviderKnob {
+	value: TopologyRerankProvider;
+	default: TopologyRerankProvider;
+	rawValue: string | null;
+	source: GateValueSource;
+}
+
+export interface TopologyRerankHttpProtocolKnob {
+	value: TopologyRerankHttpProtocol;
+	default: TopologyRerankHttpProtocol;
+	rawValue: string | null;
+	source: GateValueSource;
+}
+
+export interface TopologyRerankHttpConfig {
+	baseUrl: TopologyRerankStringKnob;
+	endpointPath: TopologyRerankStringKnob;
+	protocol: TopologyRerankHttpProtocolKnob;
+	model: TopologyRerankStringKnob;
+	timeoutMs: GateKnob;
+	confidenceThreshold: GateKnob;
+	minCandidateNodes: GateKnob;
+	minContextPercent: GateKnob;
+	authHeaderName: TopologyRerankStringKnob;
+}
+
+export interface TopologyRerankConfig {
+	enabled: boolean;
+	enabledRaw: string | null;
+	enabledSource: GateValueSource;
+	rerankModelRole: string;
+	rerankModelRoleRaw: string | null;
+	rerankModelRoleSource: GateValueSource;
+	minContextPercent: GateKnob;
+	minCandidateNodes: GateKnob;
+	localConfidenceBelow: {
+		value: number;
+		default: number;
+		rawValue: string | null;
+		source: GateValueSource;
+	};
+	timeoutMs: GateKnob;
+	provider: TopologyRerankProviderKnob;
+	http: TopologyRerankHttpConfig;
+}
+
+export interface UpdateTopologyRerankConfigRequest {
+	enabled?: boolean;
+	rerankModelRole?: string | null;
+	minContextPercent?: number | null;
+	minCandidateNodes?: number | null;
+	localConfidenceBelow?: number | null;
+	timeoutMs?: number | null;
+	provider?: TopologyRerankProvider | null;
+	http?: {
+		baseUrl?: string | null;
+		endpointPath?: string | null;
+		protocol?: TopologyRerankHttpProtocol | null;
+		model?: string | null;
+		timeoutMs?: number | null;
+		confidenceThreshold?: number | null;
+		minCandidateNodes?: number | null;
+		minContextPercent?: number | null;
+		authHeaderName?: string | null;
+	} | null;
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Bridge supervisor (long-running auxiliary processes the deck owns)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1983,6 +2092,16 @@ export interface SessionContextPackResponse {
 	openTodos: SessionContextNode[];
 	rawRefs: SessionContextRawRef[];
 	omitted: SessionContextOmitted;
+}
+
+export interface SessionContextFocusResponse {
+	sessionId: string;
+	query: string;
+	focus: string;
+	nodeCount: number;
+	edgeCount: number;
+	truncated: boolean;
+	emptyReason?: "session_not_built" | "no_relevant_context";
 }
 
 export interface SessionContextGraphResponse {

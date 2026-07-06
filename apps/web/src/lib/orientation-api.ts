@@ -2,9 +2,13 @@ import type {
 	MaintenanceGateState,
 	PreludeResponse,
 	StartCommand,
+	TopologyContextInjectionState,
+	TopologyRerankConfig,
 	UpdateMaintenanceGateRequest,
 	UpdatePreludeRequest,
 	UpdateStartCommandRequest,
+	UpdateTopologyContextInjectionRequest,
+	UpdateTopologyRerankConfigRequest,
 } from "@omp-deck/protocol";
 
 const BASE = "/api";
@@ -45,6 +49,24 @@ export const orientationApi = {
 	},
 	putMaintenanceGate(body: UpdateMaintenanceGateRequest): Promise<MaintenanceGateState> {
 		return req<MaintenanceGateState>("/orientation/maintenance-gate", {
+			method: "PUT",
+			body: JSON.stringify(body),
+		});
+	},
+	getTopologyContextInjection(): Promise<TopologyContextInjectionState> {
+		return req<TopologyContextInjectionState>("/orientation/topology-context-injection");
+	},
+	putTopologyContextInjection(body: UpdateTopologyContextInjectionRequest): Promise<TopologyContextInjectionState> {
+		return req<TopologyContextInjectionState>("/orientation/topology-context-injection", {
+			method: "PUT",
+			body: JSON.stringify(body),
+		});
+	},
+	getTopologyRerankConfig(): Promise<TopologyRerankConfig> {
+		return req<TopologyRerankConfig>("/orientation/topology-rerank");
+	},
+	putTopologyRerankConfig(body: UpdateTopologyRerankConfigRequest): Promise<TopologyRerankConfig> {
+		return req<TopologyRerankConfig>("/orientation/topology-rerank", {
 			method: "PUT",
 			body: JSON.stringify(body),
 		});

@@ -19,10 +19,13 @@
  * and the cost is one stat + small read per `createAgentSession`.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { GateKnob, GateValueSource, TopologyContextInjectionState, TopologyRerankConfig } from "@omp-deck/protocol";
 
+import { normalizeDeckApiOrigin, isLoopbackApiOrigin } from "./api-base.ts";
 import { getDataDir, readManagedEnvFile } from "./env-store.ts";
 
 /**
@@ -128,8 +131,15 @@ export function getEffectivePrelude(): string {
 
 // ─── /start command ────────────────────────────────────────────────────────
 
+function getAgentDir(): string {
+	const agentDir = process.env.OMP_AGENT_DIR?.trim();
+	if (agentDir) return agentDir;
+	const home = process.env.HOME?.trim() || process.env.USERPROFILE?.trim() || os.homedir();
+	return path.join(home, ".omp", "agent");
+}
+
 export function getStartCommandPath(): string {
-	return path.join(os.homedir(), ".omp", "agent", "commands", "start.md");
+	return path.join(getAgentDir(), "commands", "start.md");
 }
 
 export interface StartCommand {
@@ -196,14 +206,59 @@ export const MAINTENANCE_GATE_ENV_KEYS = {
 	orgRoot: "OMP_DECK_ORG_ROOT",
 } as const;
 
-export type GateValueSource = "process-env" | "env-file" | "default" | "unset";
 
-export interface GateKnob {
-	value: number;
-	default: number;
-	rawValue: string | null;
-	source: GateValueSource;
-}
+export const TOPOLOGY_RERANK_ENV_KEYS = {
+	enabled: "OMP_DECK_TOPOLOGY_RERANK_ENABLED",
+	rerankModelRole: "OMP_DECK_TOPOLOGY_RERANK_ROLE",
+	provider: "OMP_DECK_TOPOLOGY_RERANK_PROVIDER",
+	httpBaseUrl: "OMP_DECK_TOPOLOGY_RERANK_HTTP_BASE_URL",
+	httpEndpointPath: "OMP_DECK_TOPOLOGY_RERANK_HTTP_ENDPOINT_PATH",
+	httpTimeoutMs: "OMP_DECK_TOPOLOGY_RERANK_HTTP_TIMEOUT_MS",
+	httpConfidenceThreshold: "OMP_DECK_TOPOLOGY_RERANK_HTTP_CONFIDENCE_THRESHOLD",
+	httpMinCandidateNodes: "OMP_DECK_TOPOLOGY_RERANK_HTTP_MIN_CANDIDATE_NODES",
+	httpMinContextPercent: "OMP_DECK_TOPOLOGY_RERANK_HTTP_MIN_CONTEXT_PERCENT",
+	httpAuthHeaderName: "OMP_DECK_TOPOLOGY_RERANK_HTTP_AUTH_HEADER_NAME",
+	httpProtocol: "OMP_DECK_TOPOLOGY_RERANK_HTTP_PROTOCOL",
+	httpModel: "OMP_DECK_TOPOLOGY_RERANK_HTTP_MODEL",
+	minContextPercent: "OMP_DECK_TOPOLOGY_RERANK_MIN_CONTEXT_PERCENT",
+	minCandidateNodes: "OMP_DECK_TOPOLOGY_RERANK_MIN_CANDIDATE_NODES",
+	localConfidenceBelow: "OMP_DECK_TOPOLOGY_RERANK_LOCAL_CONFIDENCE_BELOW",
+	timeoutMs: "OMP_DECK_TOPOLOGY_RERANK_TIMEOUT_MS",
+} as const;
+
+export type TopologyRerankProvider = "model_role" | "http";
+
+export const TOPOLOGY_RERANK_DEFAULTS = {
+	enabled: true,
+	rerankModelRole: "topology_query_reranker",
+	provider: "model_role" as TopologyRerankProvider,
+	httpBaseUrl: "",
+	httpEndpointPath: "/v1/topology/rerank",
+	httpTimeoutMs: 30_000,
+	httpConfidenceThreshold: 0.72,
+	httpMinCandidateNodes: 16,
+	httpMinContextPercent: 12,
+	httpAuthHeaderName: "Authorization",
+	httpProtocol: "deck-internal",
+	httpModel: "BAAI/bge-reranker-v2-m3",
+	minContextPercent: 12,
+	minCandidateNodes: 16,
+	localConfidenceBelow: 0.72,
+	timeoutMs: 30_000,
+} as const;
+
+export const TOPOLOGY_CONTEXT_DEFAULTS = {
+	apiBase: "http://127.0.0.1:8787",
+	maxFocusChars: 50_000,
+	timeoutMs: 1500,
+} as const;
+
+export const TOPOLOGY_CONTEXT_ENV_KEYS = {
+	enabled: "OMP_DECK_TOPOLOGY_CONTEXT_ENABLED",
+	apiBase: "OMP_DECK_API_BASE",
+	maxFocusChars: "OMP_DECK_TOPOLOGY_CONTEXT_MAX_FOCUS_CHARS",
+	timeoutMs: "OMP_DECK_TOPOLOGY_CONTEXT_TIMEOUT_MS",
+} as const;
 
 export interface MaintenanceGateState {
 	enabled: boolean;
@@ -240,8 +295,8 @@ export function readMaintenanceGateState(): MaintenanceGateState {
 		if (rawValue === null || rawValue === "") {
 			return { value: def, default: def, rawValue: null, source: "default" };
 		}
-		const n = Number.parseInt(rawValue, 10);
-		if (!Number.isFinite(n) || n <= 0) {
+		const n = Number(rawValue);
+		if (!Number.isSafeInteger(n) || n <= 0) {
 			return { value: def, default: def, rawValue, source };
 		}
 		return { value: n, default: def, rawValue, source };
@@ -252,9 +307,7 @@ export function readMaintenanceGateState(): MaintenanceGateState {
 	const enabled = !isTruthy(disabled.rawValue);
 
 	const installedExtensionPath = path.join(
-		os.homedir(),
-		".omp",
-		"agent",
+		getAgentDir(),
 		"extensions",
 		"maintenance-gate",
 		"index.ts",
@@ -284,6 +337,212 @@ export function readMaintenanceGateState(): MaintenanceGateState {
 			flatFileMode: renderMaintenanceReminder("flat-file"),
 		},
 	};
+}
+
+
+export function readTopologyContextInjectionState(): TopologyContextInjectionState {
+	const file = readManagedEnvFile();
+	const resolve = (key: string): { rawValue: string | null; source: GateValueSource } => {
+		const processValue = process.env[key];
+		const fileValue = file.values.get(key);
+		if (processValue !== undefined && processValue !== fileValue) {
+			return { rawValue: processValue, source: "process-env" };
+		}
+		if (fileValue !== undefined) return { rawValue: fileValue, source: "env-file" };
+		if (processValue !== undefined) return { rawValue: processValue, source: "process-env" };
+		return { rawValue: null, source: "unset" };
+	};
+	const intKnob = (key: string, def: number): GateKnob => {
+		const { rawValue, source } = resolve(key);
+		if (rawValue === null || rawValue === "") {
+			return { value: def, default: def, rawValue: null, source: "default" };
+		}
+		const n = Number(rawValue);
+		if (!Number.isSafeInteger(n) || n <= 0) {
+			return { value: def, default: def, rawValue, source };
+		}
+		return { value: n, default: def, rawValue, source };
+	};
+
+	const enabled = resolve(TOPOLOGY_CONTEXT_ENV_KEYS.enabled);
+	const apiBase = resolve(TOPOLOGY_CONTEXT_ENV_KEYS.apiBase);
+	const installedExtensionPath = path.join(
+		getAgentDir(),
+		"extensions",
+		"topology-context",
+		"index.ts",
+	);
+	const bundledExtensionPath = resolveBundledTopologyContextExtensionPath();
+	const installedHash = hashFileIfExists(installedExtensionPath);
+	const bundledHash = bundledExtensionPath ? hashFileIfExists(bundledExtensionPath) : null;
+	const installedExtensionPresent = installedHash !== null;
+	const bundledExtensionPresent = bundledHash !== null;
+	const installStatus = !installedExtensionPresent
+		? "missing"
+		: installedHash === bundledHash && bundledHash !== null
+			? "current"
+			: "user-owned-or-outdated";
+	const hasExplicitApiBase = apiBase.rawValue !== null && apiBase.rawValue.trim().length > 0;
+	let apiBaseValue: string = TOPOLOGY_CONTEXT_DEFAULTS.apiBase;
+	let apiBaseParseOk = true;
+	if (hasExplicitApiBase) {
+		try {
+			apiBaseValue = normalizeDeckApiOrigin(apiBase.rawValue ?? "");
+		} catch {
+			apiBaseParseOk = false;
+			apiBaseValue = apiBase.rawValue?.trim() ?? "";
+		}
+	}
+	const isEnabled = isTruthy(enabled.rawValue);
+	let inactiveReason: TopologyContextInjectionState["inactiveReason"];
+	if (!isEnabled) inactiveReason = "disabled";
+	else if (!hasExplicitApiBase) inactiveReason = "missing_api_base";
+	else if (!apiBaseParseOk || !isLoopbackApiOrigin(apiBaseValue)) inactiveReason = "invalid_api_base";
+	else if (!installedExtensionPresent) inactiveReason = "extension_missing";
+
+	return {
+		enabled: isEnabled,
+		enabledRaw: enabled.rawValue,
+		enabledSource: enabled.source,
+		active: inactiveReason === undefined,
+		...(inactiveReason ? { inactiveReason } : {}),
+		apiBase: {
+			value: apiBaseValue,
+			default: TOPOLOGY_CONTEXT_DEFAULTS.apiBase,
+			rawValue: apiBase.rawValue,
+			source: apiBase.rawValue === null || apiBase.rawValue === "" ? "default" : apiBase.source,
+		},
+		maxFocusChars: intKnob(TOPOLOGY_CONTEXT_ENV_KEYS.maxFocusChars, TOPOLOGY_CONTEXT_DEFAULTS.maxFocusChars),
+		timeoutMs: intKnob(TOPOLOGY_CONTEXT_ENV_KEYS.timeoutMs, TOPOLOGY_CONTEXT_DEFAULTS.timeoutMs),
+		installedExtensionPresent,
+		installedExtensionPath,
+		bundledExtensionPresent,
+		bundledExtensionPath: bundledExtensionPath ?? "",
+		installedHash,
+		bundledHash,
+		installStatus,
+	};
+}
+
+
+export function readTopologyRerankConfig(): TopologyRerankConfig {
+	const file = readManagedEnvFile();
+	const resolve = (key: string): { rawValue: string | null; source: GateValueSource } => {
+		const processValue = process.env[key];
+		const fileValue = file.values.get(key);
+		if (processValue !== undefined && processValue !== fileValue) {
+			return { rawValue: processValue, source: "process-env" };
+		}
+		if (fileValue !== undefined) return { rawValue: fileValue, source: "env-file" };
+		if (processValue !== undefined) return { rawValue: processValue, source: "process-env" };
+		return { rawValue: null, source: "unset" };
+	};
+	const intKnob = (key: string, def: number): GateKnob => {
+		const { rawValue, source } = resolve(key);
+		if (rawValue === null || rawValue === "") {
+			return { value: def, default: def, rawValue: null, source: "default" };
+		}
+		const n = Number(rawValue);
+		if (!Number.isSafeInteger(n) || n <= 0) {
+			return { value: def, default: def, rawValue, source };
+		}
+		return { value: n, default: def, rawValue, source };
+	};
+	const nonNegativeKnob = (key: string, def: number): GateKnob => {
+		const { rawValue, source } = resolve(key);
+		if (rawValue === null || rawValue === "") {
+			return { value: def, default: def, rawValue: null, source: "default" };
+		}
+		const n = Number(rawValue);
+		if (!Number.isFinite(n) || n < 0) {
+			return { value: def, default: def, rawValue, source };
+		}
+		return { value: n, default: def, rawValue, source };
+	};
+
+	const floatKnob = (key: string, def: number): { value: number; default: number; rawValue: string | null; source: GateValueSource } => {
+		const { rawValue, source } = resolve(key);
+		if (rawValue === null || rawValue === "") {
+			return { value: def, default: def, rawValue: null, source: "default" };
+		}
+		const n = Number(rawValue);
+		if (!Number.isFinite(n)) {
+			return { value: def, default: def, rawValue, source };
+		}
+		return { value: Math.min(1, Math.max(0, n)), default: def, rawValue, source };
+	};
+
+	const stringKnob = (key: string, def: string) => {
+		const { rawValue, source } = resolve(key);
+		if (rawValue === null || rawValue === "") {
+			return { value: def, default: def, rawValue: null, source: "default" };
+		}
+		const knob: { value: string; default: string; rawValue: string; source: GateValueSource } = { value: rawValue, default: def, rawValue, source };
+		return knob as unknown as GateKnob;
+	};
+	const providerKnob = () => {
+		const { rawValue, source } = resolve(TOPOLOGY_RERANK_ENV_KEYS.provider);
+		if (rawValue !== "model_role" && rawValue !== "http") {
+			const knob: { value: TopologyRerankProvider; default: TopologyRerankProvider; rawValue: string | null; source: GateValueSource } = { value: "model_role", default: "model_role", rawValue, source: "default" };
+			return knob as unknown as GateKnob;
+		}
+		const knob: { value: TopologyRerankProvider; default: TopologyRerankProvider; rawValue: string; source: GateValueSource } = { value: rawValue, default: "model_role", rawValue, source };
+		return knob as unknown as GateKnob;
+	};
+
+	const enabled = resolve(TOPOLOGY_RERANK_ENV_KEYS.enabled);
+	const role = resolve(TOPOLOGY_RERANK_ENV_KEYS.rerankModelRole);
+
+	return {
+		enabled: enabled.rawValue !== null ? isTruthy(enabled.rawValue) : TOPOLOGY_RERANK_DEFAULTS.enabled,
+		enabledRaw: enabled.rawValue,
+		enabledSource: enabled.rawValue !== null ? enabled.source : "default",
+		rerankModelRole: (role.rawValue && role.rawValue.trim()) ? role.rawValue.trim() : TOPOLOGY_RERANK_DEFAULTS.rerankModelRole,
+		rerankModelRoleRaw: role.rawValue,
+		rerankModelRoleSource: role.rawValue ? role.source : "default",
+		minContextPercent: nonNegativeKnob(TOPOLOGY_RERANK_ENV_KEYS.minContextPercent, TOPOLOGY_RERANK_DEFAULTS.minContextPercent),
+		minCandidateNodes: intKnob(TOPOLOGY_RERANK_ENV_KEYS.minCandidateNodes, TOPOLOGY_RERANK_DEFAULTS.minCandidateNodes),
+		localConfidenceBelow: floatKnob(TOPOLOGY_RERANK_ENV_KEYS.localConfidenceBelow, TOPOLOGY_RERANK_DEFAULTS.localConfidenceBelow),
+		timeoutMs: intKnob(TOPOLOGY_RERANK_ENV_KEYS.timeoutMs, TOPOLOGY_RERANK_DEFAULTS.timeoutMs),
+		provider: providerKnob() as unknown as import("@omp-deck/protocol").TopologyRerankProviderKnob,
+		http: {
+			baseUrl: stringKnob(TOPOLOGY_RERANK_ENV_KEYS.httpBaseUrl, TOPOLOGY_RERANK_DEFAULTS.httpBaseUrl) as unknown as import("@omp-deck/protocol").TopologyRerankStringKnob,
+			endpointPath: stringKnob(TOPOLOGY_RERANK_ENV_KEYS.httpEndpointPath, TOPOLOGY_RERANK_DEFAULTS.httpEndpointPath) as unknown as import("@omp-deck/protocol").TopologyRerankStringKnob,
+			protocol: stringKnob(TOPOLOGY_RERANK_ENV_KEYS.httpProtocol, TOPOLOGY_RERANK_DEFAULTS.httpProtocol) as unknown as import("@omp-deck/protocol").TopologyRerankHttpProtocolKnob,
+			model: stringKnob(TOPOLOGY_RERANK_ENV_KEYS.httpModel, TOPOLOGY_RERANK_DEFAULTS.httpModel) as unknown as import("@omp-deck/protocol").TopologyRerankStringKnob,
+			timeoutMs: intKnob(TOPOLOGY_RERANK_ENV_KEYS.httpTimeoutMs, TOPOLOGY_RERANK_DEFAULTS.httpTimeoutMs),
+			confidenceThreshold: floatKnob(TOPOLOGY_RERANK_ENV_KEYS.httpConfidenceThreshold, TOPOLOGY_RERANK_DEFAULTS.httpConfidenceThreshold),
+			minCandidateNodes: intKnob(TOPOLOGY_RERANK_ENV_KEYS.httpMinCandidateNodes, TOPOLOGY_RERANK_DEFAULTS.httpMinCandidateNodes),
+			minContextPercent: nonNegativeKnob(TOPOLOGY_RERANK_ENV_KEYS.httpMinContextPercent, TOPOLOGY_RERANK_DEFAULTS.httpMinContextPercent),
+			authHeaderName: stringKnob(TOPOLOGY_RERANK_ENV_KEYS.httpAuthHeaderName, TOPOLOGY_RERANK_DEFAULTS.httpAuthHeaderName) as unknown as import("@omp-deck/protocol").TopologyRerankStringKnob,
+		},
+	};
+}
+
+
+function resolveBundledTopologyContextExtensionPath(): string | null {
+	const override = process.env.OMP_DECK_STARTER_EXTENSIONS_DIR;
+	const candidates = [
+		...(override ? [override] : []),
+		path.resolve(import.meta.dir, "..", "..", "..", "starter-extensions"),
+		path.resolve(import.meta.dir, "..", "..", "starter-extensions"),
+		path.resolve(import.meta.dir, "..", "starter-extensions"),
+		path.resolve(process.cwd(), "starter-extensions"),
+	];
+	for (const candidate of candidates) {
+		const extensionPath = path.join(candidate, "topology-context", "index.ts");
+		if (existsSync(extensionPath)) return extensionPath;
+	}
+	return null;
+}
+
+function hashFileIfExists(filePath: string): string | null {
+	try {
+		if (!existsSync(filePath)) return null;
+		return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+	} catch {
+		return null;
+	}
 }
 
 function isTruthy(value: string | null | undefined): boolean {

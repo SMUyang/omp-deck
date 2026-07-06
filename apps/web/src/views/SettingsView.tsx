@@ -11,6 +11,10 @@ import type {
 	NotificationLevel,
 	PreludeResponse,
 	StartCommand,
+	TopologyContextInjectionState,
+	TopologyRerankConfig,
+	TopologyRerankHttpProtocol,
+	UpdateTopologyRerankConfigRequest,
 } from "@omp-deck/protocol";
 import type { ModelInfo, ModelRef, ProviderInfo, VersionInfo } from "@omp-deck/protocol";
 
@@ -1172,6 +1176,9 @@ function OrientationSection() {
 			<PreludeCard />
 			<StartCommandCard />
 			<MaintenanceGateCard />
+			<TopologyContextCard />
+			<TopologyRerankCard />
+			<TopologyEmbeddingCard />
 		</div>
 	);
 }
@@ -1610,6 +1617,740 @@ function MaintenanceGateCard() {
 							<pre className="overflow-x-auto whitespace-pre-wrap px-3 py-2 font-mono text-2xs leading-relaxed text-ink-2">
 								{previewMode === "deck" ? data.preview.deckMode : data.preview.flatFileMode}
 							</pre>
+						</div>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function parseNonNegativeNumberOrNull(value: string): number | null {
+	const trimmed = value.trim();
+	if (trimmed === "") return null;
+	const n = Number.parseFloat(trimmed);
+	return Number.isFinite(n) && n >= 0 ? n : NaN;
+}
+function parsePositiveIntegerOrNull(value: string): number | null {
+	const trimmed = value.trim();
+	if (trimmed === "") return null;
+	const n = Number.parseInt(trimmed, 10);
+	return Number.isFinite(n) && n > 0 ? n : NaN;
+}
+function parseFloatRange(value: string, min: number, max: number): number {
+	const trimmed = value.trim();
+	if (trimmed === "") return NaN;
+	const n = Number.parseFloat(trimmed);
+	if (!Number.isFinite(n) || n < min || n > max) return NaN;
+	return n;
+}
+
+function TopologyContextCard() {
+	const [data, setData] = useState<TopologyContextInjectionState | null>(null);
+	const [draft, setDraft] = useState<{
+		enabled: boolean;
+		apiBase: string;
+		maxFocusChars: string;
+		timeoutMs: string;
+	} | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+	const [status, setStatus] = useState<string | undefined>();
+
+	function applyState(next: TopologyContextInjectionState): void {
+		setData(next);
+		setDraft({
+			enabled: next.enabled,
+			apiBase: String(next.apiBase.rawValue ?? ""),
+			maxFocusChars: String(next.maxFocusChars.rawValue ?? ""),
+			timeoutMs: String(next.timeoutMs.rawValue ?? ""),
+		});
+	}
+
+	async function refresh(): Promise<void> {
+		try {
+			applyState(await orientationApi.getTopologyContextInjection());
+			setError(undefined);
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	useEffect(() => {
+		void refresh();
+	}, []);
+
+	async function save(): Promise<void> {
+		if (!draft) return;
+		const maxFocusChars = parsePositiveIntegerOrNull(draft.maxFocusChars);
+		const timeoutMs = parsePositiveIntegerOrNull(draft.timeoutMs);
+		if (Number.isNaN(maxFocusChars) || Number.isNaN(timeoutMs)) {
+			setError("maxFocusChars and timeoutMs must be positive integers or empty.");
+			return;
+		}
+		setSaving(true);
+		try {
+			const next = await orientationApi.putTopologyContextInjection({
+				enabled: draft.enabled,
+				apiBase: draft.apiBase.trim() || null,
+				maxFocusChars,
+				timeoutMs,
+			});
+			applyState(next);
+			setStatus("Saved.");
+			setError(undefined);
+			window.setTimeout(() => setStatus(undefined), 3000);
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="overflow-hidden rounded-md border border-line bg-paper">
+			<div className="border-b border-line bg-paper-2 px-3 py-2">
+				<div className="flex items-center gap-2">
+					<div className="meta">Topology context injection</div>
+					{data?.active ? <Badge tone="accent">active</Badge> : (data?.enabled ? <Badge tone="default">inactive</Badge> : <Badge tone="muted">disabled</Badge>)}
+					{data?.installStatus !== "current" && data?.installStatus === "user-owned-or-outdated" ? <Badge tone="warn">user-owned</Badge> : null}
+				</div>
+				<p className="mt-1 text-xs text-ink-3">
+					Default-off OMP starter extension that fetches a clean, query-aware topology
+					focus from the deck over loopback HTTP and appends it as hidden custom context.
+				</p>
+				<div className="mt-1 space-y-0.5 font-mono text-2xs text-ink-3">
+					<div>installed: {data?.installedExtensionPath ?? "..."}</div>
+					<div>bundled: {data?.bundledExtensionPath ?? "..."}</div>
+					<div>api base: {data?.apiBase.value ?? "..."} ({data?.apiBase.source ?? ""})</div>
+				</div>
+			</div>
+			<div className="space-y-4 p-4">
+				{error ? (
+					<div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
+						{error}
+					</div>
+				) : null}
+				{status ? (
+					<div className="rounded-md border border-success/30 bg-success/10 px-3 py-2 font-mono text-xs text-success">
+						{status}
+					</div>
+				) : null}
+				{loading || !draft || !data ? (
+					<div className="text-sm text-ink-3">Loading...</div>
+				) : (
+					<>
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={draft.enabled}
+								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+							/>
+							<span>Enabled</span>
+							<span className="ml-2 font-mono text-2xs text-ink-3">
+								OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = {data.enabledRaw ?? "(unset)"} ({data.enabledSource})
+							</span>
+						</label>
+
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+							<label className="block space-y-1 sm:col-span-2">
+								<span className="meta">apiBase</span>
+								<input
+									type="text"
+									value={draft.apiBase}
+									onChange={(e) => setDraft({ ...draft, apiBase: e.target.value })}
+									placeholder={String(data.apiBase.default)}
+									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+								/>
+								<div className="font-mono text-2xs text-ink-3">
+									effective {data.apiBase.value} · source {data.apiBase.source}. Leave empty to keep the default display without activating the extension.
+								</div>
+							</label>
+							<GateKnobInput
+								label="maxFocusChars"
+								help="Maximum injected focus characters"
+								knob={data.maxFocusChars}
+								value={draft.maxFocusChars}
+								onChange={(v) => setDraft({ ...draft, maxFocusChars: v })}
+							/>
+							<GateKnobInput
+								label="timeoutMs"
+								help="Loopback HTTP fetch timeout"
+								knob={data.timeoutMs}
+								value={draft.timeoutMs}
+								onChange={(v) => setDraft({ ...draft, timeoutMs: v })}
+							/>
+						</div>
+
+						<div className="flex flex-wrap items-center gap-2">
+							<Button size="sm" onClick={() => void save()} disabled={saving}>
+								<Save className="h-3.5 w-3.5" />
+								Save
+							</Button>
+							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
+								<RotateCcw className="h-3.5 w-3.5" />
+								Reload
+							</Button>
+							{!data.installedExtensionPresent ? (
+								<span className="font-mono text-2xs text-warn">
+									Installed extension missing; settings will not affect prompts until it is restored.
+								</span>
+							) : null}
+						</div>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function TopologyRerankCard() {
+	const [data, setData] = useState<TopologyRerankConfig | null>(null);
+	const [draft, setDraft] = useState<{
+		enabled: boolean;
+		rerankModelRole: string;
+		minContextPercent: string;
+		minCandidateNodes: string;
+		localConfidenceBelow: string;
+		timeoutMs: string;
+		provider: "model_role" | "http";
+		http: {
+			baseUrl: string;
+			endpointPath: string;
+			protocol: TopologyRerankHttpProtocol;
+			timeoutMs: string;
+			confidenceThreshold: string;
+			minCandidateNodes: string;
+			minContextPercent: string;
+			authHeaderName: string;
+			model: string;
+		};
+	} | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+	const [status, setStatus] = useState<string | undefined>();
+
+	function applyState(next: TopologyRerankConfig): void {
+		setData(next);
+		const provider: "model_role" | "http" = next.provider.value === "http" ? "http" : "model_role";
+		setDraft({
+			enabled: next.enabled,
+			rerankModelRole: String(next.rerankModelRoleRaw ?? ""),
+			provider,
+			minContextPercent: String(next.minContextPercent.rawValue ?? ""),
+			minCandidateNodes: String(next.minCandidateNodes.rawValue ?? ""),
+			localConfidenceBelow: String(next.localConfidenceBelow.rawValue ?? ""),
+			timeoutMs: String(next.timeoutMs.rawValue ?? ""),
+			http: {
+				baseUrl: String(next.http.baseUrl.rawValue ?? ""),
+				protocol: (next.http.protocol.rawValue as TopologyRerankHttpProtocol | undefined) ?? "deck-internal",
+				endpointPath: String(next.http.endpointPath.rawValue ?? ""),
+				timeoutMs: String(next.http.timeoutMs.rawValue ?? ""),
+				confidenceThreshold: String(next.http.confidenceThreshold.rawValue ?? ""),
+				minCandidateNodes: String(next.http.minCandidateNodes.rawValue ?? ""),
+				minContextPercent: String(next.http.minContextPercent.rawValue ?? ""),
+				model: String(next.http.model.rawValue ?? ""),
+				authHeaderName: String(next.http.authHeaderName.rawValue ?? ""),
+			},
+		});
+	}
+
+	async function refresh(): Promise<void> {
+		try {
+			applyState(await orientationApi.getTopologyRerankConfig());
+			setError(undefined);
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	useEffect(() => {
+		void refresh();
+	}, []);
+
+	async function save(): Promise<void> {
+		if (!draft) return;
+		const minContextPercent = parseNonNegativeNumberOrNull(draft.minContextPercent);
+		const minCandidateNodes = parsePositiveIntegerOrNull(draft.minCandidateNodes);
+		const timeoutMs = parsePositiveIntegerOrNull(draft.timeoutMs);
+		const confidence = parseFloatRange(draft.localConfidenceBelow, 0, 1);
+		const httpTimeoutMs = parsePositiveIntegerOrNull(draft.http.timeoutMs);
+		const httpMinCandidateNodes = parsePositiveIntegerOrNull(draft.http.minCandidateNodes);
+		const httpConfidence = parseFloatRange(draft.http.confidenceThreshold, 0, 1);
+		const httpMinContextPercent = parseNonNegativeNumberOrNull(draft.http.minContextPercent);
+		if (Number.isNaN(minCandidateNodes) || Number.isNaN(timeoutMs) || Number.isNaN(httpTimeoutMs) || Number.isNaN(httpMinCandidateNodes)) {
+			setError("Integer knobs must be positive integers or empty.");
+			return;
+		}
+		if (Number.isNaN(minContextPercent) || Number.isNaN(httpMinContextPercent)) {
+			setError("Percent knobs must be a non-negative number or empty.");
+			return;
+		}
+		if (Number.isNaN(confidence) && draft.localConfidenceBelow.trim() !== "") {
+			setError("localConfidenceBelow must be a number 0\u20131 or empty.");
+			return;
+		}
+		if (Number.isNaN(httpConfidence) && draft.http.confidenceThreshold.trim() !== "") {
+			setError("http.confidenceThreshold must be a number 0\u20131 or empty.");
+			return;
+		}
+		setSaving(true);
+		try {
+			const next = await orientationApi.putTopologyRerankConfig({
+				enabled: draft.enabled,
+				rerankModelRole: draft.rerankModelRole.trim() || null,
+				provider: draft.provider,
+				minContextPercent,
+				minCandidateNodes,
+				localConfidenceBelow: Number.isNaN(confidence) ? null : confidence,
+				timeoutMs,
+				http: {
+					baseUrl: draft.http.baseUrl.trim() || null,
+					endpointPath: draft.http.endpointPath.trim() || null,
+					protocol: (draft.http.protocol as TopologyRerankHttpProtocol) || null,
+					timeoutMs: httpTimeoutMs,
+					confidenceThreshold: Number.isNaN(httpConfidence) ? null : httpConfidence,
+					minCandidateNodes: httpMinCandidateNodes,
+					model: draft.http.model.trim() || null,
+					minContextPercent: httpMinContextPercent,
+					authHeaderName: draft.http.authHeaderName.trim() || null,
+				},
+			});
+			applyState(next);
+			setStatus("Saved.");
+			setError(undefined);
+			window.setTimeout(() => setStatus(undefined), 3000);
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="overflow-hidden rounded-md border border-line bg-paper">
+			<div className="border-b border-line bg-paper-2 px-3 py-2">
+				<div className="flex items-center gap-2">
+					<div className="meta">Topology rerank</div>
+					{data?.enabled ? <Badge tone="accent">enabled</Badge> : <Badge tone="muted">disabled</Badge>}
+				</div>
+				<p className="mt-1 text-xs text-ink-3">
+					When local query-aware topology confidence is low, delegates to either an OMP model role
+					or a third-party HTTP rerank service.
+				</p>
+				<div className="mt-1 font-mono text-2xs text-ink-3">
+					model role: {data?.rerankModelRole ?? "..."} ({data?.rerankModelRoleSource ?? ""}) \u00b7 provider {data?.provider.value ?? "..."} ({data?.provider.source ?? ""})
+				</div>
+			</div>
+			<div className="space-y-4 p-4">
+				{error ? (
+					<div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
+						{error}
+					</div>
+				) : null}
+				{status ? (
+					<div className="rounded-md border border-success/30 bg-success/10 px-3 py-2 font-mono text-xs text-success">
+						{status}
+					</div>
+				) : null}
+				{loading || !draft || !data ? (
+					<div className="text-sm text-ink-3">Loading...</div>
+				) : (
+					<>
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={draft.enabled}
+								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+							/>
+							<span>Enabled</span>
+							<span className="ml-2 font-mono text-2xs text-ink-3">
+								OMP_DECK_TOPOLOGY_RERANK_ENABLED = {data.enabledRaw ?? "(unset)"} ({data.enabledSource})
+							</span>
+						</label>
+
+						<div className="space-y-1">
+							<span className="meta">Provider</span>
+							<div className="flex flex-wrap items-center gap-3 text-sm">
+								<label className="flex items-center gap-1">
+									<input
+										type="radio"
+										name="topology-rerank-provider"
+										checked={draft.provider === "model_role"}
+										onChange={() => setDraft({ ...draft, provider: "model_role" })}
+									/>
+									<span>model_role (OMP)</span>
+								</label>
+								<label className="flex items-center gap-1">
+									<input
+										type="radio"
+										name="topology-rerank-provider"
+										checked={draft.provider === "http"}
+										onChange={() => setDraft({ ...draft, provider: "http" })}
+									/>
+									<span>http (third-party service)</span>
+								</label>
+							</div>
+							<div className="font-mono text-2xs text-ink-3">
+								effective {data.provider.value} \u00b7 source {data.provider.source}
+							</div>
+						</div>
+
+						<label className="block space-y-1">
+							<span className="meta">rerankModelRole</span>
+							<input
+								type="text"
+								value={draft.rerankModelRole}
+								onChange={(e) => setDraft({ ...draft, rerankModelRole: e.target.value })}
+								placeholder={data.rerankModelRole}
+								className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+							/>
+							<div className="font-mono text-2xs text-ink-3">
+								effective {data.rerankModelRole} \u00b7 source {data.rerankModelRoleSource} \u00b7 empty restores default
+							</div>
+						</label>
+
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+							<GateKnobInput
+								label="minContextPercent"
+								help="Minimum context % to trigger"
+								knob={data.minContextPercent}
+								value={draft.minContextPercent}
+								onChange={(v) => setDraft({ ...draft, minContextPercent: v })}
+							/>
+							<GateKnobInput
+								label="minCandidateNodes"
+								help="Minimum candidates to trigger"
+								knob={data.minCandidateNodes}
+								value={draft.minCandidateNodes}
+								onChange={(v) => setDraft({ ...draft, minCandidateNodes: v })}
+							/>
+							<GateKnobInput
+								label="timeoutMs"
+								help="Rerank API timeout"
+								knob={data.timeoutMs}
+								value={draft.timeoutMs}
+								onChange={(v) => setDraft({ ...draft, timeoutMs: v })}
+							/>
+							<label className="block space-y-1">
+								<span className="meta">localConfidenceBelow</span>
+								<input
+									type="text"
+									value={draft.localConfidenceBelow}
+									onChange={(e) => setDraft({ ...draft, localConfidenceBelow: e.target.value })}
+									placeholder={String(data.localConfidenceBelow.default)}
+									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+								/>
+								<div className="font-mono text-2xs text-ink-3">
+									effective {data.localConfidenceBelow.value} \u00b7 default {data.localConfidenceBelow.default} \u00b7 source {data.localConfidenceBelow.source}
+								</div>
+							</label>
+						</div>
+
+						{draft.provider === "http" ? (
+							<div className="space-y-3 rounded-md border border-line bg-paper-2 p-3">
+								<div className="meta">HTTP rerank endpoint</div>
+								<p className="text-xs text-ink-3">
+									POST <span className="font-mono">baseUrl + endpointPath</span> with the
+									deck-internal <span className="font-mono">query_rerank</span> request
+									body. The service must respond with a <span className="font-mono">RerankPatch</span> JSON.
+									API key is set in <span className="font-mono">Settings \u2192 Env</span> (masked).
+								</p>
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+									<label className="block space-y-1 sm:col-span-2">
+										<span className="meta">http.baseUrl</span>
+										<input
+											type="text"
+											value={draft.http.baseUrl}
+											onChange={(e) => setDraft({ ...draft, http: { ...draft.http, baseUrl: e.target.value } })}
+											placeholder="https://api.example.com"
+											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
+										/>
+										<div className="font-mono text-2xs text-ink-3">
+											effective {data.http.baseUrl.value || "(unset)"} \u00b7 default {data.http.baseUrl.default} \u00b7 source {data.http.baseUrl.source}
+										</div>
+									</label>
+									<label className="block space-y-1">
+										<span className="meta">http.endpointPath</span>
+										<input
+											type="text"
+											value={draft.http.endpointPath}
+											onChange={(e) => setDraft({ ...draft, http: { ...draft.http, endpointPath: e.target.value } })}
+											placeholder={data.http.endpointPath.default}
+											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
+										/>
+										<div className="font-mono text-2xs text-ink-3">
+											effective {data.http.endpointPath.value} \u00b7 default {data.http.endpointPath.default} \u00b7 source {data.http.endpointPath.source}
+										</div>
+									</label>
+									<label className="block space-y-1">
+										<span className="meta">http.protocol</span>
+										<select
+											value={draft.http.protocol || "deck-internal"}
+											onChange={(e) => setDraft({ ...draft, http: { ...draft.http, protocol: e.target.value as TopologyRerankHttpProtocol } })}
+											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
+										>
+											<option value="deck-internal">deck-internal</option>
+											<option value="siliconflow-rerank">siliconflow-rerank</option>
+										</select>
+										<div className="font-mono text-2xs text-ink-3">
+											effective {data.http.protocol.value} \u00b7 default {data.http.protocol.default} \u00b7 source {data.http.protocol.source}
+										</div>
+									</label>
+									<label className="block space-y-1">
+										<span className="meta">http.authHeaderName</span>
+										<input
+											type="text"
+											value={draft.http.authHeaderName}
+											onChange={(e) => setDraft({ ...draft, http: { ...draft.http, authHeaderName: e.target.value } })}
+											placeholder={data.http.authHeaderName.default}
+											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
+										/>
+										<div className="font-mono text-2xs text-ink-3">
+											effective {data.http.authHeaderName.value} \u00b7 default {data.http.authHeaderName.default} \u00b7 source {data.http.authHeaderName.source}
+										</div>
+									</label>
+									<label className="block space-y-1">
+										<span className="meta">http.model</span>
+										<input
+											type="text"
+											value={draft.http.model}
+											onChange={(e) => setDraft({ ...draft, http: { ...draft.http, model: e.target.value } })}
+											placeholder={data.http.model.default}
+											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
+										/>
+										<div className="font-mono text-2xs text-ink-3">
+											effective {data.http.model.value} · default {data.http.model.default} · source {data.http.model.source}
+										</div>
+									</label>
+									<GateKnobInput
+										label="http.timeoutMs"
+										help="HTTP rerank timeout"
+										knob={data.http.timeoutMs}
+										value={draft.http.timeoutMs}
+										onChange={(v) => setDraft({ ...draft, http: { ...draft.http, timeoutMs: v } })}
+									/>
+									<GateKnobInput
+										label="http.minCandidateNodes"
+										help="HTTP min candidates"
+										knob={data.http.minCandidateNodes}
+										value={draft.http.minCandidateNodes}
+										onChange={(v) => setDraft({ ...draft, http: { ...draft.http, minCandidateNodes: v } })}
+									/>
+									<label className="block space-y-1">
+										<span className="meta">http.confidenceThreshold</span>
+										<input
+											type="text"
+											value={draft.http.confidenceThreshold}
+											onChange={(e) => setDraft({ ...draft, http: { ...draft.http, confidenceThreshold: e.target.value } })}
+											placeholder={String(data.http.confidenceThreshold.default)}
+											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
+										/>
+										<div className="font-mono text-2xs text-ink-3">
+											effective {data.http.confidenceThreshold.value} \u00b7 default {data.http.confidenceThreshold.default} \u00b7 source {data.http.confidenceThreshold.source}
+										</div>
+									</label>
+									<GateKnobInput
+										label="http.minContextPercent"
+										help="HTTP min context %"
+										knob={data.http.minContextPercent}
+										value={draft.http.minContextPercent}
+										onChange={(v) => setDraft({ ...draft, http: { ...draft.http, minContextPercent: v } })}
+									/>
+								</div>
+							</div>
+						) : null}
+
+						<div className="flex flex-wrap items-center gap-2">
+							<Button size="sm" onClick={() => void save()} disabled={saving}>
+								<Save className="h-3.5 w-3.5" />
+								Save
+							</Button>
+							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
+								<RotateCcw className="h-3.5 w-3.5" />
+								Reload
+							</Button>
+						</div>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function TopologyEmbeddingCard() {
+	type Draft = {
+		enabled: boolean;
+		model: string;
+		baseUrl: string;
+		endpointPath: string;
+		timeoutMs: string;
+	};
+	const [draft, setDraft] = useState<Draft | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+	const [status, setStatus] = useState<string | undefined>();
+
+	function readDraft(): Draft {
+		const enabled = process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED === "1" || process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED === "true";
+		return {
+			enabled,
+			model: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_MODEL ?? "BAAI/bge-large-zh-v1.5",
+			baseUrl: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL ?? "",
+			endpointPath: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH ?? "/embeddings",
+			timeoutMs: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS ?? "30000",
+		};
+	}
+
+	async function refresh(): Promise<void> {
+		try {
+			setDraft(readDraft());
+			setError(undefined);
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	useEffect(() => { void refresh(); }, []);
+
+	async function save(): Promise<void> {
+		if (!draft) return;
+		const timeoutMs = parsePositiveIntegerOrNull(draft.timeoutMs);
+		if (Number.isNaN(timeoutMs)) {
+			setError("timeoutMs must be a positive integer or empty.");
+			return;
+		}
+		setSaving(true);
+		try {
+			await settingsApi.patchEnv({
+				OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED: draft.enabled ? "1" : null,
+				OMP_DECK_TOPOLOGY_EMBEDDING_MODEL: draft.model.trim() || null,
+				OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL: draft.baseUrl.trim() || null,
+				OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH: draft.endpointPath.trim() || null,
+				OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS: timeoutMs !== null ? String(timeoutMs) : null,
+			});
+			setStatus("Saved.");
+			setError(undefined);
+			window.setTimeout(() => setStatus(undefined), 3000);
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="overflow-hidden rounded-md border border-line bg-paper">
+			<div className="border-b border-line bg-paper-2 px-3 py-2">
+				<div className="flex items-center gap-2">
+					<div className="meta">Topology embedding</div>
+					{draft?.enabled ? <Badge tone="accent">enabled</Badge> : <Badge tone="muted">disabled</Badge>}
+				</div>
+				<p className="mt-1 text-xs text-ink-3">
+					Enable embedding-based semantic retrieval for topology query focus. Uses SiliconFlow embedding API.
+					API key is set in <span className="font-mono">Settings → Env</span> (masked).
+				</p>
+			</div>
+			<div className="space-y-4 p-4">
+				{error ? (
+					<div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
+						{error}
+					</div>
+				) : null}
+				{status ? (
+					<div className="rounded-md border border-success/30 bg-success/10 px-3 py-2 font-mono text-xs text-success">
+						{status}
+					</div>
+				) : null}
+				{loading || !draft ? (
+					<div className="text-sm text-ink-3">Loading...</div>
+				) : (
+					<>
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={draft.enabled}
+								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+							/>
+							<span>Enabled</span>
+							<span className="ml-2 font-mono text-2xs text-ink-3">
+								OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED
+							</span>
+						</label>
+
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+							<label className="block space-y-1 sm:col-span-2">
+								<span className="meta">model</span>
+								<input
+									type="text"
+									value={draft.model}
+									onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+									placeholder="BAAI/bge-large-zh-v1.5"
+									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+								/>
+								<div className="font-mono text-2xs text-ink-3">
+									OMP_DECK_TOPOLOGY_EMBEDDING_MODEL
+								</div>
+							</label>
+							<label className="block space-y-1 sm:col-span-2">
+								<span className="meta">baseUrl</span>
+								<input
+									type="text"
+									value={draft.baseUrl}
+									onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
+									placeholder="https://api.siliconflow.cn/v1"
+									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+								/>
+								<div className="font-mono text-2xs text-ink-3">
+									OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL
+								</div>
+							</label>
+							<label className="block space-y-1">
+								<span className="meta">endpointPath</span>
+								<input
+									type="text"
+									value={draft.endpointPath}
+									onChange={(e) => setDraft({ ...draft, endpointPath: e.target.value })}
+									placeholder="/embeddings"
+									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+								/>
+								<div className="font-mono text-2xs text-ink-3">
+									OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH
+								</div>
+							</label>
+							<label className="block space-y-1">
+								<span className="meta">timeoutMs</span>
+								<input
+									type="text"
+									value={draft.timeoutMs}
+									onChange={(e) => setDraft({ ...draft, timeoutMs: e.target.value })}
+									placeholder="30000"
+									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
+								/>
+								<div className="font-mono text-2xs text-ink-3">
+									OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS
+								</div>
+							</label>
+						</div>
+
+						<div className="flex flex-wrap items-center gap-2">
+							<Button size="sm" onClick={() => void save()} disabled={saving}>
+								<Save className="h-3.5 w-3.5" />
+								Save
+							</Button>
+							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
+								<RotateCcw className="h-3.5 w-3.5" />
+								Reload
+							</Button>
 						</div>
 					</>
 				)}
