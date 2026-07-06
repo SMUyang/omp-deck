@@ -141,4 +141,38 @@ describe("retrieveTopology", () => {
 		expect(result?.artifacts.length).toBeLessThanOrEqual(3);
 		expect(result?.omitted.nodeCount).toBe(15);
 	});
+
+	test("returns ranked candidate metadata without changing graph-order baseline selection", () => {
+		const unrelatedFirst = node("n_unrelated", "issue", "Subscription error", "GLM-5V-Turbo not in plan", 0.1);
+		const queryMatchSecond = node("n_match", "goal", "batch legend label", "render non-abbreviated legend labels", 0.9);
+		const result = retrieveTopology(
+			{ ...DEFAULT_INPUT, candidateNodeLimit: 2, outputNodeLimit: 2 },
+			graph({ nodes: [unrelatedFirst, queryMatchSecond], totalNodes: 2 }),
+		);
+
+		expect(result?.selectedNodeIds).toEqual(["n_unrelated", "n_match"]);
+		expect(result?.rankedCandidateNodeIds[0]).toBe("n_match");
+		expect(result?.ranking[0]).toEqual(expect.objectContaining({
+			nodeId: "n_match",
+			reasons: expect.objectContaining({ query: expect.any(Number), importance: expect.any(Number), kind: expect.any(Number) }),
+		}));
+		expect(result?.candidateNodeCount).toBe(2);
+	});
+
+	test("returns candidate edge ids for trigger/internal metadata", () => {
+		const a = node("a", "goal", "batch legend", "display labels", 0.9);
+		const b = node("b", "resolution", "labels fixed", "non-abbreviated", 0.8);
+		const outside = node("outside", "issue", "unrelated", "billing", 0.1);
+		const result = retrieveTopology(
+			{ ...DEFAULT_INPUT, candidateNodeLimit: 2, outputNodeLimit: 1, outputEdgeLimit: 1 },
+			graph({
+				nodes: [a, b, outside],
+				edges: [edge("e_ab", "a", "b", "fixed_by"), edge("e_out", "b", "outside", "depends_on")],
+			}),
+		);
+
+		expect(result?.candidateNodeIds).toEqual(expect.arrayContaining(["a", "b"]));
+		expect(result?.candidateEdgeIds).toContain("e_ab");
+		expect(result?.candidateEdgeIds).not.toContain("e_out");
+	});
 });

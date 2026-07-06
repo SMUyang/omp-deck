@@ -32,6 +32,7 @@ import type {
 } from "@omp-deck/protocol";
 
 import { broadcastBus } from "../broadcast-bus.ts";
+import { normalizeDeckApiOrigin } from "../api-base.ts";
 import { notificationService } from "../notifications/index.ts";
 import { finalizeRun, finishStepRun, insertSkippedStepRun, startStepRun } from "../db/routine-step-runs.ts";
 import { logger } from "../log.ts";
@@ -407,12 +408,20 @@ async function dispatchStep(
 	}
 }
 
+
+
 export function buildRoutineEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 	const out = filterEnv(env);
 	if (!out.OMP_DECK_API_BASE) {
 		const host = out.OMP_DECK_HOST?.trim() || "127.0.0.1";
 		const port = out.OMP_DECK_PORT?.trim() || "8787";
-		out.OMP_DECK_API_BASE = `http://${host}:${port}/api`;
+		out.OMP_DECK_API_BASE = `http://${host}:${port}`;
+	} else {
+		try {
+			out.OMP_DECK_API_BASE = normalizeDeckApiOrigin(out.OMP_DECK_API_BASE);
+		} catch {
+			// Keep caller-provided malformed values as-is; routine startup must not crash while copying process env.
+		}
 	}
 	return out;
 }

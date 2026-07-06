@@ -37,14 +37,24 @@ const sampleContext = {
 };
 
 describe("routine env", () => {
-	test("derives OMP_DECK_API_BASE from host and port when unset", () => {
+	test("derives origin-style OMP_DECK_API_BASE from host and port when unset", () => {
 		const env = buildRoutineEnv({ OMP_DECK_HOST: "127.0.0.1", OMP_DECK_PORT: "8902" });
-		expect(env.OMP_DECK_API_BASE).toBe("http://127.0.0.1:8902/api");
+		expect(env.OMP_DECK_API_BASE).toBe("http://127.0.0.1:8902");
 	});
 
 	test("keeps explicit OMP_DECK_API_BASE", () => {
+		const env = buildRoutineEnv({ OMP_DECK_API_BASE: "http://deck.local", OMP_DECK_PORT: "8902" });
+		expect(env.OMP_DECK_API_BASE).toBe("http://deck.local");
+	});
+
+	test("canonicalizes explicit OMP_DECK_API_BASE to origin style", () => {
 		const env = buildRoutineEnv({ OMP_DECK_API_BASE: "http://deck.local/api", OMP_DECK_PORT: "8902" });
-		expect(env.OMP_DECK_API_BASE).toBe("http://deck.local/api");
+		expect(env.OMP_DECK_API_BASE).toBe("http://deck.local");
+	});
+
+	test("keeps malformed explicit OMP_DECK_API_BASE instead of throwing", () => {
+		const env = buildRoutineEnv({ OMP_DECK_API_BASE: "not a url", OMP_DECK_PORT: "8902" });
+		expect(env.OMP_DECK_API_BASE).toBe("not a url");
 	});
 });
 

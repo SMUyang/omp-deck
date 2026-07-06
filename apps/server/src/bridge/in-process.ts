@@ -931,7 +931,7 @@ export class InProcessSessionHandle implements SessionHandle {
 			const percent = typeof before.percent === "number" ? before.percent : null;
 			if (!shouldReplaceContext(percent)) return;
 			if (!hasSessionContextPack(this.sessionId)) return;
-			const focus = getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: before.percent ?? null });
+			const focus = await getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: before.percent ?? null });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, before, focus);
 			log.info(`context replacement triggered for ${this.sessionId} (${before.percent ?? 0}% / ${before.tokens ?? 0} tokens)`);

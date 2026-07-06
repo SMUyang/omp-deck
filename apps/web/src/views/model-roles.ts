@@ -38,7 +38,7 @@ export function stripThinkingSuffix(value: string): { base: string; thinking?: s
 	if (slash < 0) return { base: value };
 	const idPart = value.slice(slash + 1);
 	const colon = idPart.lastIndexOf(":");
-	if (colon <= 0) return { base: value };
+	if (colon <= 0 || colon === idPart.length - 1) return { base: value };
 	return { base: value.slice(0, slash + 1 + colon), thinking: idPart.slice(colon + 1) };
 }
 

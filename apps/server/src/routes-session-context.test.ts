@@ -6,10 +6,12 @@ import * as path from "node:path";
 import { Hono } from "hono";
 
 import type {
+	SessionContextFocusResponse,
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
 	SessionContextRebuildResponse,
 	SessionContextStatusResponse,
+	SessionSummary,
 } from "@omp-deck/protocol";
 
 import type { AgentBridge } from "./bridge/types.ts";
@@ -42,19 +44,23 @@ interface StubHandle {
 	sessionId: string;
 	sessionFile?: string;
 }
-
-function makeBridge(handle: StubHandle | undefined, persistedIds: string[] = []): AgentBridge {
+function makeBridge(handle: StubHandle | undefined, persisted: Array<string | SessionSummary> = []): AgentBridge {
 	return {
 		getSession: () => handle,
-		listSessions: async () => persistedIds.map((id) => ({
-			id,
-			path: `/tmp/${id}.jsonl`,
-			cwd: "/repo",
-			title: id,
-			createdAt: "2026-07-02T00:00:00.000Z",
-			updatedAt: "2026-07-02T00:00:00.000Z",
-			messageCount: 1,
-		})),
+		listSessions: async () => persisted.map((entry) => {
+			if (typeof entry === "string") {
+				return {
+					id: entry,
+					path: `/tmp/${entry}.jsonl`,
+					cwd: "/repo",
+					title: entry,
+					createdAt: "2026-07-02T00:00:00.000Z",
+					updatedAt: "2026-07-02T00:00:00.000Z",
+					messageCount: 1,
+				};
+			}
+			return entry;
+		}),
 	} as unknown as AgentBridge;
 }
 
@@ -64,6 +70,23 @@ function setupSession(): { app: Hono; sessionFile: string } {
 	const sessionFile = path.join(dir, "s1.jsonl");
 	fs.writeFileSync(sessionFile, jsonl);
 	const app = buildSessionContextRouter(makeBridge({ sessionId: "s1", sessionFile }));
+	return { app, sessionFile };
+}
+
+function setupPersistedSession(): { app: Hono; sessionFile: string } {
+	const dir = tempDir();
+	openDb({ path: path.join(dir, "deck.db") });
+	const sessionFile = path.join(dir, "persisted-s1.jsonl");
+	fs.writeFileSync(sessionFile, jsonl);
+	const app = buildSessionContextRouter(makeBridge(undefined, [{
+		id: "persisted-s1",
+		path: sessionFile,
+		cwd: "/repo",
+		title: "persisted-s1",
+		createdAt: "2026-07-02T00:00:00.000Z",
+		updatedAt: "2026-07-02T00:00:00.000Z",
+		messageCount: 1,
+	}]));
 	return { app, sessionFile };
 }
 
@@ -89,6 +112,16 @@ describe("session context routes", () => {
 			expect(body.nodeCount).toBeGreaterThan(0);
 			expect(body.sourcePath).toBe(sessionFile);
 			expect(body.sessionId).toBe("s1");
+		});
+
+		test("returns 200 for persisted session with a real JSONL file", async () => {
+			const { app, sessionFile } = setupPersistedSession();
+			const res = await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextRebuildResponse;
+			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.sourcePath).toBe(sessionFile);
+			expect(body.nodeCount).toBeGreaterThan(0);
 		});
 	});
 
@@ -179,6 +212,19 @@ describe("session context routes", () => {
 			expect(Array.isArray(body.goals)).toBe(true);
 			expect(body.budget).toBe(4000);
 		});
+
+		test("returns pack for persisted session after rebuild", async () => {
+			const { app } = setupPersistedSession();
+			await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			const res = await app.request("/sessions/persisted-s1/context-pack?q=context&budget=4000");
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextPackResponse;
+			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.query).toBe("context");
+			expect(body.budget).toBe(4000);
+			expect(Array.isArray(body.goals)).toBe(true);
+			expect(typeof body.summary).toBe("string");
+		});
 	});
 
 	describe("GET /sessions/:id/context-graph", () => {
@@ -197,6 +243,80 @@ describe("session context routes", () => {
 			expect(body.nodes.length).toBeLessThanOrEqual(2);
 			expect(body.totalNodes).toBe(3);
 			expect(body.truncated).toBe(true);
+		});
+
+		test("returns graph for persisted session after rebuild with limit", async () => {
+			const { app } = setupPersistedSession();
+			await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			const res = await app.request("/sessions/persisted-s1/context-graph?limit=2");
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextGraphResponse;
+			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.nodes.length).toBeLessThanOrEqual(2);
+			expect(body.totalNodes).toBe(3);
+			expect(body.truncated).toBe(true);
+		});
+	});
+
+	describe("GET /sessions/:id/context-focus", () => {
+		test("returns rendered clean topology focus for active session after rebuild", async () => {
+			const { app } = setupSession();
+			await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+
+			const res = await app.request("/sessions/s1/context-focus?q=context&contextPercent=7");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextFocusResponse;
+			expect(body.sessionId).toBe("s1");
+			expect(body.query).toBe("context");
+			expect(body.focus).toContain("<session_topology_subgraph>");
+			expect(body.focus).toContain('"query":"context"');
+			expect(body.nodeCount).toBeGreaterThan(0);
+			expect(body.edgeCount).toBeGreaterThanOrEqual(0);
+			expect(body.emptyReason).toBeUndefined();
+			expect(body.focus).not.toContain('"importance"');
+			expect(body.focus).not.toContain('"weight"');
+			expect(body.focus).not.toContain('"confidence"');
+			expect(body.focus).not.toContain('"relevance"');
+		});
+
+		test("returns rendered focus for persisted session after rebuild", async () => {
+			const { app } = setupPersistedSession();
+			await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+
+			const res = await app.request("/sessions/persisted-s1/context-focus?q=memory");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextFocusResponse;
+			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.query).toBe("memory");
+			expect(body.focus).toContain("<session_topology_subgraph>");
+		});
+
+		test("returns empty focus for existing unbuilt session", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const app = buildSessionContextRouter(makeBridge(undefined, ["persisted-s1"]));
+
+			const res = await app.request("/sessions/persisted-s1/context-focus?q=context");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextFocusResponse;
+			expect(body).toEqual({
+				sessionId: "persisted-s1",
+				query: "context",
+				focus: "",
+				nodeCount: 0,
+				edgeCount: 0,
+				truncated: false,
+				emptyReason: "session_not_built",
+			});
+		});
+
+		test("returns 404 when session is missing", async () => {
+			const app = buildSessionContextRouter(makeBridge(undefined));
+			const res = await app.request("/sessions/missing/context-focus?q=context");
+			expect(res.status).toBe(404);
 		});
 	});
 });

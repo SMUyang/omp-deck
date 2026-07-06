@@ -8,6 +8,7 @@ import {
 	isDynamicRole,
 	parseModelRef,
 	roleEntriesFromResponse,
+	stripThinkingSuffix,
 } from "./model-roles";
 
 // ── Inline API shapes matching the server routes-model-roles contract ────────
@@ -58,6 +59,35 @@ describe("parseModelRef", () => {
 		for (const ref of refs) {
 			expect(parseModelRef(formatModelRef(ref))).toEqual(ref);
 		}
+	});
+});
+
+describe("stripThinkingSuffix", () => {
+	test("splits a thinking suffix from an OMP model role value", () => {
+		expect(stripThinkingSuffix("zai/glm-5.2:xhigh")).toEqual({ base: "zai/glm-5.2", thinking: "xhigh" });
+	});
+
+	test("keeps slashes inside model ids while stripping the final thinking suffix", () => {
+		expect(stripThinkingSuffix("openai/o1/preview:high")).toEqual({ base: "openai/o1/preview", thinking: "high" });
+	});
+
+	test("leaves values without a thinking suffix unchanged", () => {
+		expect(stripThinkingSuffix("zai/glm-5.2")).toEqual({ base: "zai/glm-5.2" });
+	});
+
+	test("does not manufacture an empty thinking suffix", () => {
+		expect(stripThinkingSuffix("zai/glm-5.2:")).toEqual({ base: "zai/glm-5.2:" });
+	});
+
+	test("leaves malformed values without a provider slash unchanged", () => {
+		expect(stripThinkingSuffix("not-a-model:high")).toEqual({ base: "not-a-model:high" });
+	});
+
+	test("splits on the last colon in the model id portion", () => {
+		expect(stripThinkingSuffix("zai/glm-5.2:thinking:xhigh")).toEqual({
+			base: "zai/glm-5.2:thinking",
+			thinking: "xhigh",
+		});
 	});
 });
 
@@ -134,6 +164,19 @@ describe("roleEntriesFromResponse", () => {
 
 	test("returns empty array for an empty roles map", () => {
 		expect(roleEntriesFromResponse({ roles: {}, models: [] })).toEqual([]);
+	});
+
+	test("sorts entries by role name for stable rendering", () => {
+		const entries = roleEntriesFromResponse({
+			roles: {
+				slow: "openai/gpt-4o",
+				advisor: "anthropic/claude-3-5-sonnet",
+				default: "zai/glm-5.2",
+			},
+			models: [],
+		} satisfies ModelRolesResponse);
+
+		expect(entries.map((entry) => entry.name)).toEqual(["advisor", "default", "slow"]);
 	});
 });
 
