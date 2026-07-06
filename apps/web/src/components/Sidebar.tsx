@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
 import { SessionContextStatusChip } from "./session/SessionContextStatusChip";
+import { TopologyMemoryPanel } from "./session/TopologyMemoryPanel";
 import { DirectoryPickerDialog } from "@/components/ui/DirectoryPickerDialog";
 
 export function Sidebar() {
@@ -231,6 +232,13 @@ export function Sidebar() {
 						{t("sidebar.noSessions")}
 					</div>
 				) : null}
+
+				<details className="mx-2 mt-2">
+					<summary className="cursor-pointer select-none text-2xs font-semibold uppercase tracking-wider text-ink-3">
+						{t("sidebar.topology", "Topology Memory")}
+					</summary>
+					<TopologyMemoryPanel />
+				</details>
 			</div>
 			</div>
 		</>
