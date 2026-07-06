@@ -264,3 +264,36 @@ export function getSessionContextGraph(sessionId: string, limit: number): Sessio
 		truncated: totalNodes > nodes.length,
 	};
 }
+
+
+export function getNodeEmbeddings(sessionId: string): Map<string, number[]> {
+	const rows = getDb().query<{ node_id: string; embedding: Uint8Array }, [string]>(
+		`SELECT node_id, embedding FROM session_context_node_embeddings WHERE session_id = ?`,
+	).all(sessionId);
+	const result = new Map<string, number[]>();
+	for (const row of rows) {
+		const floats = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+		result.set(row.node_id, Array.from(floats));
+	}
+	return result;
+}
+
+export function saveNodeEmbeddings(input: { sessionId: string; model: string; entries: Array<{ nodeId: string; embedding: number[] }> }): void {
+	const db = getDb();
+	const tx = db.transaction(() => {
+		const upsert = db.prepare(`
+			INSERT INTO session_context_node_embeddings (session_id, node_id, embedding, model, created_at)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(session_id, node_id) DO UPDATE SET
+				embedding = excluded.embedding,
+				model = excluded.model,
+				created_at = excluded.created_at
+		`);
+		const now = new Date().toISOString();
+		for (const entry of input.entries) {
+			const bytes = new Float32Array(entry.embedding);
+			upsert.run(input.sessionId, entry.nodeId, Buffer.from(bytes.buffer), input.model, now);
+		}
+	});
+	tx();
+}

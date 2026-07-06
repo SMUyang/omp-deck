@@ -15,7 +15,22 @@ import {
 	upsertSessionContextCheckpoint,
 } from "./db/session-context.ts";
 
-import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
+import { getTopologyRerankConfig } from "./config-topology-rerank.ts";
+import { retrieveTopology, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
+import {
+	rerankTopologyWithExternalApi,
+	shouldExternalRerank,
+	buildTopologyRerankRequest,
+	applyRerankPatch,
+	validateRerankPatch,
+	type RerankPatch,
+	type TopologyRerankModelClient,
+} from "./topology-reranker.ts";
+import { rerankTopologyWithHttp } from "./topology-rerank-http-client.ts";
+import { rerankTopologyWithSiliconflow } from "./topology-rerank-siliconflow-adapter.ts";
+import { readManagedEnvFile } from "./env-store.ts";
+import { embedTexts, cosineSimilarity, type EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
+import { getNodeEmbeddings, saveNodeEmbeddings } from "./db/session-context.ts";
 
 export interface ExtractInput {
 	sessionId: string;
@@ -445,35 +460,319 @@ export function getStoredSessionTopologyFocus(input: SessionTopologyFocusInput):
 	const graph = getSessionContextGraph(input.sessionId, input.nodeLimit ?? 200);
 	return renderTopologyGraphAsCompactFocus(graph, input.query, input);
 }
+const DISABLED_RERANK_CLIENT: TopologyRerankModelClient = {
+	async rerankTopology() {
+		return undefined;
+	},
+};
+
 export interface GetStoredQueryTopologyFocusInput {
 	sessionId: string;
 	query: string;
 	contextPercent?: number | null;
+	rerankClient?: TopologyRerankModelClient;
+	fullGraph?: boolean;
 }
 
-export function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): string {
-	const graph = getSessionContextGraph(input.sessionId, 200);
-	if (graph.nodes.length === 0) return "";
-	const retrieved = retrieveTopology(
-		{
-			sessionId: input.sessionId,
-			query: input.query,
-			candidateNodeLimit: 50,
-			expansionHops: 1,
-			outputNodeLimit: 10,
-			outputEdgeLimit: 18,
-			outputArtifactLimit: 12,
+const FULL_GRAPH_LIMITS = {
+	candidateNodeLimit: 500,
+	outputNodeLimit: 100,
+	outputEdgeLimit: 150,
+	outputArtifactLimit: 80,
+	expansionHops: 2 as 1 | 2,
+} as const;
+
+const DEFAULT_LIMITS = {
+	candidateNodeLimit: 50,
+	outputNodeLimit: 10,
+	outputEdgeLimit: 18,
+	outputArtifactLimit: 12,
+	expansionHops: 1 as 1 | 2,
+} as const;
+
+/**
+ * Read the masked HTTP rerank API key from the settings/env store.
+ * Returns empty string when the key is not set; the client then omits
+ * the auth header.
+ */
+function getHttpRerankApiKey(): string {
+	const file = readManagedEnvFile();
+	const value = file.values.get("OMP_DECK_TOPOLOGY_RERANK_HTTP_API_KEY");
+	return value ?? process.env.OMP_DECK_TOPOLOGY_RERANK_HTTP_API_KEY ?? "";
+}
+
+async function applyHttpRerankIfEnabled(input: {
+	query: string;
+	graph: SessionContextGraphResponse;
+	local: RetrievedTopology;
+	outputNodeLimit: number;
+	outputEdgeLimit: number;
+	minContextPercent: number;
+	minCandidateNodes: number;
+	localConfidenceBelow: number;
+	contextPercent: number | null | undefined;
+	httpConfig: ReturnType<typeof getTopologyRerankConfig>["http"] & { enabled: boolean };
+}): Promise<RetrievedTopology | undefined> {
+	if (!input.httpConfig) return undefined;
+	if (!input.httpConfig.enabled) return undefined;
+	if (!shouldExternalRerank({
+		enabled: true,
+		contextPercent: input.contextPercent,
+		candidateNodeCount: input.local.candidateNodeCount,
+		localTopScore: input.local.ranking[0]?.score ?? 0,
+		minContextPercent: input.httpConfig.minContextPercent,
+		minCandidateNodes: input.httpConfig.minCandidateNodes,
+		localConfidenceBelow: input.httpConfig.confidenceThreshold,
+	})) return undefined;
+	const request = buildTopologyRerankRequest({
+		query: input.query,
+		graph: input.graph,
+		local: input.local,
+		nodeLimit: input.outputNodeLimit,
+		edgeLimit: input.outputEdgeLimit,
+	});
+	
+	let patch: RerankPatch | undefined;
+	if (input.httpConfig.protocol === "siliconflow-rerank") {
+		patch = await rerankTopologyWithSiliconflow({
+			baseUrl: input.httpConfig.baseUrl,
+			endpointPath: input.httpConfig.endpointPath,
+			apiKey: getHttpRerankApiKey(),
+			authHeaderName: input.httpConfig.authHeaderName,
+			timeoutMs: input.httpConfig.timeoutMs,
+			model: input.httpConfig.model,
+			relevanceThreshold: input.httpConfig.confidenceThreshold,
+			request,
+		});
+	} else {
+		patch = await rerankTopologyWithHttp({
+			baseUrl: input.httpConfig.baseUrl,
+			endpointPath: input.httpConfig.endpointPath,
+			apiKey: getHttpRerankApiKey(),
+			authHeaderName: input.httpConfig.authHeaderName,
+			timeoutMs: input.httpConfig.timeoutMs,
+			request,
+		});
+	}
+	console.log(`[topology-rerank] dispatching protocol=${input.httpConfig.protocol} baseUrl=${input.httpConfig.baseUrl}${input.httpConfig.endpointPath}`);
+	console.log(`[topology-rerank] patch=${patch ? "OK" : "undefined"} after ${input.httpConfig.protocol}`);
+	if (!patch) { console.log(`[topology-rerank] no patch → fallback to local baseline (protocol=${input.httpConfig.protocol})`); return undefined; }
+	const valid = validateRerankPatch({
+		patch,
+		graph: input.graph,
+		local: input.local,
+		outputNodeLimit: input.outputNodeLimit,
+		outputEdgeLimit: input.outputEdgeLimit,
+	});
+	if (!valid) { console.log(`[topology-rerank] apply=rejected after validateRerankPatch`); return undefined; }
+
+	console.log(`[topology-rerank] apply=ok after validateRerankPatch`);
+	return applyRerankPatch({
+
+		local: input.local,
+		graph: input.graph,
+		patch: valid,
+		outputNodeLimit: input.outputNodeLimit,
+		outputEdgeLimit: input.outputEdgeLimit,
+	});
+}
+
+const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5";
+const DEFAULT_EMBEDDING_ENDPOINT = "/embeddings";
+const DEFAULT_EMBEDDING_TIMEOUT_MS = 30_000;
+
+function getEmbeddingConfig(): EmbeddingConfig | undefined {
+	const file = readManagedEnvFile();
+	const enabled = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED;
+	if (!enabled || !["1", "true", "yes"].includes((enabled ?? "").trim().toLowerCase())) return undefined;
+	const baseUrl = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL")
+		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL
+		?? "";
+	if (!baseUrl) return undefined;
+	const apiKey = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY")
+		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY
+		?? getHttpRerankApiKey();
+	const model = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_MODEL")
+		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_MODEL
+		?? DEFAULT_EMBEDDING_MODEL;
+	const endpointPath = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH")
+		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH
+		?? DEFAULT_EMBEDDING_ENDPOINT;
+	const timeoutMsStr = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS")
+		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS;
+	const timeoutMs = timeoutMsStr ? Math.max(1, Number(timeoutMsStr) || DEFAULT_EMBEDDING_TIMEOUT_MS) : DEFAULT_EMBEDDING_TIMEOUT_MS;
+	return { baseUrl, endpointPath, apiKey, model, timeoutMs };
+}
+
+function expandNeighborsLocal(seeds: Set<string>, graph: SessionContextGraphResponse, hops: 1 | 2): Set<string> {
+	const result = new Set(seeds);
+	let frontier = new Set(seeds);
+	for (let i = 0; i < hops; i++) {
+		const next = new Set<string>();
+		for (const nodeId of frontier) {
+			for (const edge of graph.edges) {
+				if (edge.sourceNodeId === nodeId && !result.has(edge.targetNodeId)) next.add(edge.targetNodeId);
+				if (edge.targetNodeId === nodeId && !result.has(edge.sourceNodeId)) next.add(edge.sourceNodeId);
+			}
+		}
+		for (const id of next) result.add(id);
+		frontier = next;
+	}
+	return result;
+}
+
+async function getOrEmbedNodeEmbeddings(
+	sessionId: string,
+	nodes: SessionContextNode[],
+	config: EmbeddingConfig,
+): Promise<number[][] | undefined> {
+	const stored = getNodeEmbeddings(sessionId);
+	const missing = nodes.filter((n) => !stored.has(n.id));
+	if (missing.length > 0) {
+		const texts = missing.map((n) => `${n.kind}: ${n.title} — ${n.compressedBody || n.body}`.slice(0, 512));
+		const embeddings = await embedTexts(config, texts);
+		if (!embeddings) return undefined;
+		if (embeddings.length !== missing.length) return undefined;
+		const safeEntries: Array<{ nodeId: string; embedding: number[] }> = [];
+		for (let i = 0; i < missing.length; i++) {
+			const node = missing[i];
+			const vec = embeddings[i];
+			if (!vec || !node) return undefined;
+			safeEntries.push({ nodeId: node.id, embedding: vec });
+			stored.set(node.id, vec);
+		}
+		saveNodeEmbeddings({ sessionId, model: config.model, entries: safeEntries });
+	}
+	const result = nodes.map((n) => stored.get(n.id));
+	if (result.some((v) => v === undefined)) return undefined;
+	return result as number[][];
+}
+
+export async function retrieveTopologyWithEmbeddings(
+	input: RetrieveTopologyInput,
+	graph: SessionContextGraphResponse,
+	embeddingConfig: EmbeddingConfig,
+): Promise<RetrievedTopology | undefined> {
+	if (graph.nodes.length === 0) return undefined;
+	const nodeEmbeddings = await getOrEmbedNodeEmbeddings(graph.sessionId, graph.nodes, embeddingConfig);
+	if (!nodeEmbeddings) return retrieveTopology(input, graph);
+	const queryEmbeddings = await embedTexts(embeddingConfig, [input.query]);
+	if (!queryEmbeddings) return retrieveTopology(input, graph);
+	if (!queryEmbeddings[0]) return retrieveTopology(input, graph);
+	const queryVec = queryEmbeddings[0]!;
+	const ranked = graph.nodes
+		.map((node, i) => ({ node, score: cosineSimilarity(queryVec, nodeEmbeddings[i]!) }))
+		.sort((a, b) => b.score - a.score);
+	const candidates = ranked.slice(0, input.candidateNodeLimit);
+	const rankedCandidateNodeIds = candidates.map((item) => item.node.id);
+	const candidateIds = new Set(rankedCandidateNodeIds);
+	const expanded = expandNeighborsLocal(candidateIds, graph, input.expansionHops);
+	const orderedExpanded = graph.nodes.filter((node) => expanded.has(node.id));
+	const selectedNodes = orderedExpanded.slice(0, input.outputNodeLimit);
+	const selectedNodeIds = selectedNodes.map((node) => node.id);
+	const selectedSet = new Set(selectedNodeIds);
+	const edges = graph.edges
+		.filter((edge) => selectedSet.has(edge.sourceNodeId) && selectedSet.has(edge.targetNodeId))
+		.slice(0, input.outputEdgeLimit);
+	const selectedEdgeIds = edges.map((edge) => edge.id);
+	const artifacts = graph.artifacts
+		.filter((artifact) => !artifact.nodeId || selectedSet.has(artifact.nodeId))
+		.slice(0, input.outputArtifactLimit)
+		.map((artifact) => ({
+			kind: artifact.kind,
+			ref: artifact.ref,
+			nodeId: artifact.nodeId,
+			label: artifact.label,
+		}));
+	return {
+		selectedNodeIds,
+		selectedEdgeIds,
+		candidateNodeIds: rankedCandidateNodeIds,
+		candidateEdgeIds: graph.edges
+			.filter((edge) => candidateIds.has(edge.sourceNodeId) && candidateIds.has(edge.targetNodeId))
+			.map((edge) => edge.id),
+		rankedCandidateNodeIds,
+		candidateNodeCount: candidates.length,
+		ranking: candidates.map((item) => ({
+			nodeId: item.node.id,
+			score: item.score,
+			reasons: { query: item.score, importance: 0, kind: 0 },
+		})),
+		artifacts,
+		omitted: {
+			nodeCount: Math.max(0, (graph.totalNodes || graph.nodes.length) - selectedNodeIds.length),
+			edgeCount: Math.max(0, graph.edges.length - selectedEdgeIds.length),
+			reason: graph.truncated || graph.nodes.length > input.outputNodeLimit ? "budget" : "none",
 		},
-		graph,
-	);
-	if (!retrieved) return "";
-	return renderRetrievedTopologyAsFocus(input.sessionId, input.query, retrieved);
+	};
 }
 
-function renderRetrievedTopologyAsFocus(sessionId: string, query: string, retrieved: RetrievedTopology): string {
-	const fullGraph = getSessionContextGraph(sessionId, 200);
-	const nodeById = new Map(fullGraph.nodes.map((node) => [node.id, node]));
-	const edgeById = new Map(fullGraph.edges.map((edge) => [edge.id, edge]));
+export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): Promise<string> {
+	const graph = getSessionContextGraph(input.sessionId, input.fullGraph ? 500 : 200);
+	if (graph.nodes.length === 0) return "";
+	const limits = input.fullGraph ? FULL_GRAPH_LIMITS : DEFAULT_LIMITS;
+	const embeddingConfig = getEmbeddingConfig();
+	const input_ = {
+		sessionId: input.sessionId,
+		query: input.query,
+		candidateNodeLimit: limits.candidateNodeLimit,
+		expansionHops: limits.expansionHops,
+		outputNodeLimit: limits.outputNodeLimit,
+		outputEdgeLimit: limits.outputEdgeLimit,
+		outputArtifactLimit: limits.outputArtifactLimit,
+	};
+	const retrieved = embeddingConfig
+		? await retrieveTopologyWithEmbeddings(input_, graph, embeddingConfig)
+		: retrieveTopology(input_, graph);
+	if (!retrieved) return "";
+
+	let selected = retrieved;
+	const config = getTopologyRerankConfig();
+	const localTopScore = retrieved.ranking[0]?.score ?? 0;
+	if (config.enabled && shouldExternalRerank({
+		enabled: true,
+		contextPercent: input.contextPercent,
+		candidateNodeCount: retrieved.candidateNodeCount,
+		localTopScore,
+		minContextPercent: config.minContextPercent,
+		minCandidateNodes: config.minCandidateNodes,
+		localConfidenceBelow: config.localConfidenceBelow,
+	})) {
+		if (config.provider === "http") {
+			const httpReranked = await applyHttpRerankIfEnabled({
+				query: input.query,
+				graph,
+				local: retrieved,
+				outputNodeLimit: limits.outputNodeLimit,
+				outputEdgeLimit: limits.outputEdgeLimit,
+				minContextPercent: config.minContextPercent,
+				minCandidateNodes: config.minCandidateNodes,
+				localConfidenceBelow: config.localConfidenceBelow,
+				contextPercent: input.contextPercent,
+				httpConfig: { ...config.http, enabled: true },
+			});
+			if (httpReranked) selected = httpReranked;
+		} else {
+			const reranked = await rerankTopologyWithExternalApi({
+				client: input.rerankClient ?? DISABLED_RERANK_CLIENT,
+				modelRole: config.rerankModelRole,
+				timeoutMs: config.timeoutMs,
+				query: input.query,
+				graph,
+				local: retrieved,
+				outputNodeLimit: limits.outputNodeLimit,
+				outputEdgeLimit: limits.outputEdgeLimit,
+			});
+			if (reranked) selected = reranked;
+		}
+	}
+
+	return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, selected);
+}
+
+function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sessionId: string, query: string, retrieved: RetrievedTopology): string {
+	const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+	const edgeById = new Map(graph.edges.map((edge) => [edge.id, edge]));
 	const nodes = retrieved.selectedNodeIds
 		.map((id) => nodeById.get(id))
 		.filter((n): n is NonNullable<typeof n> => Boolean(n))

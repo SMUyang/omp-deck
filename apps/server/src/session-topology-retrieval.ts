@@ -20,9 +20,24 @@ export interface RetrievedArtifact {
 	label: string;
 }
 
+export interface RetrievedNodeRanking {
+	nodeId: string;
+	score: number;
+	reasons: {
+		query: number;
+		importance: number;
+		kind: number;
+	};
+}
+
 export interface RetrievedTopology {
 	selectedNodeIds: string[];
 	selectedEdgeIds: string[];
+	candidateNodeIds: string[];
+	candidateEdgeIds: string[];
+	rankedCandidateNodeIds: string[];
+	candidateNodeCount: number;
+	ranking: RetrievedNodeRanking[];
 	artifacts: RetrievedArtifact[];
 	omitted: { nodeCount: number; edgeCount: number; reason: string };
 }
@@ -69,11 +84,16 @@ function clamp01(value: number | null | undefined): number {
 	return Math.min(1, Math.max(0, value));
 }
 
-function scoreNode(node: SessionContextNode, queryTokens: string[]): number {
-	const queryScore = textMatchScore(queryTokens, node);
-	const importance = clamp01(node.importance);
-	const kind = KIND_WEIGHTS[node.kind] ?? 0.5;
-	return 0.45 * queryScore + 0.30 * importance + 0.25 * kind;
+function scoreNodeParts(node: SessionContextNode, queryTokens: string[]): RetrievedNodeRanking["reasons"] {
+	return {
+		query: textMatchScore(queryTokens, node),
+		importance: clamp01(node.importance),
+		kind: KIND_WEIGHTS[node.kind] ?? 0.5,
+	};
+}
+
+function finalScore(parts: RetrievedNodeRanking["reasons"]): number {
+	return 0.45 * parts.query + 0.30 * parts.importance + 0.25 * parts.kind;
 }
 
 function expandNeighbors(
@@ -104,14 +124,23 @@ export function retrieveTopology(
 	if (graph.nodes.length === 0) return undefined;
 
 	const queryTokens = tokenize(input.query);
-	const sorted = [...graph.nodes].sort((a, b) => scoreNode(b, queryTokens) - scoreNode(a, queryTokens));
-	const candidates = sorted.slice(0, input.candidateNodeLimit);
-	const candidateIds = new Set(candidates.map((node) => node.id));
+	const ranked = graph.nodes
+		.map((node) => {
+			const reasons = scoreNodeParts(node, queryTokens);
+			return { node, score: finalScore(reasons), reasons };
+		})
+		.sort((a, b) => b.score - a.score);
+	const candidates = ranked.slice(0, input.candidateNodeLimit);
+	const rankedCandidateNodeIds = candidates.map((item) => item.node.id);
+	const candidateIds = new Set(rankedCandidateNodeIds);
 	const expanded = expandNeighbors(candidateIds, graph, input.expansionHops);
 	const orderedExpanded = graph.nodes.filter((node) => expanded.has(node.id));
 	const selectedNodes = orderedExpanded.slice(0, input.outputNodeLimit);
 	const selectedNodeIds = selectedNodes.map((node) => node.id);
 	const selectedSet = new Set(selectedNodeIds);
+	const candidateEdgeIds = graph.edges
+		.filter((edge) => candidateIds.has(edge.sourceNodeId) && candidateIds.has(edge.targetNodeId))
+		.map((edge) => edge.id);
 
 	const edges = graph.edges
 		.filter((edge) => selectedSet.has(edge.sourceNodeId) && selectedSet.has(edge.targetNodeId))
@@ -131,6 +160,11 @@ export function retrieveTopology(
 	return {
 		selectedNodeIds,
 		selectedEdgeIds,
+		candidateNodeIds: rankedCandidateNodeIds,
+		candidateEdgeIds,
+		rankedCandidateNodeIds,
+		candidateNodeCount: candidates.length,
+		ranking: candidates.map((item) => ({ nodeId: item.node.id, score: item.score, reasons: item.reasons })),
 		artifacts,
 		omitted: {
 			nodeCount: Math.max(0, (graph.totalNodes || graph.nodes.length) - selectedNodeIds.length),

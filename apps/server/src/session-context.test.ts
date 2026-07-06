@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test, mock } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
 import { closeDb, openDb } from "./db/index.ts";
-import { getSessionContextGraph } from "./db/session-context.ts";
-import { extractSessionContextFromJsonl, rebuildSessionContextFromFile, renderSessionContextPack } from "./session-context.ts";
+import { getSessionContextGraph, getNodeEmbeddings, saveNodeEmbeddings } from "./db/session-context.ts";
+import { extractSessionContextFromJsonl, rebuildSessionContextFromFile, renderSessionContextPack, retrieveTopologyWithEmbeddings } from "./session-context.ts";
+import type { EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
 
 const jsonl = [
 	JSON.stringify({ type: "title", v: 1, title: "Context topology" }),
@@ -204,7 +205,7 @@ test("rebuilds context store from a session file", async () => {
 	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
 });
 
-import { renderPackAsCompactFocus, renderTopologyGraphAsCompactFocus, shouldReplaceContext } from "./session-context.ts";
+import { getStoredQueryTopologyFocus, renderPackAsCompactFocus, renderTopologyGraphAsCompactFocus, shouldReplaceContext } from "./session-context.ts";
 import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
 
 describe("context replacement", () => {
@@ -291,4 +292,121 @@ describe("context replacement", () => {
 		expect(payload.nodes).toEqual([{ id: "n1", kind: "goal", title: "Goal", body: "Build graph memory", source: { messageId: "m1", turnIndex: 1 } }, { id: "n2", kind: "evidence", title: "Evidence", body: "Tests passed", source: { messageId: "m2", turnIndex: 2 } }]);
 		expect(payload.edges).toEqual([{ sourceNodeId: "n1", relation: "verified_by", targetNodeId: "n2" }]);
 	});
-});
+
+	test("getStoredQueryTopologyFocus applies an injected rerank patch and keeps focus clean", async () => {
+		const dir = tempDir();
+		openDb({ path: path.join(dir, "deck.db") });
+		const sessionFile = path.join(dir, "s_rerank.jsonl");
+		fs.writeFileSync(sessionFile, [
+			JSON.stringify({ type: "session", version: 3, id: "s_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank plan" }] } }),
+			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "please keep this deliberately unrelated external API patch validation node" }] } }),
+		].join("\n"));
+		await rebuildSessionContextFromFile({ sessionId: "s_rerank", sessionFile });
+		const graph = getSessionContextGraph("s_rerank", 200);
+		const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_rerank", query: "unmatched-rerank-trigger", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
+		const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(localJson).toBeDefined();
+		const localPayload = JSON.parse(localJson!);
+		const keep = graph.nodes.find((node) => node.id !== localPayload.nodes[0].id);
+		expect(keep).toBeDefined();
+
+		const focus = await getStoredQueryTopologyFocus({
+			sessionId: "s_rerank",
+			query: "unmatched-rerank-trigger",
+			contextPercent: 99,
+			rerankClient: { rerankTopology: async () => ({ keepNodeIds: [keep!.id], keepEdgeIds: [], demoteNodeIds: [] }) },
+		});
+
+		const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(json).toBeDefined();
+		const payload = JSON.parse(json!);
+		expect(payload.nodes[0].id).toBe(keep!.id);
+		expect(JSON.stringify(payload)).not.toContain("score");
+		expect(JSON.stringify(payload)).not.toContain("reasons");
+		expect(JSON.stringify(payload)).not.toContain("importance");
+	});
+
+	test("getStoredQueryTopologyFocus falls back to local focus when injected rerank patch is invalid", async () => {
+		const dir = tempDir();
+		openDb({ path: path.join(dir, "deck.db") });
+		const sessionFile = path.join(dir, "s_invalid_rerank.jsonl");
+		fs.writeFileSync(sessionFile, [
+			JSON.stringify({ type: "session", version: 3, id: "s_invalid_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank fallback local baseline" }] } }),
+		].join("\n"));
+		await rebuildSessionContextFromFile({ sessionId: "s_invalid_rerank", sessionFile });
+
+		const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
+		const fallbackFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => ({ keepNodeIds: ["missing"], keepEdgeIds: [], demoteNodeIds: [] }) } });
+
+		expect(fallbackFocus).toBe(localFocus);
+	});
+	test("getStoredQueryTopologyFocus uses embedding retrieval when enabled", async () => {
+		const dir = tempDir();
+		openDb({ path: path.join(dir, "deck.db") });
+		const sessionFile = path.join(dir, "s_embed.jsonl");
+		fs.writeFileSync(sessionFile, [
+			JSON.stringify({ type: "session", version: 3, id: "s_embed", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "GC bias detail path test" }] } }),
+			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "sample selection ok" }] } }),
+			JSON.stringify({ type: "message", id: "u3", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "figure y axis label wrong" }] } }),
+		].join("\n"));
+		await rebuildSessionContextFromFile({ sessionId: "s_embed", sessionFile });
+
+		// Local token path (embedding disabled)
+		delete process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED;
+		const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_embed", query: "GC bias", contextPercent: 99 });
+		expect(localFocus).toContain("<session_topology_subgraph>");
+		const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(localJson).toBeDefined();
+		const localPayload = JSON.parse(localJson!);
+	});
+	test("retrieveTopologyWithEmbeddings reorders nodes by cosine similarity", async () => {
+		const dir = tempDir();
+		openDb({ path: path.join(dir, "deck.db") });
+		const sessionFile = path.join(dir, "s_cosine.jsonl");
+		fs.writeFileSync(sessionFile, [
+			JSON.stringify({ type: "session", version: 3, id: "s_cosine", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "GC bias detail path test" }] } }),
+			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "sample selection ok" }] } }),
+			JSON.stringify({ type: "message", id: "u3", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "figure y axis label wrong" }] } }),
+		].join("\n"));
+		await rebuildSessionContextFromFile({ sessionId: "s_cosine", sessionFile });
+		const graph = getSessionContextGraph("s_cosine", 200);
+		expect(graph.nodes.length).toBeGreaterThan(0);
+
+		// Mock embedTexts: return deterministic embeddings so cosine similarity reorders
+		const originalFetch = globalThis.fetch;
+		let callCount = 0;
+		(globalThis as { fetch: typeof fetch }).fetch = (async (input: Request | string, init?: RequestInit) => {
+			callCount++;
+			const body = init?.body ? JSON.parse(String(init.body)) : {};
+			const texts: string[] = body.input ?? [];
+			// Return embeddings where first text is always most similar to itself
+			const data = texts.map((_, i) => ({
+				object: "embedding",
+				embedding: i === 0 ? [1.0, 0.0, 0.0] : [0.0, 1.0, 0.0],
+				index: i,
+			}));
+			return new Response(JSON.stringify({ id: `emb-${callCount}`, object: "list", data, usage: { prompt_tokens: 1, total_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+		}) as typeof fetch;
+
+		const config: EmbeddingConfig = { baseUrl: "http://mock", endpointPath: "/embeddings", apiKey: "test", model: "test-model", timeoutMs: 5000 };
+		try {
+			const result = await retrieveTopologyWithEmbeddings(
+				{ sessionId: "s_cosine", query: "GC bias", candidateNodeLimit: 5, expansionHops: 1, outputNodeLimit: 3, outputEdgeLimit: 5, outputArtifactLimit: 3 },
+				graph,
+				config,
+			);
+			expect(result).toBeDefined();
+			expect(result!.selectedNodeIds.length).toBeGreaterThan(0);
+			// Verify embeddings were saved to DB
+			const stored = getNodeEmbeddings("s_cosine");
+			expect(stored.size).toBe(graph.nodes.length);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+	});
+
