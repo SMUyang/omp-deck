@@ -56,7 +56,7 @@ const KIND_WEIGHTS: Record<SessionContextNode["kind"], number> = {
 	action: 0.7,
 };
 
-function tokenize(text: string): string[] {
+export function tokenize(text: string): string[] {
 	return text
 		.toLowerCase()
 		.split(/[^a-z0-9_\u4e00-\u9fff]+/g)
@@ -134,7 +134,10 @@ export function retrieveTopology(
 	const rankedCandidateNodeIds = candidates.map((item) => item.node.id);
 	const candidateIds = new Set(rankedCandidateNodeIds);
 	const expanded = expandNeighbors(candidateIds, graph, input.expansionHops);
-	const orderedExpanded = graph.nodes.filter((node) => expanded.has(node.id));
+	const scoreById = new Map(ranked.map((r) => [r.node.id, r.score]));
+	const orderedExpanded = graph.nodes
+		.filter((node) => expanded.has(node.id))
+		.sort((a, b) => (scoreById.get(b.id) ?? 0) - (scoreById.get(a.id) ?? 0));
 	const selectedNodes = orderedExpanded.slice(0, input.outputNodeLimit);
 	const selectedNodeIds = selectedNodes.map((node) => node.id);
 	const selectedSet = new Set(selectedNodeIds);

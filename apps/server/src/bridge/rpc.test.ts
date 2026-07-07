@@ -83,7 +83,10 @@ describe("RPC session listing", () => {
 		const opts = buildResumeTransportOptions("/usr/local/bin/omp", "/home/user/repo", "/tmp/persisted-s1.jsonl");
 		expect(opts.bin).toBe("/usr/local/bin/omp");
 		expect(opts.cwd).toBe("/home/user/repo");
-		expect(opts.extraArgs).toEqual(["--resume", "/tmp/persisted-s1.jsonl"]);
+		expect(opts.extraArgs?.[0]).toBe("--resume");
+		expect(opts.extraArgs?.[1]).toBe("/tmp/persisted-s1.jsonl");
+		expect(opts.extraArgs?.[2]).toBe("-e");
+		expect(typeof opts.extraArgs?.[3]).toBe("string");
 		expect(opts.readyTimeoutMs).toBe(15 * 60 * 1000);
 	});
 
@@ -91,7 +94,10 @@ describe("RPC session listing", () => {
 		const opts = buildCreateTransportOptions("/usr/local/bin/omp", "/home/user/repo", ["--model", "zai/glm-5.2"]);
 		expect(opts.bin).toBe("/usr/local/bin/omp");
 		expect(opts.cwd).toBe("/home/user/repo");
-		expect(opts.extraArgs).toEqual(["--model", "zai/glm-5.2"]);
+		expect(opts.extraArgs?.[0]).toBe("--model");
+		expect(opts.extraArgs?.[1]).toBe("zai/glm-5.2");
+		expect(opts.extraArgs?.[2]).toBe("-e");
+		expect(typeof opts.extraArgs?.[3]).toBe("string");
 		expect(opts.readyTimeoutMs).toBeUndefined();
 	});
 });

@@ -2198,20 +2198,26 @@ function TopologyEmbeddingCard() {
 	const [error, setError] = useState<string | undefined>();
 	const [status, setStatus] = useState<string | undefined>();
 
-	function readDraft(): Draft {
-		const enabled = process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED === "1" || process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED === "true";
-		return {
-			enabled,
-			model: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_MODEL ?? "BAAI/bge-large-zh-v1.5",
-			baseUrl: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL ?? "",
-			endpointPath: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH ?? "/embeddings",
-			timeoutMs: process.env.OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS ?? "30000",
-		};
+	function entryMasked(key: string, entries: Array<{ key: string; masked: string; isSet: boolean }>): string {
+		const entry = entries.find((e) => e.key === key);
+		if (!entry || !entry.isSet) return "";
+		return entry.masked;
 	}
 
 	async function refresh(): Promise<void> {
 		try {
-			setDraft(readDraft());
+			const env = await settingsApi.listEnv();
+			const entries = env.entries;
+			const enabledEntry = entries.find((e) => e.key === "OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED");
+			const enabledRaw = enabledEntry?.masked;
+			const enabled = enabledEntry?.isSet && enabledRaw != null && ["1", "true", "yes", "on"].includes(enabledRaw.toLowerCase());
+			setDraft({
+				enabled: Boolean(enabled),
+				model: entryMasked("OMP_DECK_TOPOLOGY_EMBEDDING_MODEL", entries) || "BAAI/bge-large-zh-v1.5",
+				baseUrl: entryMasked("OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL", entries),
+				endpointPath: entryMasked("OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH", entries) || "/embeddings",
+				timeoutMs: entryMasked("OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS", entries) || "30000",
+			});
 			setError(undefined);
 		} catch (e) {
 			setError(String(e));

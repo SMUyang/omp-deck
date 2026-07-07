@@ -362,7 +362,7 @@ describe("context replacement", () => {
 		expect(localJson).toBeDefined();
 		const localPayload = JSON.parse(localJson!);
 	});
-	test("retrieveTopologyWithEmbeddings reorders nodes by cosine similarity", async () => {
+	test("retrieveTopologyWithEmbeddings selects nodes in cosine-score order, not DB order", async () => {
 		const dir = tempDir();
 		openDb({ path: path.join(dir, "deck.db") });
 		const sessionFile = path.join(dir, "s_cosine.jsonl");
@@ -374,34 +374,49 @@ describe("context replacement", () => {
 		].join("\n"));
 		await rebuildSessionContextFromFile({ sessionId: "s_cosine", sessionFile });
 		const graph = getSessionContextGraph("s_cosine", 200);
-		expect(graph.nodes.length).toBeGreaterThan(0);
+		expect(graph.nodes.length).toBe(3);
 
-		// Mock embedTexts: return deterministic embeddings so cosine similarity reorders
+		// Text-aware mock: key embeddings on actual node text content
+		// (embed text is `${kind}: ${title} — ${compressedBody || body}`)
 		const originalFetch = globalThis.fetch;
-		let callCount = 0;
 		(globalThis as { fetch: typeof fetch }).fetch = (async (input: Request | string, init?: RequestInit) => {
-			callCount++;
 			const body = init?.body ? JSON.parse(String(init.body)) : {};
 			const texts: string[] = body.input ?? [];
-			// Return embeddings where first text is always most similar to itself
-			const data = texts.map((_, i) => ({
-				object: "embedding",
-				embedding: i === 0 ? [1.0, 0.0, 0.0] : [0.0, 1.0, 0.0],
-				index: i,
-			}));
-			return new Response(JSON.stringify({ id: `emb-${callCount}`, object: "list", data, usage: { prompt_tokens: 1, total_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+			const data = texts.map((text) => {
+				const t = String(text).toLowerCase();
+				let embedding: number[];
+				if (t.includes("gc bias")) embedding = [0.9, 0.1, 0.0];
+				else if (t.includes("sample")) embedding = [0.2, 0.8, 0.1];
+				else if (t.includes("figure")) embedding = [0.1, 0.1, 0.9];
+				else embedding = [0.0, 0.0, 0.0];
+				return { object: "embedding", embedding, index: 0 };
+			});
+			return new Response(JSON.stringify({ id: "emb", object: "list", data, usage: { prompt_tokens: 1, total_tokens: 1 } }), { headers: { "content-type": "application/json" } });
 		}) as typeof fetch;
 
 		const config: EmbeddingConfig = { baseUrl: "http://mock", endpointPath: "/embeddings", apiKey: "test", model: "test-model", timeoutMs: 5000 };
 		try {
+			// outputNodeLimit: 2 < 3 nodes — forces a selection decision
+			// Old (DB-order) code would drop the GC bias node (earliest created_at)
+			// New (score-order) code keeps GC bias node (highest cosine to query)
 			const result = await retrieveTopologyWithEmbeddings(
-				{ sessionId: "s_cosine", query: "GC bias", candidateNodeLimit: 5, expansionHops: 1, outputNodeLimit: 3, outputEdgeLimit: 5, outputArtifactLimit: 3 },
+				{ sessionId: "s_cosine", query: "GC bias", candidateNodeLimit: 5, expansionHops: 1, outputNodeLimit: 2, outputEdgeLimit: 5, outputArtifactLimit: 3 },
 				graph,
 				config,
 			);
 			expect(result).toBeDefined();
-			expect(result!.selectedNodeIds.length).toBeGreaterThan(0);
-			// Verify embeddings were saved to DB
+
+			const titleById = new Map(graph.nodes.map((n) => [n.id, n.title]));
+			const selectedTitles = result!.selectedNodeIds.map((id) => titleById.get(id) ?? "");
+
+			// GC bias node must be selected (highest cosine to query)
+			expect(selectedTitles.some((t) => t.includes("GC bias"))).toBe(true);
+			// Figure node must be dropped (lowest cosine, would be kept under old DB-order)
+			expect(selectedTitles.some((t) => t.includes("figure"))).toBe(false);
+			// Ordering: GC bias first, sample second
+			expect(selectedTitles[0]).toContain("GC bias");
+			expect(selectedTitles[1]).toContain("sample");
+
 			const stored = getNodeEmbeddings("s_cosine");
 			expect(stored.size).toBe(graph.nodes.length);
 		} finally {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -89,6 +89,16 @@ function setupPersistedSession(): { app: Hono; sessionFile: string } {
 	}]));
 	return { app, sessionFile };
 }
+
+// Force regex extraction so tests don't hit real DeepSeek API
+let extractionModeBackup: string | undefined;
+beforeEach(() => {
+	process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = "regex";
+});
+afterEach(() => {
+	if (extractionModeBackup) process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = extractionModeBackup;
+	else delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE;
+});
 
 describe("session context routes", () => {
 	describe("POST /sessions/:id/context/rebuild", () => {

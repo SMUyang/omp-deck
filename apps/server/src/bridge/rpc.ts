@@ -45,6 +45,7 @@ import type {
 import type { OmpRpcTransportOptions, RpcCommandBody, RpcEvent } from "./rpc-transport.ts";
 import { OmpRpcTransport } from "./rpc-transport.ts";
 import * as path from "node:path";
+import * as os from "node:os";
 import { getAgentDir } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "../log.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
@@ -55,11 +56,13 @@ const log = logger("rpc-bridge");
 
 const RESUME_READY_TIMEOUT_MS = 15 * 60 * 1000;
 
+const TOPOLOGY_EXTENSION_PATH = path.join(os.homedir(), ".omp", "agent", "extensions", "topology-context", "index.ts");
+
 export function buildResumeTransportOptions(ompBin: string, cwd: string, sessionPath: string): OmpRpcTransportOptions {
 	return {
 		bin: ompBin,
 		cwd,
-		extraArgs: ["--resume", sessionPath],
+		extraArgs: ["--resume", sessionPath, "-e", TOPOLOGY_EXTENSION_PATH],
 		readyTimeoutMs: RESUME_READY_TIMEOUT_MS,
 	};
 }
@@ -68,7 +71,7 @@ export function buildCreateTransportOptions(ompBin: string, cwd: string, extraAr
 	return {
 		bin: ompBin,
 		cwd,
-		extraArgs,
+		extraArgs: [...extraArgs, "-e", TOPOLOGY_EXTENSION_PATH],
 	};
 }
 
@@ -493,7 +496,7 @@ class RpcSessionHandle implements SessionHandle {
 
 		if (type === "turn_end" || type === "agent_end" || type === "compaction_complete") {
 			if (type === "compaction_complete") this.#autoCompactInFlightUntil = 0;
-			void this.#refreshStateFromRpc();
+						void this.#refreshStateFromRpc();
 		}
 	}
 

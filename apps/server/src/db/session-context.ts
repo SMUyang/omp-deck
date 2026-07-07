@@ -7,6 +7,7 @@ import type {
 } from "@omp-deck/protocol";
 
 import { getDb } from "./index.ts";
+import { redactSensitiveText } from "../redaction.ts";
 
 interface NodeRow {
 	id: string;
@@ -78,19 +79,30 @@ function parseMetadata(value: string): Record<string, unknown> {
 		return {};
 	}
 }
-
 function nodeFromRow(row: NodeRow): SessionContextNode {
 	return {
 		id: row.id,
 		sessionId: row.session_id,
 		kind: row.kind,
-		title: row.title,
-		body: row.body,
-		compressedBody: row.compressed_body,
+		title: redactSensitiveText(row.title),
+		body: redactSensitiveText(row.body),
+		compressedBody: redactSensitiveText(row.compressed_body),
 		importance: row.importance,
 		createdAt: row.created_at,
 		...(row.source_message_id ? { sourceMessageId: row.source_message_id } : {}),
 		...(typeof row.source_turn_index === "number" ? { sourceTurnIndex: row.source_turn_index } : {}),
+		metadata: parseMetadata(row.metadata_json),
+	};
+}
+
+function artifactFromRow(row: ArtifactRow): SessionContextArtifact {
+	return {
+		id: row.id,
+		sessionId: row.session_id,
+		...(row.node_id ? { nodeId: row.node_id } : {}),
+		kind: row.kind,
+		ref: redactSensitiveText(row.ref),
+		label: redactSensitiveText(row.label),
 		metadata: parseMetadata(row.metadata_json),
 	};
 }
@@ -108,17 +120,22 @@ function edgeFromRow(row: EdgeRow): SessionContextEdge {
 	};
 }
 
-function artifactFromRow(row: ArtifactRow): SessionContextArtifact {
-	return {
-		id: row.id,
-		sessionId: row.session_id,
-		...(row.node_id ? { nodeId: row.node_id } : {}),
-		kind: row.kind,
-		ref: row.ref,
-		label: row.label,
-		metadata: parseMetadata(row.metadata_json),
-	};
+/** Get the highest sourceTurnIndex among existing nodes for a session. Used by incremental extraction to avoid ID collisions. */
+export function getMaxSourceTurnIndex(sessionId: string): number {
+	const row = getDb().query<{ m: number | null }, [string]>(
+		`SELECT MAX(source_turn_index) AS m FROM session_context_nodes WHERE session_id = ?`,
+	).get(sessionId);
+	return row?.m ?? 0;
 }
+
+/** Return the current node count for a session. Used by incremental checkpoint. */
+export function countSessionContextNodes(sessionId: string): number {
+	const row = getDb().query<{ c: number }, [string]>(
+		`SELECT COUNT(*) AS c FROM session_context_nodes WHERE session_id = ?`,
+	).get(sessionId);
+	return row?.c ?? 0;
+}
+
 
 export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 	const db = getDb();
@@ -128,7 +145,7 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 		db.prepare("DELETE FROM session_context_nodes WHERE session_id = ?").run(input.sessionId);
 
 		const insertNode = db.prepare(`
-			INSERT INTO session_context_nodes (
+			INSERT OR REPLACE INTO session_context_nodes (
 				id, session_id, kind, title, body, compressed_body,
 				source_message_id, source_turn_index, importance, created_at, metadata_json
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -138,9 +155,9 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 				node.id,
 				node.sessionId,
 				node.kind,
-				node.title,
-				node.body,
-				node.compressedBody,
+				redactSensitiveText(node.title),
+				redactSensitiveText(node.body),
+				redactSensitiveText(node.compressedBody),
 				node.sourceMessageId ?? null,
 				node.sourceTurnIndex ?? null,
 				node.importance,
@@ -150,7 +167,7 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 		}
 
 		const insertEdge = db.prepare(`
-			INSERT INTO session_context_edges (
+			INSERT OR REPLACE INTO session_context_edges (
 				id, session_id, source_node_id, target_node_id, relation,
 				weight, evidence_message_id, metadata_json
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -169,7 +186,7 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 		}
 
 		const insertArtifact = db.prepare(`
-			INSERT INTO session_context_artifacts (
+			INSERT OR REPLACE INTO session_context_artifacts (
 				id, session_id, node_id, kind, ref, label, metadata_json
 			) VALUES (?, ?, ?, ?, ?, ?, ?)
 		`);
@@ -179,10 +196,55 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 				artifact.sessionId,
 				artifact.nodeId ?? null,
 				artifact.kind,
-				artifact.ref,
-				artifact.label,
+				redactSensitiveText(artifact.ref),
+				redactSensitiveText(artifact.label),
 				JSON.stringify(artifact.metadata),
 			);
+		}
+	});
+	tx();
+}
+
+export function insertSessionContextNodes(input: ReplaceSessionContextInput): void {
+	const db = getDb();
+	const tx = db.transaction(() => {
+		const insertNode = db.prepare(`
+			INSERT OR REPLACE INTO session_context_nodes (
+				id, session_id, kind, title, body, compressed_body,
+				source_message_id, source_turn_index, importance, created_at, metadata_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+		for (const node of input.nodes) {
+			insertNode.run(
+				node.id,
+				node.sessionId,
+				node.kind,
+				redactSensitiveText(node.title),
+				redactSensitiveText(node.body),
+				redactSensitiveText(node.compressedBody),
+				node.sourceMessageId ?? null,
+				node.sourceTurnIndex ?? null,
+				node.importance,
+				node.createdAt,
+				JSON.stringify(node.metadata),
+			);
+		}
+		const insertEdge = db.prepare(`
+			INSERT OR REPLACE INTO session_context_edges (
+				id, session_id, source_node_id, target_node_id, relation,
+				weight, evidence_message_id, metadata_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`);
+		for (const edge of input.edges) {
+			insertEdge.run(edge.id, edge.sessionId, edge.sourceNodeId, edge.targetNodeId, edge.relation, edge.weight, edge.evidenceMessageId ?? null, JSON.stringify(edge.metadata));
+		}
+		const insertArtifact = db.prepare(`
+			INSERT OR REPLACE INTO session_context_artifacts (
+				id, session_id, node_id, kind, ref, label, metadata_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+		`);
+		for (const artifact of input.artifacts) {
+			insertArtifact.run(artifact.id, artifact.sessionId, artifact.nodeId ?? null, artifact.kind, redactSensitiveText(artifact.ref), redactSensitiveText(artifact.label), JSON.stringify(artifact.metadata));
 		}
 	});
 	tx();

@@ -14,6 +14,7 @@ import {
 	replaceSessionContext,
 	upsertSessionContextCheckpoint,
 } from "./db/session-context.ts";
+import { redactSensitiveText } from "./redaction.ts";
 
 import { getTopologyRerankConfig } from "./config-topology-rerank.ts";
 import { retrieveTopology, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
@@ -101,7 +102,7 @@ function compressText(text: string): string {
 		.replace(/\s+/g, " ")
 		.replace(/\b(?:I think|I should|Maybe|Now|Next)\b[:,]?\s*/gi, "")
 		.trim()
-		.slice(0, 1200);
+		.slice(0, 300);
 }
 
 function makeNode(input: {
@@ -119,9 +120,9 @@ function makeNode(input: {
 		id: `${input.sessionId}:${input.kind}:${input.turnIndex}:${input.messageId}`,
 		sessionId: input.sessionId,
 		kind: input.kind,
-		title: input.title.slice(0, 120),
-		body: input.body,
-		compressedBody: compressText(input.body),
+		title: redactSensitiveText(input.title).slice(0, 80),
+		body: redactSensitiveText(input.body),
+		compressedBody: compressText(redactSensitiveText(input.body)),
 		importance: input.importance,
 		createdAt: input.createdAt,
 		sourceMessageId: input.messageId,
@@ -164,15 +165,15 @@ function artifactMatches(sessionId: string, nodeId: string, text: string): Sessi
 	for (const match of text.matchAll(FILE_RE)) {
 		const ref = match[1];
 		if (!ref) continue;
-		artifacts.push({ id: `${nodeId}:file:${artifacts.length}`, sessionId, nodeId, kind: "file", ref, label: ref, metadata: {} });
+		const safeRef = redactSensitiveText(ref); artifacts.push({ id: `${nodeId}:file:${artifacts.length}`, sessionId, nodeId, kind: "file", ref: safeRef, label: safeRef, metadata: {} });
 	}
 	for (const match of text.matchAll(COMMIT_RE)) {
 		const ref = match[0];
-		artifacts.push({ id: `${nodeId}:commit:${artifacts.length}`, sessionId, nodeId, kind: "commit", ref, label: ref.slice(0, 12), metadata: {} });
+		const safeRef = redactSensitiveText(ref); artifacts.push({ id: `${nodeId}:commit:${artifacts.length}`, sessionId, nodeId, kind: "commit", ref: safeRef, label: safeRef.slice(0, 12), metadata: {} });
 	}
 	for (const match of text.matchAll(TEST_COMMAND_RE)) {
 		const ref = match[0];
-		artifacts.push({ id: `${nodeId}:test:${artifacts.length}`, sessionId, nodeId, kind: "test", ref, label: ref, metadata: {} });
+		const safeRef = redactSensitiveText(ref); artifacts.push({ id: `${nodeId}:test:${artifacts.length}`, sessionId, nodeId, kind: "test", ref: safeRef, label: safeRef, metadata: {} });
 	}
 	return artifacts;
 }
@@ -667,7 +668,10 @@ export async function retrieveTopologyWithEmbeddings(
 	const rankedCandidateNodeIds = candidates.map((item) => item.node.id);
 	const candidateIds = new Set(rankedCandidateNodeIds);
 	const expanded = expandNeighborsLocal(candidateIds, graph, input.expansionHops);
-	const orderedExpanded = graph.nodes.filter((node) => expanded.has(node.id));
+	const scoreById = new Map(ranked.map((r) => [r.node.id, r.score]));
+	const orderedExpanded = graph.nodes
+		.filter((node) => expanded.has(node.id))
+		.sort((a, b) => (scoreById.get(b.id) ?? 0) - (scoreById.get(a.id) ?? 0));
 	const selectedNodes = orderedExpanded.slice(0, input.outputNodeLimit);
 	const selectedNodeIds = selectedNodes.map((node) => node.id);
 	const selectedSet = new Set(selectedNodeIds);
@@ -780,7 +784,7 @@ function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sess
 			id: node.id,
 			kind: node.kind,
 			title: node.title,
-			body: node.compressedBody || node.body,
+			body: node.compressedBody,
 			source: {
 				messageId: node.sourceMessageId,
 				turnIndex: node.sourceTurnIndex,
@@ -817,8 +821,8 @@ function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sess
 	].join("\n");
 }
 
-/** Default threshold: trigger context replacement when usage exceeds 15% of context window. */
-export const CONTEXT_REPLACEMENT_THRESHOLD_PERCENT = 15;
+/** Default threshold: trigger context replacement when usage exceeds 8% of context window (env-overridable). */
+export const CONTEXT_REPLACEMENT_THRESHOLD_PERCENT = Number(process.env.OMP_DECK_TOPOLOGY_COMPACT_THRESHOLD_PERCENT) || 8;
 
 /**
  * Render a context pack as compact focus text for OMP compaction.

@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import type { SessionContextNode, SessionContextStatusResponse } from "@omp-deck/protocol";
-import { closeDb, openDb } from "./index.ts";
+import { closeDb, getDb, openDb } from "./index.ts";
 import {
 	getSessionContextStatus,
 	getSessionContextGraph,
@@ -80,6 +80,38 @@ describe("session context store", () => {
 		expect(graph.artifacts).toHaveLength(0);
 	});
 
+	test("redacts direct replaceSessionContext writes", () => {
+		openTempDeckDb();
+		const secret = "sk-proj-Ab1cDe2fGh3iJk4lMn5oPq6rSt7uVw8xYz0";
+		replaceSessionContext({
+			sessionId: "s_write_redact",
+			nodes: [{
+				...node("n-write", "user_intent", `configure ${secret}`),
+				sessionId: "s_write_redact",
+				body: `body ${secret}`,
+				compressedBody: `compressed ${secret}`,
+			}],
+			edges: [],
+			artifacts: [{
+				id: "a-write",
+				sessionId: "s_write_redact",
+				nodeId: "n-write",
+				kind: "file",
+				ref: `/tmp/${secret}.txt`,
+				label: `artifact ${secret}`,
+				metadata: {},
+			}],
+		});
+
+		const graph = getSessionContextGraph("s_write_redact", 50);
+		const combined = [
+			...graph.nodes.flatMap((n) => [n.title, n.body, n.compressedBody]),
+			...graph.artifacts.flatMap((a) => [a.ref, a.label]),
+		].join("\n");
+		expect(combined).not.toContain(secret);
+		expect(combined).toContain("[REDACTED]");
+	});
+
 	test("records rebuild checkpoint metadata", () => {
 		openTempDeckDb();
 
@@ -144,6 +176,50 @@ describe("session context store", () => {
 		const graph = getSessionContextGraph("s1", 1);
 		expect(graph.nodes.map((n) => n.id)).toEqual(["n1"]);
 		expect(graph.artifacts.map((a) => a.id)).toEqual(["a-session"]);
+	});
+
+	test("redacts legacy raw rows on graph read", () => {
+		openTempDeckDb();
+		const secret = "sk-proj-Ab1cDe2fGh3iJk4lMn5oPq6rSt7uVw8xYz0";
+		const db = getDb();
+		db.prepare(`
+			INSERT INTO session_context_nodes (
+				id, session_id, kind, title, body, compressed_body,
+				source_message_id, source_turn_index, importance, created_at, metadata_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`).run(
+			"n-legacy",
+			"s_legacy",
+			"user_intent",
+			`configure key ${secret}`,
+			`body has ${secret}`,
+			`compressed ${secret}`,
+			"m1",
+			1,
+			1,
+			"2026-07-02T00:00:00.000Z",
+			"{}",
+		);
+		db.prepare(`
+			INSERT INTO session_context_artifacts (id, session_id, node_id, kind, ref, label, metadata_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`).run(
+			"a-legacy",
+			"s_legacy",
+			"n-legacy",
+			"file",
+			`/tmp/${secret}.txt`,
+			`file ${secret}`,
+			"{}",
+		);
+
+		const graph = getSessionContextGraph("s_legacy", 50);
+		const combined = [
+			...graph.nodes.flatMap((n) => [n.title, n.body, n.compressedBody]),
+			...graph.artifacts.flatMap((a) => [a.ref, a.label]),
+		].join("\n");
+		expect(combined).not.toContain(secret);
+		expect(combined).toContain("[REDACTED]");
 	});
 });
 

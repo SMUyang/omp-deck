@@ -142,7 +142,7 @@ describe("retrieveTopology", () => {
 		expect(result?.omitted.nodeCount).toBe(15);
 	});
 
-	test("returns ranked candidate metadata without changing graph-order baseline selection", () => {
+	test("selects nodes by query-relevance score, not graph/DB order", () => {
 		const unrelatedFirst = node("n_unrelated", "issue", "Subscription error", "GLM-5V-Turbo not in plan", 0.1);
 		const queryMatchSecond = node("n_match", "goal", "batch legend label", "render non-abbreviated legend labels", 0.9);
 		const result = retrieveTopology(
@@ -150,13 +150,36 @@ describe("retrieveTopology", () => {
 			graph({ nodes: [unrelatedFirst, queryMatchSecond], totalNodes: 2 }),
 		);
 
-		expect(result?.selectedNodeIds).toEqual(["n_unrelated", "n_match"]);
+		// Score order: n_match has higher query relevance, should come first
+		expect(result?.selectedNodeIds).toEqual(["n_match", "n_unrelated"]);
 		expect(result?.rankedCandidateNodeIds[0]).toBe("n_match");
 		expect(result?.ranking[0]).toEqual(expect.objectContaining({
 			nodeId: "n_match",
 			reasons: expect.objectContaining({ query: expect.any(Number), importance: expect.any(Number), kind: expect.any(Number) }),
 		}));
 		expect(result?.candidateNodeCount).toBe(2);
+	});
+
+	test("ranks expanded neighbors by query relevance, not DB importance order", () => {
+		// seed node matches query → pulls in two neighbors via expansion
+		// neighbor A is query-irrelevant but high importance (DB would rank it first)
+		// neighbor B is query-relevant but lower importance
+		// outputNodeLimit: 2 means only seed + one neighbor fit
+		// Bug 1 fix: neighbor B should be selected over neighbor A
+		const seed = node("seed", "goal", "batch legend label setup", "matching query", 0.9);
+		const neighborIrrelevant = node("n_irrelevant", "resolution", "Database migration complete", "all tables created", 0.95);
+		const neighborRelevant = node("n_relevant", "evidence", "batch label evidence", "legend labels match", 0.3);
+		const result = retrieveTopology(
+			{ ...DEFAULT_INPUT, candidateNodeLimit: 1, outputNodeLimit: 2, expansionHops: 1 },
+			graph({
+				nodes: [neighborIrrelevant, seed, neighborRelevant],
+				edges: [
+					edge("e1", "seed", "n_irrelevant", "depends_on"),
+					edge("e2", "seed", "n_relevant", "verified_by"),
+				],
+			}),
+		);
+		expect(result?.selectedNodeIds).toEqual(["seed", "n_relevant"]);
 	});
 
 	test("returns candidate edge ids for trigger/internal metadata", () => {

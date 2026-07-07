@@ -134,6 +134,7 @@ async function main(): Promise<void> {
 	server = Bun.serve<ConnectionData>({
 		hostname: config.host,
 		port: config.port,
+		idleTimeout: 255, // Bun max — extraction batches can take 1-2 min each
 		fetch(req, srv) {
 			const url = new URL(req.url);
 
