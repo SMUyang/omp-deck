@@ -56,26 +56,55 @@ const KIND_WEIGHTS: Record<SessionContextNode["kind"], number> = {
 	action: 0.7,
 };
 
+const CHINESE_STOPWORDS = new Set([
+	"的", "了", "吗", "呢", "吧", "啊", "哦", "嗯", "哼",
+	"是", "在", "有", "和", "与", "或", "但", "而", "这", "那", "个",
+	"我", "你", "他", "她", "它", "我们", "你们", "他们",
+	"就", "都", "也", "很", "非常", "最", "更", "太", "已经", "正在",
+	"上", "下", "中", "里", "外", "前", "后", "左", "右", "间",
+	"对", "错", "好", "坏", "大", "小", "多", "少", "全", "图",
+]);
+
 export function tokenize(text: string): string[] {
 	return text
 		.toLowerCase()
 		.split(/[^a-z0-9_\u4e00-\u9fff]+/g)
-		.filter((token) => token.length >= 2);
+		.filter((token) => token.length >= 2)
+		.filter((token) => !CHINESE_STOPWORDS.has(token));
 }
 
 function nodeText(node: SessionContextNode): string {
 	return `${node.title} ${node.compressedBody} ${node.body}`;
 }
 
-function textMatchScore(queryTokens: string[], node: SessionContextNode): number {
+function queryTokenIdf(uniqueQueryTokens: string[], nodes: SessionContextNode[]): Map<string, number> {
+	const documentFrequency = new Map(uniqueQueryTokens.map((token) => [token, 0]));
+	for (const node of nodes) {
+		const nodeTokens = new Set(tokenize(nodeText(node)));
+		for (const token of uniqueQueryTokens) {
+			if (nodeTokens.has(token)) documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1);
+		}
+	}
+	const idfByToken = new Map<string, number>();
+	for (const token of uniqueQueryTokens) {
+		const df = documentFrequency.get(token) ?? 0;
+		idfByToken.set(token, Math.log((nodes.length + 1) / (df + 1)) + 1);
+	}
+	return idfByToken;
+}
+
+function textMatchScore(queryTokens: string[], idfByToken: Map<string, number>, node: SessionContextNode): number {
 	if (queryTokens.length === 0) return 0;
 	const nodeTokens = new Set(tokenize(nodeText(node)));
 	if (nodeTokens.size === 0) return 0;
-	let hits = 0;
+	let matchedWeight = 0;
+	let totalWeight = 0;
 	for (const token of queryTokens) {
-		if (nodeTokens.has(token)) hits += 1;
+		const weight = idfByToken.get(token) ?? 1;
+		totalWeight += weight;
+		if (nodeTokens.has(token)) matchedWeight += weight;
 	}
-	return hits / queryTokens.length;
+	return totalWeight === 0 ? 0 : matchedWeight / totalWeight;
 }
 
 function clamp01(value: number | null | undefined): number {
@@ -84,9 +113,9 @@ function clamp01(value: number | null | undefined): number {
 	return Math.min(1, Math.max(0, value));
 }
 
-function scoreNodeParts(node: SessionContextNode, queryTokens: string[]): RetrievedNodeRanking["reasons"] {
+function scoreNodeParts(node: SessionContextNode, queryTokens: string[], idfByToken: Map<string, number>): RetrievedNodeRanking["reasons"] {
 	return {
-		query: textMatchScore(queryTokens, node),
+		query: textMatchScore(queryTokens, idfByToken, node),
 		importance: clamp01(node.importance),
 		kind: KIND_WEIGHTS[node.kind] ?? 0.5,
 	};
@@ -123,10 +152,11 @@ export function retrieveTopology(
 ): RetrievedTopology | undefined {
 	if (graph.nodes.length === 0) return undefined;
 
-	const queryTokens = tokenize(input.query);
+	const queryTokens = [...new Set(tokenize(input.query))];
+	const idfByToken = queryTokenIdf(queryTokens, graph.nodes);
 	const ranked = graph.nodes
 		.map((node) => {
-			const reasons = scoreNodeParts(node, queryTokens);
+			const reasons = scoreNodeParts(node, queryTokens, idfByToken);
 			return { node, score: finalScore(reasons), reasons };
 		})
 		.sort((a, b) => b.score - a.score);

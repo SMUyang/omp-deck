@@ -5,7 +5,9 @@ import * as path from "node:path";
 
 import { closeDb, openDb } from "./db/index.ts";
 import { getSessionContextGraph, getNodeEmbeddings, saveNodeEmbeddings } from "./db/session-context.ts";
-import { extractSessionContextFromJsonl, rebuildSessionContextFromFile, renderSessionContextPack, retrieveTopologyWithEmbeddings } from "./session-context.ts";
+import { extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext } from "./session-context.ts";
+import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
+import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
 import type { EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
 
 const jsonl = [
@@ -79,10 +81,13 @@ describe("classifyNonUserText edge cases", () => {
 		expect(result.nodes.some((n) => n.kind === "issue")).toBe(true);
 	});
 
-	test("pure zero-failure summary remains evidence", () => {
-		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", "bun test foo.test.ts\n10 pass 0 fail") });
-		expect(result.nodes.some((n) => n.kind === "evidence")).toBe(true);
-		expect(result.nodes.some((n) => n.kind === "issue")).toBe(false);
+	test("evidence title prefers test result summary line", () => {
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: toolJsonl("t", "bun test foo.test.ts\n10 pass 0 fail 12 expect() calls") });
+
+		const evidence = result.nodes.find((n) => n.kind === "evidence");
+		expect(evidence).toBeDefined();
+		expect(evidence?.title).toContain("10 pass");
+		expect(evidence?.title).toContain("12 expect");
 	});
 });
 
@@ -205,9 +210,6 @@ test("rebuilds context store from a session file", async () => {
 	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
 });
 
-import { getStoredQueryTopologyFocus, renderPackAsCompactFocus, renderTopologyGraphAsCompactFocus, shouldReplaceContext } from "./session-context.ts";
-import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
-
 describe("context replacement", () => {
 	test("shouldReplaceContext triggers at or above 15%", () => {
 		expect(shouldReplaceContext(14, 15)).toBe(false);
@@ -291,6 +293,102 @@ describe("context replacement", () => {
 		const payload = JSON.parse(json!);
 		expect(payload.nodes).toEqual([{ id: "n1", kind: "goal", title: "Goal", body: "Build graph memory", source: { messageId: "m1", turnIndex: 1 } }, { id: "n2", kind: "evidence", title: "Evidence", body: "Tests passed", source: { messageId: "m2", turnIndex: 2 } }]);
 		expect(payload.edges).toEqual([{ sourceNodeId: "n1", relation: "verified_by", targetNodeId: "n2" }]);
+	});
+
+	test("renderRetrievedTopologyAsFocus injects query-matched snippet missing from compressedBody", () => {
+		const filler = "x".repeat(320);
+		const answer = "siliconflow rerank endpoint bge-reranker-v2-m3";
+		const graph: SessionContextGraphResponse = {
+			sessionId: "s1",
+			nodes: [
+				{
+					id: "n1",
+					sessionId: "s1",
+					kind: "evidence",
+					sourceMessageId: "m1",
+					sourceTurnIndex: 1,
+					title: "Rerank adapter",
+					body: `${filler} ${answer}`,
+					compressedBody: filler,
+					importance: 0.9,
+					createdAt: "",
+					metadata: {},
+				},
+			],
+			edges: [],
+			artifacts: [],
+			totalNodes: 1,
+			truncated: false,
+		};
+		const retrieved: RetrievedTopology = {
+			sessionId: "s1",
+			selectedNodeIds: ["n1"],
+			selectedEdgeIds: [],
+			candidateNodeIds: ["n1"],
+			candidateEdgeIds: [],
+			rankedCandidateNodeIds: ["n1"],
+			ranking: [],
+			artifacts: [],
+			omitted: { nodeCount: 0, edgeCount: 0, artifactCount: 0 },
+			candidateNodeCount: 1,
+		};
+		const focus = renderRetrievedTopologyAsFocus(graph, "s1", "siliconflow rerank", retrieved);
+		const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(json).toBeDefined();
+		const payload = JSON.parse(json!);
+		expect(payload.nodes[0].body).toContain("siliconflow");
+	});
+
+	test("combined hard case: IDF picks answer node from generic crowd AND renderer exposes hidden answer", () => {
+		const query = "topology env file url provider rerank siliconflow";
+		const genericNodes = Array.from({ length: 20 }, (_, i) => ({
+			id: `generic_${i}`,
+			sessionId: "s1",
+			kind: "evidence" as const,
+			sourceMessageId: `m_g_${i}`,
+			sourceTurnIndex: 1,
+			title: `topology env file url provider generic ${i}`,
+			body: "topology env file url provider status report " + "x".repeat(400),
+			compressedBody: "topology env file url provider status report " + "x".repeat(200),
+			importance: 0.85,
+			createdAt: "2026-07-03T00:00:00.000Z",
+			metadata: {},
+		}));
+		const answerBody = "topology provider siliconflow rerank endpoint configured at /v1/rerank with bge-reranker-v2-m3";
+		const filler = "y".repeat(320);
+		const answerNode = {
+			id: "answer",
+			sessionId: "s1",
+			kind: "evidence" as const,
+			sourceMessageId: "m_a",
+			sourceTurnIndex: 1,
+			title: "topology provider siliconflow rerank endpoint",
+			body: `${filler} ${answerBody}`,
+			compressedBody: filler,
+			importance: 0.85,
+			createdAt: "2026-07-03T00:00:00.000Z",
+			metadata: {},
+		};
+		const graph: SessionContextGraphResponse = {
+			sessionId: "s1",
+			nodes: [...genericNodes, answerNode],
+			edges: [],
+			artifacts: [],
+			totalNodes: genericNodes.length + 1,
+			truncated: false,
+		};
+		const retrieved = retrieveTopology(
+			{ sessionId: "s1", query, candidateNodeLimit: 5, outputNodeLimit: 1, expansionHops: 1, outputEdgeLimit: 0, outputArtifactLimit: 0 },
+			graph,
+		);
+		expect(retrieved).toBeDefined();
+		expect(retrieved!.selectedNodeIds[0]).toBe("answer");
+		const focus = renderRetrievedTopologyAsFocus(graph, "s1", query, retrieved!);
+		const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(json).toBeDefined();
+		const payload = JSON.parse(json!);
+		expect(payload.nodes[0].body).toContain("siliconflow");
+		expect(payload.nodes[0].body).toContain("bge-reranker-v2-m3");
 	});
 
 	test("getStoredQueryTopologyFocus applies an injected rerank patch and keeps focus clean", async () => {

@@ -82,6 +82,34 @@ describe("retrieveTopology", () => {
 		expect(result?.selectedNodeIds[0]).toBe("n_goal");
 	});
 
+	test("weights rare query tokens above generic evidence overlap", () => {
+		const query = "topology env file url provider rerank siliconflow";
+		const genericNodes = Array.from({ length: 20 }, (_, i) =>
+			node(
+				`generic_${i}`,
+				"evidence",
+				`topology env file url provider generic ${i}`,
+				"topology env file url provider status report",
+				0.85,
+			),
+		);
+		const answer = node(
+			"answer",
+			"evidence",
+			"topology provider siliconflow rerank endpoint",
+			"topology provider siliconflow rerank endpoint configured",
+			0.85,
+		);
+
+		const result = retrieveTopology(
+			{ ...DEFAULT_INPUT, query, candidateNodeLimit: 5, outputNodeLimit: 1 },
+			graph({ nodes: [...genericNodes, answer] }),
+		);
+
+		expect(result?.selectedNodeIds).toEqual(["answer"]);
+		expect(result?.rankedCandidateNodeIds[0]).toBe("answer");
+	});
+
 	test("expands 1-hop neighbors of top candidates", () => {
 		const top = node("n_top", "issue", "batch_display_label missing", "legend labels abbreviated", 0.9);
 		const neighbor = node("n_neighbor", "resolution", "batch_display_label implemented", "labels render as Batch 1", 0.5);

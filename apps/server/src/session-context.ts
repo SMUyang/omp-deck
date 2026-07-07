@@ -17,7 +17,7 @@ import {
 import { redactSensitiveText } from "./redaction.ts";
 
 import { getTopologyRerankConfig } from "./config-topology-rerank.ts";
-import { retrieveTopology, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
+import { retrieveTopology, tokenize, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
 import {
 	rerankTopologyWithExternalApi,
 	shouldExternalRerank,
@@ -178,6 +178,19 @@ function artifactMatches(sessionId: string, nodeId: string, text: string): Sessi
 	return artifacts;
 }
 
+function deriveEvidenceTitle(text: string): string {
+	const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+	// Test-result summaries: prefer the line with pass/fail/expect counts.
+	for (const line of lines) {
+		const lower = line.toLowerCase();
+		if ((lower.includes("pass") || lower.includes("fail") || lower.includes("expect")) && /\d/.test(line)) {
+			return line.slice(0, 120);
+		}
+	}
+	// Generic summary line: first non-empty line, capped.
+	return (lines[0] ?? "").slice(0, 120);
+}
+
 export function extractSessionContextFromJsonl(input: ExtractInput): ExtractedSessionContext {
 	const nodes: SessionContextNode[] = [];
 	const edges: SessionContextEdge[] = [];
@@ -203,7 +216,7 @@ export function extractSessionContextFromJsonl(input: ExtractInput): ExtractedSe
 			kind,
 			messageId: message.id,
 			turnIndex,
-			title: message.text.split(/\r?\n/)[0] ?? kind,
+			title: kind === "evidence" ? deriveEvidenceTitle(message.text) : (message.text.split(/\r?\n/)[0] ?? kind),
 			body: message.text,
 			importance: kind === "user_intent" ? 1 : kind === "evidence" ? 0.85 : 0.7,
 			createdAt: message.timestamp,
@@ -483,11 +496,11 @@ const FULL_GRAPH_LIMITS = {
 	expansionHops: 2 as 1 | 2,
 } as const;
 
-const DEFAULT_CANDIDATE_NODE_LIMIT = 50;
+const DEFAULT_CANDIDATE_NODE_LIMIT = 100;
 const DEFAULT_NODE_OUTPUT_RATIO = 3 / 5; // tuned via offline sweep on one session; revisit on sessions with diverse node kinds
 const DEFAULT_LIMITS = {
 	candidateNodeLimit: DEFAULT_CANDIDATE_NODE_LIMIT,
-	outputNodeLimit: Math.ceil(DEFAULT_CANDIDATE_NODE_LIMIT * DEFAULT_NODE_OUTPUT_RATIO), // 30
+	outputNodeLimit: Math.ceil(DEFAULT_CANDIDATE_NODE_LIMIT * DEFAULT_NODE_OUTPUT_RATIO), // 60
 	outputEdgeLimit: 18,
 	outputArtifactLimit: 12,
 	expansionHops: 1 as 1 | 2,
@@ -714,7 +727,7 @@ export async function retrieveTopologyWithEmbeddings(
 }
 
 export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): Promise<string> {
-	const graph = getSessionContextGraph(input.sessionId, input.fullGraph ? 500 : 200);
+	const graph = getSessionContextGraph(input.sessionId, input.fullGraph ? 1000 : 500);
 	if (graph.nodes.length === 0) return "";
 	const limits = input.fullGraph ? FULL_GRAPH_LIMITS : DEFAULT_LIMITS;
 	const embeddingConfig = getEmbeddingConfig();
@@ -776,9 +789,50 @@ export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyF
 	return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, selected);
 }
 
-function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sessionId: string, query: string, retrieved: RetrievedTopology): string {
+const SNIPPET_WINDOW = 120;
+const SNIPPET_MAX_APPEND = 400;
+
+/**
+ * Builds a query-aware body for rendered focus nodes.
+ * Keeps compressedBody as the base, then appends a snippet from `body`
+ * for query tokens that matched in `body` but are absent from `compressedBody`.
+ * Avoids duplicating content already visible in compressedBody.
+ */
+function buildQueryAwareBody(node: SessionContextNode, queryTokens: string[]): string {
+	const base = node.compressedBody;
+	if (queryTokens.length === 0 || !node.body) return base;
+	const compressedLower = base.toLowerCase();
+	const bodyLower = node.body.toLowerCase();
+	const missingTokens = queryTokens.filter(
+		(token) => !compressedLower.includes(token) && bodyLower.includes(token),
+	);
+	if (missingTokens.length === 0) return base;
+	const snippets: string[] = [];
+	let appendedLen = 0;
+	for (const token of missingTokens) {
+		if (appendedLen >= SNIPPET_MAX_APPEND) break;
+		const idx = bodyLower.indexOf(token);
+		if (idx < 0) continue;
+		const windowBudget = SNIPPET_MAX_APPEND - appendedLen;
+		const half = Math.min(SNIPPET_WINDOW, Math.floor((windowBudget - token.length) / 2));
+		if (half <= 0) break;
+		const start = Math.max(0, idx - half);
+		const end = Math.min(node.body.length, idx + token.length + half);
+		const snippet = node.body.slice(start, end).trim();
+		const prefix = start > 0 ? "…" : "";
+		const suffix = end < node.body.length ? "…" : "";
+		const piece = `${prefix}${snippet}${suffix}`;
+		snippets.push(piece);
+		appendedLen += piece.length + 1;
+	}
+	if (snippets.length === 0) return base;
+	return `${base} [query match] ${snippets.join(" ")}`;
+}
+
+export function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sessionId: string, query: string, retrieved: RetrievedTopology): string {
 	const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
 	const edgeById = new Map(graph.edges.map((edge) => [edge.id, edge]));
+	const queryTokens = [...new Set(tokenize(query))];
 	const nodes = retrieved.selectedNodeIds
 		.map((id) => nodeById.get(id))
 		.filter((n): n is NonNullable<typeof n> => Boolean(n))
@@ -786,7 +840,7 @@ function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sess
 			id: node.id,
 			kind: node.kind,
 			title: node.title,
-			body: node.compressedBody,
+			body: buildQueryAwareBody(node, queryTokens),
 			source: {
 				messageId: node.sourceMessageId,
 				turnIndex: node.sourceTurnIndex,
