@@ -483,9 +483,11 @@ const FULL_GRAPH_LIMITS = {
 	expansionHops: 2 as 1 | 2,
 } as const;
 
+const DEFAULT_CANDIDATE_NODE_LIMIT = 50;
+const DEFAULT_NODE_OUTPUT_RATIO = 3 / 5; // tuned via offline sweep on one session; revisit on sessions with diverse node kinds
 const DEFAULT_LIMITS = {
-	candidateNodeLimit: 50,
-	outputNodeLimit: 10,
+	candidateNodeLimit: DEFAULT_CANDIDATE_NODE_LIMIT,
+	outputNodeLimit: Math.ceil(DEFAULT_CANDIDATE_NODE_LIMIT * DEFAULT_NODE_OUTPUT_RATIO), // 30
 	outputEdgeLimit: 18,
 	outputArtifactLimit: 12,
 	expansionHops: 1 as 1 | 2,
