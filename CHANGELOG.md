@@ -5,6 +5,23 @@ All notable changes to omp-deck. The format is loosely based on
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-07-08 — Topology auto-generation + session stability
+
+Fixes the blocking "messages can't send" bug caused by duplicate RPC process spawning, and adds automatic topology rebuild after each assistant turn so the Inspector stays fresh without manual rebuild clicks.
+
+### Added
+
+- **Auto-rebuild topology on `turn_end`**. Both the RPC bridge (`rpc.ts`) and the in-process bridge (`in-process.ts`) now trigger a topology rebuild after every `turn_end` / `agent_end` event. The rebuild is best-effort, non-blocking, and skips when the file mtime/size match the stored checkpoint. The shared state machine lives at `apps/server/src/bridge/auto-rebuild.ts` with single-flight + catch-up semantics and DI-injected file/DB/rebuild/sleep functions for unit testing.
+- **Windows installer builds web frontend after `bun install`**. `install-rpc-deck.ps1` now runs `bun run --filter @omp-deck/web build` in the install dir, so a fresh GitHub ZIP install ships with a working `apps/web/dist` instead of missing it entirely (dist is gitignored, not committed). Also covers users who previously ran the deck and accumulated a stale local dist.
+
+### Fixed
+
+- **Duplicate RPC process spawning on session create/resume (Bug A, blocking)**. The deck server used to spawn a new OMP subprocess per `createSession` / `resumeSession` call, and the UI was issuing 2-3 duplicate requests within seconds (e.g. from StrictMode + rapid clicks + component lifecycle). Now: server-side dedup in `RpcAgentBridge.createSession` (5s cwd match) and `resumeSession` (`sessionFile` match) reuses the existing handle; client-side `_createInFlight` Map in `store.ts` dedupes in-flight POST `/sessions` requests keyed by `resumeFromPath ?? cwd`.
+- **Eager `TopologyMemoryPanel` rebuild race on new sessions (Bug B)**. The panel used to call `rebuildSessionContext` on mount before the OMP process wrote the JSONL, producing `session file not found` errors. Now: the server returns `409 {error:"session_file_not_ready", retryable:true}` instead of 500, and the client retries with exponential backoff (1s / 2s / 4s, up to 3 attempts).
+- **RPC auto-compact timeout too short for large sessions (Bug C)**. `RPC_AUTO_COMPACT_TIMEOUT_MS` increased from 10 000 to 30 000ms so 160K-token sessions no longer time out and orphan the response.
+- **RPC create-session `readyTimeoutMs` too short on Windows**. The default 30 000ms was below the ~31s Windows OMP needs for `createAgentSession > discoverSkills > capability:skills:omp-managed`. New `CREATE_READY_TIMEOUT_MS = 60_000` is applied in `buildCreateTransportOptions`; resume sessions keep the existing 15-minute `RESUME_READY_TIMEOUT_MS`.
+
+
 ## [0.7.0] — 2026-07-02 — CPA usage status and image lightbox
 
 This fork release ships the current web cockpit state used by the RPC deck: unified image previews, RPC session-title/history fixes, and CLIProxyAPI/CPA actual request usage in the Status panel.
