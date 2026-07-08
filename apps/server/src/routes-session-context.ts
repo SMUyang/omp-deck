@@ -41,8 +41,12 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			if (!target.sessionFile) return c.json({ error: "session has no session file" }, 404);
 			return c.json(await rebuildSessionContextFromFile({ sessionId: id, sessionFile: target.sessionFile }));
 		} catch (err) {
+			const msg = String((err as Error).message ?? err);
+			if (msg.includes("session file not found")) {
+				return c.json({ error: "session_file_not_ready", retryable: true }, 409);
+			}
 			log.error("context rebuild failed", err);
-			return c.json({ error: String((err as Error).message ?? err) }, 500);
+			return c.json({ error: msg }, 500);
 		}
 	});
 

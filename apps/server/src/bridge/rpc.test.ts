@@ -12,7 +12,7 @@ describe("RPC compact command", () => {
 
 describe("RPC auto compact guard", () => {
 	test("uses a short pre-prompt wait budget while leaving manual compact command shape unchanged", () => {
-		expect(buildRpcAutoCompactSendOptions()).toEqual({ timeoutMs: 10_000 });
+		expect(buildRpcAutoCompactSendOptions()).toEqual({ timeoutMs: 30_000 });
 		expect(buildRpcCompactCommand("topology focus")).toEqual({ type: "compact", customInstructions: "topology focus" });
 	});
 
@@ -90,7 +90,7 @@ describe("RPC session listing", () => {
 		expect(opts.readyTimeoutMs).toBe(15 * 60 * 1000);
 	});
 
-	test("builds create transport options without overriding the startup timeout", () => {
+	test("builds create transport options with a 60s startup timeout for slow Windows skill discovery", () => {
 		const opts = buildCreateTransportOptions("/usr/local/bin/omp", "/home/user/repo", ["--model", "zai/glm-5.2"]);
 		expect(opts.bin).toBe("/usr/local/bin/omp");
 		expect(opts.cwd).toBe("/home/user/repo");
@@ -98,7 +98,12 @@ describe("RPC session listing", () => {
 		expect(opts.extraArgs?.[1]).toBe("zai/glm-5.2");
 		expect(opts.extraArgs?.[2]).toBe("-e");
 		expect(typeof opts.extraArgs?.[3]).toBe("string");
-		expect(opts.readyTimeoutMs).toBeUndefined();
+		expect(opts.readyTimeoutMs).toBe(60_000);
+	});
+
+	test("builds resume transport options with a long startup timeout for historical sessions", () => {
+		const opts = buildResumeTransportOptions("/usr/local/bin/omp", "/home/user/repo", "/path/to/session.jsonl");
+		expect(opts.readyTimeoutMs).toBe(15 * 60 * 1000);
 	});
 });
 
