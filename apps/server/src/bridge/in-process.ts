@@ -39,6 +39,7 @@ import { looksLikePlaceholderKey } from "../credential-quality.ts";
 import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { getEffectivePrelude } from "../orientation-store.ts";
 import { hasSessionContextPack, getStoredQueryTopologyFocus, shouldReplaceContext } from "../session-context.ts";
+import { AutoRebuildTopology, createAutoRebuildTopology } from "./auto-rebuild.ts";
 import { notificationService } from "../notifications/index.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { ExtensionUIBridge } from "./ext-ui-bridge.ts";
@@ -668,6 +669,7 @@ export class InProcessSessionHandle implements SessionHandle {
 	private onDisposeCallback: () => void;
 	private readonly ompBin: string;
 	private disposed = false;
+	private readonly autoRebuild: AutoRebuildTopology;
 	/**
 	 * Shadow of the SDK's pending-prompt queue. Entries are appended in
 	 * `prompt()` when the SDK confirms a queue (wasStreaming = true) and
@@ -701,6 +703,10 @@ export class InProcessSessionHandle implements SessionHandle {
 		this.planBridge = args.planBridge;
 		this.onDisposeCallback = args.onDispose;
 		this.ompBin = args.ompBin;
+		this.autoRebuild = createAutoRebuildTopology({
+			sessionId: this.sessionId,
+			getSessionFile: () => this.sessionFile,
+		});
 	}
 
 	get sessionFile(): string | undefined {
@@ -723,7 +729,12 @@ export class InProcessSessionHandle implements SessionHandle {
 				log.warn(`listener failed`, err);
 			}
 		}
+		const type = (event as { type?: string }).type;
+		if (type === "turn_end" || type === "agent_end") {
+			this.autoRebuild.maybeTrigger();
+		}
 	}
+
 
 	/**
 	 * When the SDK starts a new turn it emits a `message_start` for the

@@ -51,10 +51,12 @@ import { logger } from "../log.ts";
 import { buildLiveSessionStatusText } from "../session-status.ts";
 import { contextSavingsTracker } from "../context-savings-tracker.ts";
 import { hasSessionContextPack, getStoredQueryTopologyFocus, shouldReplaceContext } from "../session-context.ts";
+import { AutoRebuildTopology, createAutoRebuildTopology } from "./auto-rebuild.ts";
 
 const log = logger("rpc-bridge");
 
 const RESUME_READY_TIMEOUT_MS = 15 * 60 * 1000;
+const CREATE_READY_TIMEOUT_MS = 60_000;
 
 const TOPOLOGY_EXTENSION_PATH = path.join(os.homedir(), ".omp", "agent", "extensions", "topology-context", "index.ts");
 
@@ -72,6 +74,7 @@ export function buildCreateTransportOptions(ompBin: string, cwd: string, extraAr
 		bin: ompBin,
 		cwd,
 		extraArgs: [...extraArgs, "-e", TOPOLOGY_EXTENSION_PATH],
+		readyTimeoutMs: CREATE_READY_TIMEOUT_MS,
 	};
 }
 
@@ -127,7 +130,7 @@ export function buildRpcCompactCommand(focus?: string): RpcCommandBody {
 	return { type: "compact", customInstructions: focus };
 }
 
-export const RPC_AUTO_COMPACT_TIMEOUT_MS = 10_000;
+export const RPC_AUTO_COMPACT_TIMEOUT_MS = 30_000;
 export const RPC_AUTO_COMPACT_REMOTE_COOLDOWN_MS = 180_000;
 
 export function buildRpcManualCompactRequest(focus?: string): { command: RpcCommandBody } {
@@ -459,6 +462,7 @@ class RpcSessionHandle implements SessionHandle {
 	#disposed = false;
 	#autoTitleInFlight = false;
 	#autoCompactInFlightUntil = 0;
+	readonly #autoRebuild: AutoRebuildTopology;
 	readonly #onDispose: () => void;
 
 	constructor(opts: RpcSessionOpts) {
@@ -475,7 +479,10 @@ class RpcSessionHandle implements SessionHandle {
 			this.#handleEvent(event);
 		});
 		this.#ensureAutoSessionNameFromMessages();
-
+		this.#autoRebuild = createAutoRebuildTopology({
+			sessionId: this.sessionId,
+			getSessionFile: () => this.#state.sessionFile,
+		});
 	}
 
 	get sessionFile(): string | undefined {
@@ -496,9 +503,13 @@ class RpcSessionHandle implements SessionHandle {
 
 		if (type === "turn_end" || type === "agent_end" || type === "compaction_complete") {
 			if (type === "compaction_complete") this.#autoCompactInFlightUntil = 0;
-						void this.#refreshStateFromRpc();
+			void this.#refreshStateFromRpc();
+			if (type === "turn_end" || type === "agent_end") {
+				this.#autoRebuild.maybeTrigger();
+			}
 		}
 	}
+
 
 	#emit(event: AgentSessionEventJson): void {
 		for (const listener of this.#listeners) {
@@ -808,6 +819,13 @@ export class RpcAgentBridge implements AgentBridge {
 	}
 
 	async createSession(opts: CreateSessionOpts): Promise<SessionHandle> {
+		// Dedup: if a session was created for this cwd within the last 5s, reuse it.
+		for (const active of this.#sessions.values()) {
+			if (active.handle.cwd === opts.cwd && Date.now() - active.lastActivityAt < 5_000) {
+				log.info(`dedup: reusing session ${active.handle.sessionId} for cwd=${opts.cwd}`);
+				return active.handle;
+			}
+		}
 		const extraArgs: string[] = [];
 		if (opts.model) {
 			extraArgs.push("--model", `${opts.model.provider}/${opts.model.id}`);
@@ -851,6 +869,13 @@ export class RpcAgentBridge implements AgentBridge {
 	}
 
 	async resumeSession(opts: ResumeSessionOpts): Promise<SessionHandle> {
+		// Dedup: if a handle for this session file already exists, reuse it.
+		for (const active of this.#sessions.values()) {
+			if (active.handle.sessionFile === opts.sessionPath) {
+				log.info(`dedup: reusing session ${active.handle.sessionId} for ${opts.sessionPath}`);
+				return active.handle;
+			}
+		}
 		const transport = new OmpRpcTransport(buildResumeTransportOptions(this.#ompBin, this.#cwd, opts.sessionPath));
 		await transport.start();
 		await enableSubagentProgress(transport);
