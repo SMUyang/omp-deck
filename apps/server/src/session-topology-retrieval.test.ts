@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { retrieveTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
+import { retrieveTopology, tokenize, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
 import type {
 	SessionContextArtifact,
 	SessionContextEdge,
@@ -225,5 +225,30 @@ describe("retrieveTopology", () => {
 		expect(result?.candidateNodeIds).toEqual(expect.arrayContaining(["a", "b"]));
 		expect(result?.candidateEdgeIds).toContain("e_ab");
 		expect(result?.candidateEdgeIds).not.toContain("e_out");
+	});
+});
+
+describe("tokenize", () => {
+	test("multi-char Chinese stopwords are filtered", () => {
+		expect(tokenize("我们 测试")).toEqual(["测试"]);
+		expect(tokenize("已经 done")).toEqual(["done"]);
+	});
+});
+
+describe("IDF stress tests", () => {
+	test("50-node crowd: rare-token answer beats generic crowd at outputNodeLimit 1", () => {
+		// 50 generic evidence nodes all share common tokens with the query
+		// One answer node has the rare token "bge-reranker-v2-m3"
+		const query = "topology env file url provider rerank bge-reranker-v2-m3";
+		const crowd = Array.from({ length: 50 }, (_, i) =>
+			node(`c${i}`, "evidence", `topology env file url provider generic ${i}`, "topology env file url provider status report", 0.85),
+		);
+		const answer = node("answer", "evidence", "bge-reranker-v2-m3 rerank endpoint", "siliconflow bge-reranker-v2-m3 configured at /v1/rerank", 0.85);
+		const result = retrieveTopology(
+			{ ...DEFAULT_INPUT, query, candidateNodeLimit: 10, outputNodeLimit: 1 },
+			graph({ nodes: [...crowd, answer] }),
+		);
+		expect(result?.selectedNodeIds).toEqual(["answer"]);
+		expect(result?.rankedCandidateNodeIds[0]).toBe("answer");
 	});
 });

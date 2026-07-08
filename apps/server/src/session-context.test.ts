@@ -440,25 +440,96 @@ describe("context replacement", () => {
 
 		expect(fallbackFocus).toBe(localFocus);
 	});
-	test("getStoredQueryTopologyFocus uses embedding retrieval when enabled", async () => {
+	test("getStoredQueryTopologyFocus flips first node when embedding path is enabled", async () => {
 		const dir = tempDir();
 		openDb({ path: path.join(dir, "deck.db") });
-		const sessionFile = path.join(dir, "s_embed.jsonl");
+		const sessionFile = path.join(dir, "s_embed_flip.jsonl");
 		fs.writeFileSync(sessionFile, [
-			JSON.stringify({ type: "session", version: 3, id: "s_embed", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "GC bias detail path test" }] } }),
-			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "sample selection ok" }] } }),
-			JSON.stringify({ type: "message", id: "u3", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "figure y axis label wrong" }] } }),
+			JSON.stringify({ type: "session", version: 3, id: "s_embed_flip", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "alpha component setup" }] } }),
+			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "beta service config" }] } }),
 		].join("\n"));
-		await rebuildSessionContextFromFile({ sessionId: "s_embed", sessionFile });
+		await rebuildSessionContextFromFile({ sessionId: "s_embed_flip", sessionFile });
 
-		// Local token path (embedding disabled)
-		delete process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED;
-		const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_embed", query: "GC bias", contextPercent: 99 });
-		expect(localFocus).toContain("<session_topology_subgraph>");
-		const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
-		expect(localJson).toBeDefined();
-		const localPayload = JSON.parse(localJson!);
+		// Point managed env to temp dir so getEmbeddingConfig reads an empty file
+		const savedDataDir = process.env.OMP_DECK_DATA_DIR;
+		process.env.OMP_DECK_DATA_DIR = dir;
+
+		const embedKeys = [
+			"OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED",
+			"OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL",
+			"OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY",
+			"OMP_DECK_TOPOLOGY_EMBEDDING_MODEL",
+			"OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH",
+		] as const;
+		const savedEmbedEnv: Record<string, string | undefined> = {};
+		for (const k of embedKeys) savedEmbedEnv[k] = process.env[k];
+
+		let fetchCalls = 0;
+		const originalFetch = globalThis.fetch;
+
+		try {
+			// Phase A: embedding disabled → local lexical path
+			// Query "alpha" matches node u1 ("alpha component setup") via token match
+			for (const k of embedKeys) delete process.env[k];
+			const localFocus = await getStoredQueryTopologyFocus({
+				sessionId: "s_embed_flip",
+				query: "alpha",
+				contextPercent: 99,
+				rerankClient: { rerankTopology: async () => undefined },
+			});
+			expect(localFocus).toContain("<session_topology_subgraph>");
+			const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+			expect(localJson).toBeDefined();
+			const localPayload = JSON.parse(localJson!);
+			// Local: token match picks alpha node (u1) first
+			expect(localPayload.nodes[0].source.messageId).toBe("u1");
+
+			// Phase B: embedding enabled with mocked fetch
+			// Mock makes query "alpha" embedding closest to "beta" node (vector flip)
+			process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED = "1";
+			process.env.OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL = "http://mock-embed";
+			process.env.OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY = "test";
+			process.env.OMP_DECK_TOPOLOGY_EMBEDDING_MODEL = "test-model";
+			process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH = "/embeddings";
+
+			(globalThis as { fetch: typeof fetch }).fetch = (async (_input: Request | string, init?: RequestInit) => {
+				fetchCalls++;
+				const body = init?.body ? JSON.parse(String(init.body)) : {};
+				const texts: string[] = body.input ?? [];
+				const data = texts.map((text) => {
+					const t = String(text).toLowerCase();
+					let embedding: number[];
+					if (t === "alpha") embedding = [1.0, 0.0, 0.0]; // query direction
+					else if (t.includes("alpha")) embedding = [0.1, 0.9, 0.0]; // alpha node: far from query
+					else if (t.includes("beta")) embedding = [0.95, 0.05, 0.0]; // beta node: close to query
+					else embedding = [0.0, 0.0, 1.0];
+					return { object: "embedding", embedding, index: 0 };
+				});
+				return new Response(JSON.stringify({ id: "emb", object: "list", data, usage: { prompt_tokens: 1, total_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+			}) as typeof fetch;
+
+			const embedFocus = await getStoredQueryTopologyFocus({
+				sessionId: "s_embed_flip",
+				query: "alpha",
+				contextPercent: 99,
+				rerankClient: { rerankTopology: async () => undefined },
+			});
+			expect(fetchCalls).toBeGreaterThan(0);
+			const embedJson = embedFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+			expect(embedJson).toBeDefined();
+			const embedPayload = JSON.parse(embedJson!);
+			// Embedding: cosine picks beta node (u2) first
+			expect(embedPayload.nodes[0].source.messageId).toBe("u2");
+		} finally {
+			if (savedDataDir === undefined) delete process.env.OMP_DECK_DATA_DIR;
+			else process.env.OMP_DECK_DATA_DIR = savedDataDir;
+			for (const [k, v] of Object.entries(savedEmbedEnv)) {
+				if (v === undefined) delete process.env[k];
+				else process.env[k] = v;
+			}
+			globalThis.fetch = originalFetch;
+		}
 	});
 	test("retrieveTopologyWithEmbeddings selects nodes in cosine-score order, not DB order", async () => {
 		const dir = tempDir();
