@@ -136,6 +136,16 @@ try {
 }
 Write-Ok "Dependencies installed"
 
+# -- 3b. Build web frontend ----------------------------------------------
+Write-Step "Building web frontend"
+Push-Location $InstallDir
+try {
+  Invoke-Checked "bun" @("run", "--filter", "@omp-deck/web", "build") "web build failed"
+} finally {
+  Pop-Location
+}
+Write-Ok "Web frontend built"
+
 # -- 4. Summary ------------------------------------------------------------
 Write-Step "Installation complete"
 
