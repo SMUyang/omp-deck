@@ -211,6 +211,28 @@ test("rebuilds context store from a session file", async () => {
 });
 
 describe("context replacement", () => {
+	const RERANK_ENV_KEYS = [
+		"OMP_DECK_TOPOLOGY_RERANK_ENABLED",
+		"OMP_DECK_TOPOLOGY_RERANK_PROVIDER",
+		"OMP_DECK_TOPOLOGY_RERANK_MIN_CANDIDATE_NODES",
+		"OMP_DECK_TOPOLOGY_RERANK_MIN_CONTEXT_PERCENT",
+		"OMP_DECK_TOPOLOGY_RERANK_LOCAL_CONFIDENCE_BELOW",
+	] as const;
+	function withModelRoleRerankEnv<T>(fn: () => Promise<T>): Promise<T> {
+		const saved: Record<string, string | undefined> = {};
+		for (const k of RERANK_ENV_KEYS) saved[k] = process.env[k];
+		process.env.OMP_DECK_TOPOLOGY_RERANK_ENABLED = "1";
+		process.env.OMP_DECK_TOPOLOGY_RERANK_PROVIDER = "model_role";
+		process.env.OMP_DECK_TOPOLOGY_RERANK_MIN_CANDIDATE_NODES = "1";
+		process.env.OMP_DECK_TOPOLOGY_RERANK_MIN_CONTEXT_PERCENT = "0";
+		process.env.OMP_DECK_TOPOLOGY_RERANK_LOCAL_CONFIDENCE_BELOW = "1";
+		return fn().finally(() => {
+			for (const k of RERANK_ENV_KEYS) {
+				if (saved[k] === undefined) delete process.env[k];
+				else process.env[k] = saved[k]!;
+			}
+		});
+	}
 	test("shouldReplaceContext triggers at or above 15%", () => {
 		expect(shouldReplaceContext(14, 15)).toBe(false);
 		expect(shouldReplaceContext(15, 15)).toBe(true);
@@ -392,53 +414,57 @@ describe("context replacement", () => {
 	});
 
 	test("getStoredQueryTopologyFocus applies an injected rerank patch and keeps focus clean", async () => {
-		const dir = tempDir();
-		openDb({ path: path.join(dir, "deck.db") });
-		const sessionFile = path.join(dir, "s_rerank.jsonl");
-		fs.writeFileSync(sessionFile, [
-			JSON.stringify({ type: "session", version: 3, id: "s_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank plan" }] } }),
-			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "please keep this deliberately unrelated external API patch validation node" }] } }),
-		].join("\n"));
-		await rebuildSessionContextFromFile({ sessionId: "s_rerank", sessionFile });
-		const graph = getSessionContextGraph("s_rerank", 200);
-		const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_rerank", query: "unmatched-rerank-trigger", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
-		const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
-		expect(localJson).toBeDefined();
-		const localPayload = JSON.parse(localJson!);
-		const keep = graph.nodes.find((node) => node.id !== localPayload.nodes[0].id);
-		expect(keep).toBeDefined();
+		await withModelRoleRerankEnv(async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const sessionFile = path.join(dir, "s_rerank.jsonl");
+			fs.writeFileSync(sessionFile, [
+				JSON.stringify({ type: "session", version: 3, id: "s_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+				JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank plan" }] } }),
+				JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "please keep this deliberately unrelated external API patch validation node" }] } }),
+			].join("\n"));
+			await rebuildSessionContextFromFile({ sessionId: "s_rerank", sessionFile });
+			const graph = getSessionContextGraph("s_rerank", 200);
+			const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_rerank", query: "unmatched-rerank-trigger", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
+			const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+			expect(localJson).toBeDefined();
+			const localPayload = JSON.parse(localJson!);
+			const keep = graph.nodes.find((node) => node.id !== localPayload.nodes[0].id);
+			expect(keep).toBeDefined();
 
-		const focus = await getStoredQueryTopologyFocus({
-			sessionId: "s_rerank",
-			query: "unmatched-rerank-trigger",
-			contextPercent: 99,
-			rerankClient: { rerankTopology: async () => ({ keepNodeIds: [keep!.id], keepEdgeIds: [], demoteNodeIds: [] }) },
+			const focus = await getStoredQueryTopologyFocus({
+				sessionId: "s_rerank",
+				query: "unmatched-rerank-trigger",
+				contextPercent: 99,
+				rerankClient: { rerankTopology: async () => ({ keepNodeIds: [keep!.id], keepEdgeIds: [], demoteNodeIds: [] }) },
+			});
+
+			const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+			expect(json).toBeDefined();
+			const payload = JSON.parse(json!);
+			expect(payload.nodes[0].id).toBe(keep!.id);
+			expect(JSON.stringify(payload)).not.toContain("score");
+			expect(JSON.stringify(payload)).not.toContain("reasons");
+			expect(JSON.stringify(payload)).not.toContain("importance");
 		});
-
-		const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
-		expect(json).toBeDefined();
-		const payload = JSON.parse(json!);
-		expect(payload.nodes[0].id).toBe(keep!.id);
-		expect(JSON.stringify(payload)).not.toContain("score");
-		expect(JSON.stringify(payload)).not.toContain("reasons");
-		expect(JSON.stringify(payload)).not.toContain("importance");
 	});
 
 	test("getStoredQueryTopologyFocus falls back to local focus when injected rerank patch is invalid", async () => {
-		const dir = tempDir();
-		openDb({ path: path.join(dir, "deck.db") });
-		const sessionFile = path.join(dir, "s_invalid_rerank.jsonl");
-		fs.writeFileSync(sessionFile, [
-			JSON.stringify({ type: "session", version: 3, id: "s_invalid_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank fallback local baseline" }] } }),
-		].join("\n"));
-		await rebuildSessionContextFromFile({ sessionId: "s_invalid_rerank", sessionFile });
+		await withModelRoleRerankEnv(async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const sessionFile = path.join(dir, "s_invalid_rerank.jsonl");
+			fs.writeFileSync(sessionFile, [
+				JSON.stringify({ type: "session", version: 3, id: "s_invalid_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+				JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank fallback local baseline" }] } }),
+			].join("\n"));
+			await rebuildSessionContextFromFile({ sessionId: "s_invalid_rerank", sessionFile });
 
-		const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
-		const fallbackFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => ({ keepNodeIds: ["missing"], keepEdgeIds: [], demoteNodeIds: [] }) } });
+			const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
+			const fallbackFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => ({ keepNodeIds: ["missing"], keepEdgeIds: [], demoteNodeIds: [] }) } });
 
-		expect(fallbackFocus).toBe(localFocus);
+			expect(fallbackFocus).toBe(localFocus);
+		});
 	});
 	test("getStoredQueryTopologyFocus flips first node when embedding path is enabled", async () => {
 		const dir = tempDir();
