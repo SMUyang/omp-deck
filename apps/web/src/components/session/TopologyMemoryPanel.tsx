@@ -22,14 +22,23 @@ export function TopologyMemoryPanel() {
 		if (!sessionId) return;
 		setState("loading");
 		setError(undefined);
-		try {
-			await api.rebuildSessionContext(sessionId);
-			const data = await api.getSessionContextGraph(sessionId, 500);
-			setGraph(data);
-			setState("loaded");
-		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
-			setState("error");
+		for (let attempt = 0; attempt < 3; attempt++) {
+			try {
+				await api.rebuildSessionContext(sessionId);
+				const data = await api.getSessionContextGraph(sessionId, 500);
+				setGraph(data);
+				setState("loaded");
+				return;
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				if (attempt < 2 && msg.includes("session_file_not_ready")) {
+					await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
+					continue;
+				}
+				setError(msg);
+				setState("error");
+				return;
+			}
 		}
 	}, [sessionId]);
 

@@ -154,6 +154,8 @@ interface StoreState {
 
 	// Track subscriptions to avoid duplicate subscribe messages.
 	subscribed: Set<string>;
+	/** In-flight session create guard: key = resumeFromPath ?? cwd, value = shared promise. Prevents duplicate POST /sessions from concurrent component lifecycle. */
+	_createInFlight: Map<string, Promise<string>>;
 
 	/**
 	 * Tool-card view state. `allCollapsed` is the bulk default; `perCard` holds
@@ -293,6 +295,7 @@ export const useStore = create<StoreState>()(
 		sessions: [],
 		sessionsById: {},
 		subscribed: new Set<string>(),
+		_createInFlight: new Map(),
 		toolView: { allCollapsed: false, perCard: {} },
 		tasksChangeCounter: 0,
 		skillsChangeCounter: 0,
@@ -355,18 +358,37 @@ export const useStore = create<StoreState>()(
 		},
 
 		async createSession(opts) {
-			const created = await api.createSession({
-				cwd: opts.cwd,
-				...(opts.resumeFromPath ? { resumeFromPath: opts.resumeFromPath } : {}),
+			const key = opts.resumeFromPath ?? opts.cwd;
+			const existing = get()._createInFlight.get(key);
+			if (existing) return existing;
+			const promise = (async () => {
+				const created = await api.createSession({
+					cwd: opts.cwd,
+					...(opts.resumeFromPath ? { resumeFromPath: opts.resumeFromPath } : {}),
+				});
+				// Subscribe immediately; reducer will hydrate from the `subscribed` snapshot.
+				get().ws?.send({ type: "subscribe", sessionId: created.sessionId });
+				get().subscribed.add(created.sessionId);
+				set({ activeId: created.sessionId });
+				// Background-refresh sidebar to reflect the new entry.
+				void get().refreshSessions();
+				void get().refreshWorkspaces();
+				return created.sessionId;
+			})();
+			set((s) => {
+				const m = new Map(s._createInFlight);
+				m.set(key, promise);
+				return { _createInFlight: m };
 			});
-			// Subscribe immediately; reducer will hydrate from the `subscribed` snapshot.
-			get().ws?.send({ type: "subscribe", sessionId: created.sessionId });
-			get().subscribed.add(created.sessionId);
-			set({ activeId: created.sessionId });
-			// Background-refresh sidebar to reflect the new entry.
-			void get().refreshSessions();
-			void get().refreshWorkspaces();
-			return created.sessionId;
+			try {
+				return await promise;
+			} finally {
+				set((s) => {
+					const m = new Map(s._createInFlight);
+					m.delete(key);
+					return { _createInFlight: m };
+				});
+			}
 		},
 
 		selectSession(id: string) {
