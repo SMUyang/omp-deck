@@ -10,14 +10,15 @@ export function ChatView() {
 	return (
 		<>
 			<Layout
-				sidebar={<Sidebar />}
+				sidebar={{ content: <Sidebar />, label: "Sessions" }}
 				main={
 					<div className="flex h-full min-h-0 flex-col">
 						<Chat />
 						<Composer />
 					</div>
 				}
-				inspector={<StatusPanel />}
+				inspector={{ content: <StatusPanel />, label: "Status" }}
+				toolCardsToggle={true}
 				topBar={<StatusBar />}
 			/>
 			<ExtUiDialog />

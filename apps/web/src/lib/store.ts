@@ -710,10 +710,10 @@ function handleFrame(
 			set((s) => applySessionDisposed(s, frame.sessionId));
 			return;
 
-		case "error":
+		case "error": {
+			const id = frame.sessionId;
+			if (!id) return;
 			set((s) => {
-				const id = frame.sessionId;
-				if (!id) return {};
 				const prev = s.sessionsById[id];
 				if (!prev) return {};
 				return {
@@ -723,7 +723,25 @@ function handleFrame(
 					},
 				};
 			});
+			// Also surface as a toast so the user actually sees the message —
+			// `lastError` on the session is only consulted by some views.
+			set((s) => {
+				const notification: NotificationItem = {
+					id: `server-error-${id}-${Date.now()}`,
+					level: "error",
+					title: "Server error",
+					body: frame.error,
+					timestamp: new Date().toISOString(),
+					receivedAtMs: Date.now(),
+					deliveredOs: false,
+					dismissed: false,
+				};
+				const next = [...s.notifications, notification];
+				if (next.length > MAX_NOTIFICATIONS) next.splice(0, next.length - MAX_NOTIFICATIONS);
+				return { notifications: next };
+			});
 			return;
+		}
 
 		case "heartbeat":
 			set(() => ({

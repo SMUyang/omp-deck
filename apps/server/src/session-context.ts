@@ -32,6 +32,7 @@ import { rerankTopologyWithSiliconflow } from "./topology-rerank-siliconflow-ada
 import { readManagedEnvFile } from "./env-store.ts";
 import { embedTexts, cosineSimilarity, type EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
 import { getNodeEmbeddings, saveNodeEmbeddings } from "./db/session-context.ts";
+import { refineNodesWithLLM, type TopologyExtractorModelClient } from "./topology-extractor.ts";
 
 export interface ExtractInput {
 	sessionId: string;
@@ -136,27 +137,58 @@ function classifyUserText(text: string): SessionContextNode["kind"] {
 	return "goal";
 }
 
+/** OMP internal markers and known low-value toolResult patterns to skip. */
+const TOOL_NOISE_RE = /^\s*(?:\[Superseded by a newer read of this file\]|Skipped due to queued user message|\(no output\)|Background job \w+|## (?:Completed|Still Running)|Spawned agent|Remaining items \(|Wall time: \d|Rewind requested|Checkpoint (?:started|created)|applying migration \d|kill -9 |lsof -ti|\[INFO\] |\[WARN\] |\[ERROR\] |totalReplacements)/i;
+
+/**
+ * Secondary content-based noise check for patterns that can't be expressed
+ * as a simple prefix regex. Catches git output, process management, and
+ * status snapshots that carry no semantic value for topology.
+ */
+function isToolNoiseContent(text: string): boolean {
+	const t = text.trim();
+	if (t.length === 0) return true;
+	// Git push/diff/status output
+	if (/^(?:To |To\t).*github\.com/m.test(t)) return true;
+	if (/^\s*[MAD]\s+\S/m.test(t) && t.split("\n").length < 10) return true;
+	if (/^\S+\s*\|\s*\d+\s+[+-]+/m.test(t)) return true;
+	// Standalone "Wall time" with nothing else useful
+	if (/^Wall time: \d/m.test(t) && t.length < 50) return true;
+	// Job/poll/status blocks with just counters and no semantic content
+	if (/^(?:## |Label: |Delivered|Cancelled)/m.test(t) && t.length < 300) return true;
+	return false;
+}
 function isToolRole(role: string): boolean {
 	return role === "tool" || role === "toolResult";
 }
 
 function classifyNonUserText(role: string, text: string): SessionContextNode["kind"] | undefined {
 	if (isToolRole(role)) {
-		// Strip benign zero-count summaries ("0 fail", "0 failures", "0 errors") so only
-		// genuine failure/error signals remain. This lets a mixed report like
-		// "Unit: 0 failures\nE2E: exit 1 error" still surface as an issue.
-		const stripped = text.replace(/\b0\s+(?:fails?|failures?|errors?)\b/gi, "");
-		// Stem-aware matchers catch inflected forms: fail, failure(s), failed, error(s).
-		const hasFailure =
-			/\bfail(?:ures?|ed)?\b/i.test(stripped) ||
-			/\berrors?\b/i.test(stripped) ||
-			/\bexit\s*[12]\b/i.test(stripped);
-		if (hasFailure) return "issue";
-		// Benign tool output: passing tests, status codes, HTTP responses without failure words.
-		if (/\b(?:pass|HTTP|status:)\b/i.test(text)) return "evidence";
+		if (TOOL_NOISE_RE.test(text)) return undefined;
+		if (isToolNoiseContent(text)) return undefined;
+		// Only apply keyword-based issue detection to short outputs (test
+		// summaries, exit codes, error lines). Long outputs (file contents,
+		// fetched webpages) almost always contain "error"/"fail" somewhere
+		// in the body — that's not a real issue signal.
+		if (text.trim().length < 500) {
+			const stripped = text.replace(/\b0\s+(?:fails?|failures?|errors?)\b/gi, "");
+			const hasFailure =
+				/\bfail(?:ures?|ed)?\b/i.test(stripped) ||
+				/\berrors?\b/i.test(stripped) ||
+				/\bexit\s*[12]\b/i.test(stripped) ||
+				/Path not found:|No such file|ENOENT/i.test(stripped);
+			if (hasFailure) return "issue";
+			if (/\b(?:pass|HTTP|status:)\b/i.test(text)) return "evidence";
+		}
+		// Substantial tool output (> 20 chars) becomes evidence so file
+		// reads, grep hits, write confirmations, and command outputs are
+		// preserved as topology nodes instead of being silently dropped.
+		if (text.trim().length > 20) return "evidence";
 		return undefined;
 	}
+	// Assistant messages: capture decisions and code-bearing resolutions.
 	if (/\b(?:decision|recommend|architecture|选择|推荐|决定)\b/i.test(text)) return "decision";
+	if (/```[\s\S]*?```/m.test(text)) return "resolution";
 	return undefined;
 }
 
@@ -353,26 +385,38 @@ export function renderSessionContextPack(input: RenderPackInput): SessionContext
 export async function rebuildSessionContextFromFile(input: {
 	sessionId: string;
 	sessionFile: string;
+	extractorClient?: TopologyExtractorModelClient;
+	extractorModelRole?: string;
 }): Promise<SessionContextRebuildResponse> {
 	const file = Bun.file(input.sessionFile);
 	if (!(await file.exists())) throw new Error("session file not found");
 	const [content, stat] = await Promise.all([file.text(), file.stat()]);
 	const extracted = extractSessionContextFromJsonl({ sessionId: input.sessionId, content });
-	replaceSessionContext({ sessionId: input.sessionId, ...extracted });
+
+	let nodes = extracted.nodes;
+	if (input.extractorClient && input.extractorModelRole && nodes.length > 0) {
+		nodes = await refineNodesWithLLM({ nodes, client: input.extractorClient, modelRole: input.extractorModelRole });
+	}
+	const nodeIds = new Set(nodes.map((node) => node.id));
+	const edges = extracted.edges.filter((edge) => nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId));
+	const artifacts = extracted.artifacts.filter((artifact) => !artifact.nodeId || nodeIds.has(artifact.nodeId));
+
+
+	replaceSessionContext({ sessionId: input.sessionId, nodes, edges, artifacts });
 	const rebuiltAt = new Date().toISOString();
 	upsertSessionContextCheckpoint({
 		sessionId: input.sessionId,
 		sourcePath: input.sessionFile,
 		sourceMtimeMs: Math.trunc(stat.mtimeMs),
 		sourceSizeBytes: stat.size,
-		nodeCount: extracted.nodes.length,
-		edgeCount: extracted.edges.length,
+		nodeCount: nodes.length,
+		edgeCount: edges.length,
 		rebuiltAt,
 	});
 	return {
 		sessionId: input.sessionId,
-		nodeCount: extracted.nodes.length,
-		edgeCount: extracted.edges.length,
+		nodeCount: nodes.length,
+		edgeCount: edges.length,
 		sourcePath: input.sessionFile,
 		rebuiltAt,
 	};

@@ -14,14 +14,17 @@ import { ExternalLink, Plug } from "lucide-react";
 export function IntegrationsView() {
 	return (
 		<Layout
-			sidebar={
-				<div className="p-3">
-					<div className="meta mb-2">Integrations</div>
-					<div className="text-sm text-ink-3">
-						V1.5 will surface installed MCP servers and one-click Workspace setup.
+			sidebar={{
+				content: (
+					<div className="p-3">
+						<div className="meta mb-2">Integrations</div>
+						<div className="text-sm text-ink-3">
+							V1.5 will surface installed MCP servers and one-click Workspace setup.
+						</div>
 					</div>
-				</div>
-			}
+				),
+				label: "Integrations",
+			}}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">

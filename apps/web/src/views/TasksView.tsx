@@ -269,7 +269,7 @@ export function TasksView() {
 	return (
 		<>
 			<Layout
-				sidebar={<TasksSidebar tasks={tasks} states={states} />}
+				sidebar={{ content: <TasksSidebar tasks={tasks} states={states} />, label: "Task Filters" }}
 				main={
 					<div className="flex h-full min-h-0 flex-col">
 						<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
@@ -370,13 +370,14 @@ export function TasksView() {
 						)}
 					</div>
 				}
-				inspector={
-					showStateConfig ? (
+				inspector={{
+					content: showStateConfig ? (
 						<StateConfig states={states} onClose={() => setShowStateConfig(false)} onChanged={refresh} />
 					) : (
 						<EmptyInspector />
-					)
-				}
+					),
+					label: "Task Detail",
+				}}
 				topBar={null}
 			/>
 			<TaskModal

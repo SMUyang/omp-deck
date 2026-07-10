@@ -185,16 +185,19 @@ export function InboxView() {
 
 	return (
 		<Layout
-			sidebar={
-				<InboxSidebar
-					counts={counts}
-					filter={filter}
-					setFilter={setFilter}
-					includeProcessed={includeProcessed}
-					setIncludeProcessed={setIncludeProcessed}
-					onCompose={() => setReader({ mode: "compose" })}
-				/>
-			}
+			sidebar={{
+				content: (
+					<InboxSidebar
+						counts={counts}
+						filter={filter}
+						setFilter={setFilter}
+						includeProcessed={includeProcessed}
+						setIncludeProcessed={setIncludeProcessed}
+						onCompose={() => setReader({ mode: "compose" })}
+					/>
+				),
+				label: "Inbox",
+			}}
 			main={
 				<div className="flex h-full min-h-0 flex-row">
 					{/* Left pane: list. On <md the list collapses to full-width and

@@ -33,6 +33,7 @@ const config: Config = {
 				accent: {
 					DEFAULT: channel("accent"),
 					soft: channel("accent-soft"),
+					plan: channel("accent-plan"),
 				},
 				success: channel("success"),
 				warn: channel("warn"),

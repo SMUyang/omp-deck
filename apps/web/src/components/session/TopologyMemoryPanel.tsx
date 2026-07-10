@@ -86,7 +86,7 @@ export function TopologyMemoryPanel() {
 	if (state === "error") {
 		return (
 			<div className="mt-2 space-y-1">
-				<div className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs text-red-300">{error}</div>
+				<div className="rounded border border-danger/30 bg-danger/10 px-2 py-1 text-xs text-danger">{error}</div>
 				<button
 					type="button"
 					className="w-full rounded border border-line px-2 py-1 text-xs hover:bg-paper-3"

@@ -420,6 +420,14 @@ export function Composer() {
 	}
 
 	function handleKey(e: KeyboardEvent<HTMLTextAreaElement>): void {
+		// IME composition: when the user is typing Chinese/Japanese/Korean
+		// via a composition method, the Enter key commits the candidate
+		// (not the message). Fire-and-forget `isComposing` on the
+		// native event is the only reliable cross-browser signal — React
+		// forwards it via the synthetic event as well, but the native
+		// field is the one Pinyin/IME hooks respect. Bail out so we
+		// don't send the half-typed draft or trigger picker selection.
+		if (e.nativeEvent.isComposing) return;
 		// Plan-mode toggle (Shift+Tab). Mirrors the TUI's `app.plan.toggle`
 		// keybinding. Highest priority — fires regardless of picker state,
 		// composer content, or streaming state. Idempotent on the wire; server

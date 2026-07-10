@@ -15,21 +15,21 @@ interface ContextPackPanelProps {
 function Section({ title, children }: { title: string; children: ReactNode }) {
 	return (
 		<section className="space-y-1">
-			<h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</h4>
-			<div className="space-y-1 text-xs text-foreground/85">{children}</div>
+			<h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-3">{title}</h4>
+			<div className="space-y-1 text-xs text-ink/85">{children}</div>
 		</section>
 	);
 }
 
 function NodeList({ nodes }: { nodes: SessionContextNode[] }) {
 	const { t } = useTranslation();
-	if (nodes.length === 0) return <div className="text-muted-foreground">{t("sessionContext.none")}</div>;
+	if (nodes.length === 0) return <div className="text-ink-3">{t("sessionContext.none")}</div>;
 	return (
 		<ul className="space-y-1">
 			{nodes.map((node) => (
-				<li key={node.id} className="rounded border border-line/60 bg-panel/60 p-2">
+				<li key={node.id} className="rounded border border-line/60 bg-paper/60 p-2">
 					<div className="font-medium">{node.title}</div>
-					<div className="text-muted-foreground">{node.compressedBody}</div>
+					<div className="text-ink-3">{node.compressedBody}</div>
 				</li>
 			))}
 		</ul>
@@ -57,15 +57,15 @@ export function ContextPackPanel({ sessionId, query = "", className }: ContextPa
 	}, [query, sessionId]);
 
 	return (
-		<div className={cn("rounded-lg border border-line bg-panel/70 p-3", className)}>
+		<div className={cn("rounded-lg border border-line bg-paper/70 p-3", className)}>
 			<div className="flex items-center justify-between gap-2">
 				<div>
 					<h3 className="text-sm font-semibold">{t("sessionContext.title")}</h3>
-					<p className="text-xs text-muted-foreground">{t("sessionContext.description")}</p>
+					<p className="text-xs text-ink-3">{t("sessionContext.description")}</p>
 				</div>
 				<button
 					type="button"
-					className="rounded border border-line px-2 py-1 text-xs hover:bg-muted"
+					className="rounded border border-line px-2 py-1 text-xs hover:bg-paper-2"
 					disabled={!sessionId || loading}
 					onClick={rebuildAndLoad}
 				>
@@ -73,7 +73,7 @@ export function ContextPackPanel({ sessionId, query = "", className }: ContextPa
 				</button>
 			</div>
 			{error ? (
-				<div className="mt-2 rounded border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">{error}</div>
+				<div className="mt-2 rounded border border-danger/30 bg-danger/10 p-2 text-xs text-danger">{error}</div>
 			) : null}
 			{pack ? (
 				<div className="mt-3 space-y-3">
@@ -93,7 +93,7 @@ export function ContextPackPanel({ sessionId, query = "", className }: ContextPa
 						<NodeList nodes={pack.evidence} />
 					</Section>
 					<Section title={t("sessionContext.sections.rawRefs")}>
-						<ul className="space-y-1 text-muted-foreground">
+						<ul className="space-y-1 text-ink-3">
 							{pack.rawRefs.slice(0, 12).map((ref, index) => (
 								<li key={`${ref.label}-${index}`}>{ref.label}</li>
 							))}

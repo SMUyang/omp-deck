@@ -1,5 +1,7 @@
 import type {
 	BrowseDirectoryResponse,
+	ContextEvidenceStats,
+	ContextReplacementEvent,
 	CreateSessionRequest,
 	CreateSessionResponse,
 	CreateWorkspaceRequest,
@@ -18,7 +20,6 @@ import type {
 	ProviderUsageResponse,
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
-	SessionContextRebuildResponse,
 	SessionContextStatusResponse,
 	UpdateRunResponse,
 } from "@omp-deck/protocol";
@@ -132,8 +133,18 @@ export const api = {
 	runUpdate(): Promise<UpdateRunResponse> {
 		return request<UpdateRunResponse>("/update", { method: "POST" });
 	},
-	rebuildSessionContext(id: string): Promise<SessionContextRebuildResponse> {
-		return request<SessionContextRebuildResponse>(`/sessions/${encodeURIComponent(id)}/context/rebuild`, { method: "POST" });
+	rebuildSessionContext(id: string): Promise<SessionContextStatusResponse> {
+		return (async () => {
+			await request<unknown>(`/sessions/${encodeURIComponent(id)}/context/rebuild`, { method: "POST" });
+			// Async rebuild (202): poll until done
+			const deadline = Date.now() + 10 * 60_000;
+			while (Date.now() < deadline) {
+				const status = await request<SessionContextStatusResponse>(`/sessions/${encodeURIComponent(id)}/context-status`);
+				if (status.built && !status.rebuilding) return status;
+				await new Promise((r) => setTimeout(r, 2000));
+			}
+			throw new Error("rebuild timed out after 10 minutes");
+		})();
 	},
 	getSessionContextStatus(id: string): Promise<SessionContextStatusResponse> {
 		return request<SessionContextStatusResponse>(`/sessions/${encodeURIComponent(id)}/context-status`);
@@ -147,5 +158,11 @@ export const api = {
 	},
 	getSessionContextGraph(id: string, limit = 200): Promise<SessionContextGraphResponse> {
 		return request<SessionContextGraphResponse>(`/sessions/${encodeURIComponent(id)}/context-graph?limit=${encodeURIComponent(String(limit))}`);
+	},
+	getContextEvidence(id: string): Promise<ContextReplacementEvent[]> {
+		return request<{ events: ContextReplacementEvent[] }>(`/sessions/${encodeURIComponent(id)}/context-evidence`).then((r) => r.events);
+	},
+	getContextEvidenceStats(): Promise<ContextEvidenceStats> {
+		return request<ContextEvidenceStats>("/stats/context-savings");
 	},
 };

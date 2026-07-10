@@ -9,7 +9,6 @@ import type {
 	SessionContextFocusResponse,
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
-	SessionContextRebuildResponse,
 	SessionContextStatusResponse,
 	SessionSummary,
 } from "@omp-deck/protocol";
@@ -90,6 +89,22 @@ function setupPersistedSession(): { app: Hono; sessionFile: string } {
 	return { app, sessionFile };
 }
 
+/** Trigger rebuild and wait for it to complete (regex mode = instant). */
+async function rebuildAndWait(app: Hono, id: string): Promise<void> {
+	const res = await app.request(`/sessions/${id}/context/rebuild`, { method: "POST" });
+	expect(res.status).toBe(202);
+	const deadline = Date.now() + 5000;
+	while (Date.now() < deadline) {
+		const statusRes = await app.request(`/sessions/${id}/context-status`);
+		if (statusRes.status === 200) {
+			const body = (await statusRes.json()) as SessionContextStatusResponse;
+			if (body.built && !body.rebuilding) return;
+		}
+		await Bun.sleep(20);
+	}
+	throw new Error(`rebuild did not complete for ${id} within 5s`);
+}
+
 // Force regex extraction so tests don't hit real DeepSeek API
 let extractionModeBackup: string | undefined;
 beforeEach(() => {
@@ -114,24 +129,37 @@ describe("session context routes", () => {
 			expect(res.status).toBe(404);
 		});
 
-		test("returns 200 with nodeCount when session has a file", async () => {
+		test("returns 202 and rebuilds async when session has a file", async () => {
 			const { app, sessionFile } = setupSession();
 			const res = await app.request("/sessions/s1/context/rebuild", { method: "POST" });
-			expect(res.status).toBe(200);
-			const body = (await res.json()) as SessionContextRebuildResponse;
-			expect(body.nodeCount).toBeGreaterThan(0);
-			expect(body.sourcePath).toBe(sessionFile);
+			expect(res.status).toBe(202);
+			const body = (await res.json()) as { sessionId: string; status: string; sourcePath: string };
 			expect(body.sessionId).toBe("s1");
+			expect(body.status).toBe("rebuilding");
+			expect(body.sourcePath).toBe(sessionFile);
+		// Wait for async rebuild to settle (poll status, don't re-trigger)
+		for (let i = 0; i < 100; i++) {
+			const sr = await app.request("/sessions/s1/context-status");
+			const sb = (await sr.json()) as SessionContextStatusResponse;
+			if (sb.built && !sb.rebuilding) break;
+			await Bun.sleep(20);
+		}
 		});
 
-		test("returns 200 for persisted session with a real JSONL file", async () => {
+		test("returns 202 for persisted session and rebuilds async", async () => {
 			const { app, sessionFile } = setupPersistedSession();
 			const res = await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
-			expect(res.status).toBe(200);
-			const body = (await res.json()) as SessionContextRebuildResponse;
+			expect(res.status).toBe(202);
+			const body = (await res.json()) as { sessionId: string; status: string; sourcePath: string };
 			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.status).toBe("rebuilding");
 			expect(body.sourcePath).toBe(sessionFile);
-			expect(body.nodeCount).toBeGreaterThan(0);
+		for (let i = 0; i < 100; i++) {
+			const sr = await app.request("/sessions/persisted-s1/context-status");
+			const sb = (await sr.json()) as SessionContextStatusResponse;
+			if (sb.built && !sb.rebuilding) break;
+			await Bun.sleep(20);
+		}
 		});
 	});
 
@@ -170,7 +198,7 @@ describe("session context routes", () => {
 
 		test("returns built status after rebuild", async () => {
 			const { app } = setupSession();
-			await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "s1");
 
 			const res = await app.request("/sessions/s1/context-status");
 
@@ -213,7 +241,7 @@ describe("session context routes", () => {
 
 		test("returns pack with summary and goals after rebuild", async () => {
 			const { app } = setupSession();
-			await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "s1");
 			const res = await app.request("/sessions/s1/context-pack?q=context&budget=4000");
 			expect(res.status).toBe(200);
 			const body = (await res.json()) as SessionContextPackResponse;
@@ -225,7 +253,7 @@ describe("session context routes", () => {
 
 		test("returns pack for persisted session after rebuild", async () => {
 			const { app } = setupPersistedSession();
-			await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "persisted-s1");
 			const res = await app.request("/sessions/persisted-s1/context-pack?q=context&budget=4000");
 			expect(res.status).toBe(200);
 			const body = (await res.json()) as SessionContextPackResponse;
@@ -246,7 +274,7 @@ describe("session context routes", () => {
 
 		test("respects limit query param", async () => {
 			const { app } = setupSession();
-			await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "s1");
 			const res = await app.request("/sessions/s1/context-graph?limit=2");
 			expect(res.status).toBe(200);
 			const body = (await res.json()) as SessionContextGraphResponse;
@@ -257,7 +285,7 @@ describe("session context routes", () => {
 
 		test("returns graph for persisted session after rebuild with limit", async () => {
 			const { app } = setupPersistedSession();
-			await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "persisted-s1");
 			const res = await app.request("/sessions/persisted-s1/context-graph?limit=2");
 			expect(res.status).toBe(200);
 			const body = (await res.json()) as SessionContextGraphResponse;
@@ -271,7 +299,7 @@ describe("session context routes", () => {
 	describe("GET /sessions/:id/context-focus", () => {
 		test("returns rendered clean topology focus for active session after rebuild", async () => {
 			const { app } = setupSession();
-			await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "s1");
 
 			const res = await app.request("/sessions/s1/context-focus?q=context&contextPercent=7");
 
@@ -292,7 +320,7 @@ describe("session context routes", () => {
 
 		test("returns rendered focus for persisted session after rebuild", async () => {
 			const { app } = setupPersistedSession();
-			await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			await rebuildAndWait(app, "persisted-s1");
 
 			const res = await app.request("/sessions/persisted-s1/context-focus?q=memory");
 

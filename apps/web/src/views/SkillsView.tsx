@@ -112,16 +112,19 @@ export function SkillsView() {
 
 	return (
 		<Layout
-			sidebar={
-				<SkillsSidebar
-					skills={data?.skills ?? []}
-					providerFilter={providerFilter}
-					onProviderFilter={setProviderFilter}
-					levelFilter={levelFilter}
-					onLevelFilter={setLevelFilter}
-				/>
-			}
-			inspector={<SkillInspector skill={selected} detail={detail} />}
+			sidebar={{
+				content: (
+					<SkillsSidebar
+						skills={data?.skills ?? []}
+						providerFilter={providerFilter}
+						onProviderFilter={setProviderFilter}
+						levelFilter={levelFilter}
+						onLevelFilter={setLevelFilter}
+					/>
+				),
+				label: "Skill Filters",
+			}}
+			inspector={{ content: <SkillInspector skill={selected} detail={detail} />, label: "Skill Detail" }}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">

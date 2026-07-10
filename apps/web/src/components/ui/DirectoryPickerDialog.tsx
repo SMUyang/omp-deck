@@ -80,7 +80,7 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-				{error ? <div className="px-2 py-3 font-mono text-xs text-red-700">{error}</div> : null}
+				{error ? <div className="px-2 py-3 font-mono text-xs text-danger">{error}</div> : null}
 				{loading ? <div className="px-2 py-3 font-mono text-xs text-ink-3">Loading…</div> : null}
 				{!loading && data?.entries.length === 0 ? <div className="px-2 py-3 font-mono text-xs text-ink-3">{t("sidebar.noChildDirectories")}</div> : null}
 				{data?.entries.map((entry) => (

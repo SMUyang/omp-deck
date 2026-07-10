@@ -78,6 +78,7 @@
 		"@omp-deck/protocol"
 	],
 	"devDependencies": {
+		"playwright": "^1.61.1",
 		"typescript": "^5.6.3"
 	}
 }

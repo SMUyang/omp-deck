@@ -1,6 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ForceGraph2D from "react-force-graph-2d";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ForceGraphMethods } from "react-force-graph-2d";
+
+// Lazy-load the browser-only graph library so that module evaluation
+// does not require `window` (force-graph reads `window.innerWidth` at init).
+const ForceGraph2D = lazy(() => import("react-force-graph-2d"));
 import { AlertTriangle, EyeOff, Loader2, Search } from "lucide-react";
 import type { KbGraphEdge, KbGraphNode, KbGraphResponse } from "@omp-deck/protocol";
 
@@ -187,34 +190,42 @@ export const KbGraphPane = memo(function KbGraphPane({
 					</div>
 				) : null}
 				{data ? (
-					<ForceGraph2D
-						ref={fgRef}
-						graphData={{ nodes: filtered.nodes, links: filtered.links }}
-						width={size.width}
-						height={size.height}
-						nodeId="id"
-						nodeLabel={(n) => {
-							const node = n as DisplayNode;
-							return `${node.title}\n${node.path}\n← ${node.inbound} · ${node.outbound} →`;
-						}}
-						nodeColor={(n) => {
-							const node = n as DisplayNode;
-							if (currentPath && node.path === currentPath) return "#f97316"; // tailwind orange-500 (matches rust accent)
-							return colorForDir(node.dir || "(root)");
-						}}
-						nodeRelSize={2.2}
-						nodeVal={(n) => {
-							const node = n as DisplayNode;
-							return 1 + Math.log2(1 + node.inbound) * 1.5;
-						}}
-						linkColor={() => "rgba(160,160,160,0.22)"}
-						linkWidth={0.6}
-						linkDirectionalParticles={0}
-						cooldownTicks={120}
-						warmupTicks={60}
-						onNodeClick={(n) => onNodeClick(n as DisplayNode)}
-						enableNodeDrag={false}
-					/>
+					<Suspense
+						fallback={
+							<div className="absolute inset-0 flex items-center justify-center text-sm text-ink-3">
+								<Loader2 className="mr-2 h-4 w-4 animate-spin" /> loading graph…
+							</div>
+						}
+					>
+						<ForceGraph2D
+							ref={fgRef}
+							graphData={{ nodes: filtered.nodes, links: filtered.links }}
+							width={size.width}
+							height={size.height}
+							nodeId="id"
+							nodeLabel={(n) => {
+								const node = n as DisplayNode;
+								return `${node.title}\n${node.path}\n← ${node.inbound} · ${node.outbound} →`;
+							}}
+							nodeColor={(n) => {
+								const node = n as DisplayNode;
+								if (currentPath && node.path === currentPath) return "#f97316"; // tailwind orange-500 (matches rust accent)
+								return colorForDir(node.dir || "(root)");
+							}}
+							nodeRelSize={2.2}
+							nodeVal={(n) => {
+								const node = n as DisplayNode;
+								return 1 + Math.log2(1 + node.inbound) * 1.5;
+							}}
+							linkColor={() => "rgba(160,160,160,0.22)"}
+							linkWidth={0.6}
+							linkDirectionalParticles={0}
+							cooldownTicks={120}
+							warmupTicks={60}
+							onNodeClick={(n) => onNodeClick(n as DisplayNode)}
+							enableNodeDrag={false}
+						/>
+					</Suspense>
 				) : null}
 
 				{data && !loading ? (

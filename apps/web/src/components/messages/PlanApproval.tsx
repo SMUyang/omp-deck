@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import type { SessionUi } from "@/lib/types";
 import { Markdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/Badge";
 
 /**
  * Inline plan-approval card (T-105 — Slice C).
@@ -77,9 +78,7 @@ export function PlanApproval({ session }: { session: SessionUi }) {
 			)}
 		>
 			<header className="mb-3 flex items-center gap-2">
-				<span className="rounded border border-accent-plan/40 bg-accent-plan/10 px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta text-accent-plan">
-					Plan ready
-				</span>
+				<Badge tone="thinking">Plan ready</Badge>
 				<span className="truncate font-mono text-2xs text-ink-3">→ {finalPath}</span>
 			</header>
 

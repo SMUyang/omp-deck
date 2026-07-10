@@ -1,6 +1,69 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import type {
+	CreateContextEvidenceRequest,
+	UpdateContextEvidenceRequest,
+} from "@omp-deck/protocol";
 
 export const CUSTOM_TYPE = "deck-session-topology-context";
+
+// ── Evidence recording ──────────────────────────────────────────────────────
+
+/** Callback contracts for the extension to record lifecycle evidence.
+ *  The server wires the real DB-backed tracker; tests wire a capture spy. */
+export interface EvidenceRecorder {
+	record(params: CreateContextEvidenceRequest): string;
+	update(eventId: string, params: UpdateContextEvidenceRequest): void;
+}
+
+let evidenceRecorder: EvidenceRecorder | null = null;
+
+/** Wire the evidence recorder. Call once during server startup. */
+export function setEvidenceRecorder(recorder: EvidenceRecorder): void {
+	evidenceRecorder = recorder;
+}
+
+/** Remove the evidence recorder (test cleanup). */
+export function resetEvidenceRecorder(): void {
+	evidenceRecorder = null;
+}
+
+// ── Token & hash helpers ────────────────────────────────────────────────────
+
+/** Compute saved tokens: max(0, before - after). Returns null when either input is null. */
+export function computeSavedTokens(
+	beforeTokens: number | null,
+	afterTokens: number | null,
+): number | null {
+	if (beforeTokens == null || afterTokens == null) return null;
+	return Math.max(0, beforeTokens - afterTokens);
+}
+
+/** Compute saved percent: round(saved / before * 100, 1). Returns null when either input is null. */
+export function computeSavedPercent(
+	beforeTokens: number | null,
+	savedTokens: number | null,
+): number | null {
+	if (beforeTokens == null || savedTokens == null) return null;
+	if (beforeTokens === 0) return savedTokens === 0 ? 0 : null;
+	return Math.round((savedTokens / beforeTokens) * 1000) / 10;
+}
+
+/** Estimate focus tokens: ceil(chars / 4). Per plan contract, method = "chars_div_4". */
+export function computeFocusEstimatedTokens(focus: string): number {
+	return Math.ceil(focus.length / 4);
+}
+
+/** SHA-256 hex digest of focus text. */
+export function sha256Hex(input: string): string {
+	return Bun.SHA256.hash(input, "hex") as string;
+}
+
+/** Build the first 240-char preview from the focus text. */
+export function buildFocusPreview(focus: string): string {
+	return focus.slice(0, 240);
+}
+
+// ── Message helpers ─────────────────────────────────────────────────────────
 
 interface TextPart {
 	type: "text";
@@ -98,6 +161,36 @@ export function appendTopologyContextMessage<T>(messages: readonly T[], focus: s
 	];
 }
 
+/**
+ * Replace old messages with topology focus, keeping only the most recent N user
+ * turns (including assistant/tool responses after each user message).
+ *
+ * Returns a new array: [focusMessage, ...recentTurns].
+ */
+export function replaceTopologyContext<T>(messages: readonly T[], focus: string, keepRecentUserTurns: number): Array<T | TopologyContextMessage> {
+	const kept: T[] = [];
+	let userCount = 0;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		kept.unshift(messages[i]!);
+		const role = (messages[i] as Record<string, unknown>).role;
+		if (role === "user") {
+			userCount++;
+			if (userCount >= keepRecentUserTurns) break;
+		}
+	}
+	return [
+		{
+			role: "custom",
+			customType: CUSTOM_TYPE,
+			content: focus,
+			display: false,
+			attribution: "agent",
+			timestamp: Date.now(),
+		},
+		...kept,
+	];
+}
+
 export function readBoundedEnvInt(name: string, fallback: number, min: number, max: number): number {
 	const raw = process.env[name]?.trim();
 	if (!raw || !/^\d+$/.test(raw)) return fallback;
@@ -120,7 +213,20 @@ async function fetchFocus(url: string, timeoutMs: number): Promise<string | null
 	}
 }
 
+// ── Extension hooks ──────────────────────────────────────────────────────────
+
+/**
+ * Per-session evidence state tracked across the context → provider lifecycle.
+ * Reset after provider_payload_observed or failed/timeout.
+ */
+interface PendingEvidence {
+	eventId: string;
+	focus: string;
+}
+
 export default function topologyContextExtension(pi: ExtensionAPI): void {
+	const pending = new Map<string, PendingEvidence>();
+
 	pi.on("context", async (event, ctx) => {
 		if (!shouldActivate(process.env)) return undefined;
 		const sessionId = ctx.sessionManager.getSessionId();
@@ -129,14 +235,90 @@ export default function topologyContextExtension(pi: ExtensionAPI): void {
 		if (!query) return undefined;
 		const apiBase = normalizeDeckApiBase(process.env.OMP_DECK_API_BASE);
 		if (!apiBase) return undefined;
+
 		const usage = ctx.getContextUsage();
+		const beforeTokens = typeof usage?.tokens === "number" ? usage.tokens : null;
+		const beforePercent = typeof usage?.percent === "number" ? usage.percent : null;
 		const contextPercent = typeof usage?.percent === "number" ? usage.percent : undefined;
 		const url = buildContextFocusUrl(apiBase, sessionId, query, contextPercent);
 		const timeoutMs = readBoundedEnvInt("OMP_DECK_TOPOLOGY_CONTEXT_TIMEOUT_MS", 1500, 100, 30_000);
 		const maxFocusChars = readBoundedEnvInt("OMP_DECK_TOPOLOGY_CONTEXT_MAX_FOCUS_CHARS", 50_000, 1000, 100_000);
+
 		const focus = await fetchFocus(url, timeoutMs);
-		if (!focus) return undefined;
+
+		if (!focus) {
+			// fetchFocus returns null on any failure (network, abort, non-ok).
+			// Conservatively record `failed` — the server layer can refine to timed_out
+			// when it has access to the original AbortSignal reason.
+			const rec = evidenceRecorder;
+			if (rec) {
+				rec.record({
+					status: "failed",
+					mechanism: "context_hook",
+					beforeTokens,
+					beforePercent,
+					focusHash: "",
+					focusPreview: "",
+					estimatedFocusTokens: 0,
+				});
+			}
+			return undefined;
+		}
+
 		const bounded = focus.length > maxFocusChars ? `${focus.slice(0, maxFocusChars)}\n[truncated]` : focus;
-		return { messages: appendTopologyContextMessage(event.messages, bounded) };
+		const focusHash = sha256Hex(bounded);
+		const focusPreview = buildFocusPreview(bounded);
+		const focusEstimatedTokens = Math.ceil(bounded.length / 4);
+
+		const rec = evidenceRecorder;
+		let eventId = "";
+		if (rec) {
+			eventId = rec.record({
+				status: "constructed",
+				mechanism: "context_hook",
+				beforeTokens,
+				beforePercent,
+				focusHash,
+				focusPreview,
+				estimatedFocusTokens: focusEstimatedTokens,
+			});
+			// Immediately update to handler_returned since we're about to return.
+			rec.update(eventId, { status: "handler_returned" });
+		} else {
+			eventId = crypto.randomUUID();
+		}
+
+		// Track pending evidence for before_provider_request hook.
+		pending.set(sessionId, { eventId, focus: bounded });
+
+		const keepTurns = readBoundedEnvInt("OMP_DECK_TOPOLOGY_CONTEXT_KEEP_TURNS", 3, 1, 20);
+		return { messages: replaceTopologyContext(event.messages, bounded, keepTurns) };
+	});
+
+	pi.on("before_provider_request", (_event) => {
+		const rec = evidenceRecorder;
+		if (!rec || pending.size === 0) return;
+
+		// The event carries the full provider payload. We check whether our
+		// injected focus text appears anywhere in the payload to prove it
+		// survived through convertToLlm().
+		const payloadRaw = JSON.stringify((_event as Record<string, unknown>).payload ?? "");
+
+		// JSON.stringify escapes special characters (e.g. newlines → \n).
+		// We must match the escaped form so focus text in the payload is found.
+		function escapeForJsonMatch(text: string): string {
+			return JSON.stringify(text).slice(1, -1);
+		}
+
+		// Walk all pending sessions and check if their focus is in the payload.
+		for (const [sessionId, p] of pending) {
+			if (payloadRaw.includes(escapeForJsonMatch(p.focus))) {
+				rec.update(p.eventId, {
+					status: "provider_payload_observed",
+				});
+				pending.delete(sessionId);
+			}
+			// If focus not found, leave pending — it may appear in a later request.
+		}
 	});
 }

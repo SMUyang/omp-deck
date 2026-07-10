@@ -4,6 +4,7 @@ import type { SessionUi } from "@/lib/types";
 import { selectActiveSession, useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
 import { ContextIndicator } from "./ContextIndicator";
+import { Badge } from "@/components/ui/Badge";
 import { ModelPickerModal } from "./ModelPickerModal";
 
 /**
@@ -80,12 +81,7 @@ function Inner({ session }: { session: SessionUi }) {
 			{/* Live indicator + name */}
 			<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-label="live session" />
 			{session.planMode?.enabled ? (
-				<span
-					className="inline-flex shrink-0 items-center gap-1 rounded border border-thinking/40 bg-thinking/10 px-1.5 py-0.5 text-2xs uppercase tracking-meta text-thinking"
-					title="Plan mode — agent reads + proposes only (Shift+Tab to exit)"
-				>
-					Plan
-				</span>
+				<Badge tone="accent-plan" title="Plan mode — agent reads + proposes only (Shift+Tab to exit)">plan</Badge>
 			) : null}
 			{editing ? (
 				<>
@@ -138,15 +134,6 @@ function Inner({ session }: { session: SessionUi }) {
 				</button>
 			)}
 
-			{session.planMode?.enabled ? (
-				<span
-					className="hidden h-6 shrink-0 items-center rounded-md border border-accent-plan/40 bg-accent-plan/10 px-1.5 font-mono text-2xs uppercase tracking-meta text-accent-plan sm:flex"
-					title="Plan mode active — agent will read + propose a plan, then await approval before execution (Shift+Tab to exit)"
-				>
-					plan
-				</span>
-			) : null}
-
 			{/* Metadata */}
 			<span
 				className="hidden font-mono text-2xs text-ink-3 sm:inline truncate"
@@ -165,15 +152,6 @@ function Inner({ session }: { session: SessionUi }) {
 					<span className="truncate max-w-[180px]">{session.model.id}</span>
 					<ChevronDown className="h-3 w-3" />
 				</button>
-			) : null}
-			{session.planMode?.enabled ? (
-				<span
-					className="flex h-6 items-center rounded-md border border-thinking/60 bg-thinking/10 px-1.5 font-mono text-2xs uppercase tracking-meta text-thinking"
-					title="Plan mode active — agent reads + proposes only. Shift+Tab to exit."
-					aria-label="Plan mode active"
-				>
-					Plan
-				</span>
 			) : null}
 
 			{/* Context-window indicator — clickable popover with manual /compact. */}

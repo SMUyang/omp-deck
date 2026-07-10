@@ -5,14 +5,14 @@ const STORAGE_KEY = "omp-deck-lang";
 
 function getInitialLang(): string {
 	try {
-		const saved = localStorage.getItem(STORAGE_KEY);
+		const saved = globalThis.localStorage?.getItem(STORAGE_KEY);
 		if (saved === "en" || saved === "zh-CN") return saved;
 	} catch {
 		// localStorage may be unavailable
 	}
 	// Auto-detect from browser
-	const navLang = navigator.language;
-	if (navLang.startsWith("zh")) return "zh-CN";
+	const navLang: string | undefined = globalThis.navigator?.language;
+	if (navLang?.startsWith("zh")) return "zh-CN";
 	return "en";
 }
 
@@ -27,7 +27,7 @@ export const LANG_LABELS: Record<Lang, string> = {
 export function changeLang(lang: Lang): void {
 	void i18n.changeLanguage(lang);
 	try {
-		localStorage.setItem(STORAGE_KEY, lang);
+		globalThis.localStorage?.setItem(STORAGE_KEY, lang);
 	} catch {
 		// ignore
 	}
@@ -53,6 +53,7 @@ void i18n.use(initReactI18next).init({
 					knowledge: "Knowledge",
 					integrations: "Integrations",
 					memory: "Memory",
+					topology: "Topology",
 					settings: "Settings",
 				},
 				sidebar: {
@@ -163,6 +164,54 @@ void i18n.use(initReactI18next).init({
 						counts: "{{nodes}} nodes · {{edges}} edges",
 					},
 				},
+				topologyWorkspace: {
+					title: "Topology",
+					description: "Session context graph and replacement evidence",
+					empty: "Select a session to view its topology graph.",
+					graph: {
+						title: "Context Graph",
+						empty: "No nodes in this session context.",
+						loading: "Loading graph…",
+						truncated: "Showing partial graph of {{total}} nodes",
+						stats: "{{nodes}} nodes · {{edges}} edges",
+						legend: "Node kinds",
+						selectedNode: "Node details",
+					},
+					evidence: {
+						title: "Context Replacement Evidence",
+						empty: "No context replacements recorded yet.",
+						loading: "Loading evidence…",
+						emptyHint: "Events appear here when context replacement is triggered during a session.",
+						savedTokens: "{{count}} tokens saved",
+						savedPercent: "{{percent}}% reduction",
+						unreported: "Model did not report",
+						focusEstimatedTokens: "≈{{count}} tokens",
+						focusContext: "Focus context",
+						failedToLoad: "Failed to load evidence",
+						selectSession: "Select a session to view context replacement evidence.",
+						providerLabel: "Provider:",
+						retried: "Retried {{count}} time",
+						retried_plural: "Retried {{count}} times",
+						status: {
+							constructed: "Constructed",
+							handler_returned: "Handler returned",
+							compact_requested: "Compact requested",
+							compact_completed: "Compact completed",
+							usage_drop_observed: "Usage drop observed",
+							provider_payload_observed: "Provider received",
+							failed: "Failed",
+							timed_out: "Timed out",
+						},
+						mechanism: {
+							context_hook: "Context hook",
+							auto_compact: "Auto compact",
+						},
+					},
+					pack: {
+						title: "Context Pack",
+						description: "Compressed session context for this session.",
+					},
+				},
 			},
 		},
 		"zh-CN": {
@@ -177,6 +226,7 @@ void i18n.use(initReactI18next).init({
 					knowledge: "知识库",
 					integrations: "集成",
 					memory: "记忆",
+					topology: "拓扑",
 					settings: "设置",
 				},
 				sidebar: {
@@ -285,6 +335,54 @@ void i18n.use(initReactI18next).init({
 						failed: "构建失败",
 						unavailable: "不可用",
 						counts: "{{nodes}} 节点 · {{edges}} 边",
+					},
+				},
+				topologyWorkspace: {
+					title: "拓扑",
+					description: "会话上下文图谱与替换证据",
+					empty: "选择一个会话查看其拓扑图谱。",
+					graph: {
+						title: "上下文图谱",
+						empty: "此会话上下文中没有节点。",
+						loading: "正在加载图谱…",
+						truncated: "显示部分图谱（共 {{total}} 节点）",
+						stats: "{{nodes}} 节点 · {{edges}} 边",
+						legend: "节点类型",
+						selectedNode: "节点详情",
+					},
+					evidence: {
+						title: "上下文替换证据",
+						empty: "尚未记录上下文替换事件。",
+						loading: "正在加载证据…",
+						emptyHint: "会话中触发上下文替换时，事件将显示在此处。",
+						savedTokens: "节省 {{count}} tokens",
+						savedPercent: "减少 {{percent}}%",
+						unreported: "模型未上报",
+						focusEstimatedTokens: "≈{{count}} tokens",
+						focusContext: "焦点上下文",
+						failedToLoad: "加载证据失败",
+						selectSession: "选择会话以查看上下文替换证据。",
+						providerLabel: "模型:",
+						retried: "已重试 {{count}} 次",
+						retried_plural: "已重试 {{count}} 次",
+						status: {
+							constructed: "已构建",
+							handler_returned: "处理器已返回",
+							compact_requested: "已请求压缩",
+							compact_completed: "压缩完成",
+							usage_drop_observed: "用量已下降",
+							provider_payload_observed: "模型已接收",
+							failed: "失败",
+							timed_out: "超时",
+						},
+						mechanism: {
+							context_hook: "上下文钩子",
+							auto_compact: "自动压缩",
+						},
+					},
+					pack: {
+						title: "上下文包",
+						description: "当前会话的压缩上下文。",
 					},
 				},
 			},

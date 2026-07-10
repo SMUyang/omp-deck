@@ -648,8 +648,10 @@ class RpcSessionHandle implements SessionHandle {
 	}
 
 	clearQueue(): { steering: number; followUp: number } {
-		// RPC doesn't expose granular queue clear; abort achieves a full reset
-		return { steering: 0, followUp: 0 };
+		// OMP RPC protocol has no queue-manipulation command yet. The WS
+		// layer surfaces this as an error frame to the user; the deck
+		// keeps the queue UI accurate via the next `queue_state` echo.
+		throw new Error("queue management not supported over RPC — use in-process mode to edit/cancel queued prompts");
 	}
 
 	getQueueSnapshot(): QueuedPromptWire[] {
@@ -657,7 +659,7 @@ class RpcSessionHandle implements SessionHandle {
 	}
 
 	async cancelQueuedById(_id: string): Promise<boolean> {
-		return false;
+		throw new Error("queue management not supported over RPC — use in-process mode to edit/cancel queued prompts");
 	}
 
 	async editQueuedById(
@@ -665,7 +667,7 @@ class RpcSessionHandle implements SessionHandle {
 		_text: string,
 		_images?: ImageAttachment[],
 	): Promise<boolean> {
-		return false;
+		throw new Error("queue management not supported over RPC — use in-process mode to edit/cancel queued prompts");
 	}
 
 	async abort(): Promise<void> {

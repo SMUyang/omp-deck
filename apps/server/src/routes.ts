@@ -44,6 +44,8 @@ import { buildCpaUsageRouter } from "./routes-cpa-usage.ts";
 import { buildContextSavingsRouter } from "./routes-context-savings.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
 import { buildSessionContextRouter } from "./routes-session-context.ts";
+import { buildContextEvidenceRouter } from "./routes-context-evidence.ts";
+import { ContextEvidenceTracker } from "./context-evidence-tracker.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
 import type { BridgeSupervisor } from "./bridge-supervisor.ts";
 import type { MarketplaceService } from "./marketplace-service.ts";
@@ -266,6 +268,7 @@ export function buildRouter(
 	app.route("/", buildSkillsRouter(skills));
 	app.route("/", buildKbRouter(kb));
 	app.route("/", buildMemoryRouter(config));
+	app.route("/", buildContextEvidenceRouter(new ContextEvidenceTracker()));
 	app.route("/", buildContextSavingsRouter());
 	app.route("/", buildSessionContextRouter(bridge));
 	app.route("/auth/oauth", buildAuthOAuthRouter());

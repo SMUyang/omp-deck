@@ -69,8 +69,8 @@ export function SettingsView() {
 
 	return (
 		<Layout
-			sidebar={<SettingsSideRail />}
-			inspector={<SettingsInspector />}
+			sidebar={{ content: <SettingsSideRail />, label: "Settings Nav" }}
+			inspector={{ content: <SettingsInspector />, label: "Settings Detail" }}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
@@ -250,7 +250,15 @@ function MessagingSection() {
 		}
 	}
 
+	// 4s polling. The settings page only mounts one section at a time, so
+	// the interval is cleared automatically when the user switches to a
+	// different section. The document.visibilityState check skips work
+	// when the browser tab is in the background.
 	useEffect(() => {
+		// Skip the immediate fetch too when the tab is hidden — otherwise a
+		// user opening Settings from a background tab would pay for two
+		// network round-trips before the visibility check kicks in.
+		if (document.visibilityState !== "visible") return;
 		void refresh();
 		const id = window.setInterval(() => {
 			if (document.visibilityState === "visible") void refresh();
@@ -439,7 +447,6 @@ function BridgeMeta({ info }: { info: BridgeInfo }) {
 	if (parts.length === 0) return null;
 	return <div className="font-mono text-2xs text-ink-3">{parts.join(" · ")}</div>;
 }
-
 function BridgeLogsPanel({ name }: { name: BridgeName }) {
 	const [open, setOpen] = useState(false);
 	const [lines, setLines] = useState<Array<{ stream: string; text: string; timestamp: string }>>([]);
@@ -459,6 +466,9 @@ function BridgeLogsPanel({ name }: { name: BridgeName }) {
 
 	useEffect(() => {
 		if (!open) return;
+		// Skip the immediate fetch when the tab is hidden, same reason as
+		// MessagingSection.
+		if (document.visibilityState !== "visible") return;
 		void load();
 		const id = window.setInterval(() => {
 			if (document.visibilityState === "visible") void load();
@@ -466,7 +476,6 @@ function BridgeLogsPanel({ name }: { name: BridgeName }) {
 		return () => window.clearInterval(id);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, name]);
-
 	return (
 		<div className="rounded-md border border-line bg-paper-2">
 			<button
@@ -756,10 +765,13 @@ function NotificationsSection() {
 	);
 
 	// Heartbeat-age clock so "5s ago" updates without re-receiving a frame.
-	// Ticks only while the panel is mounted; cheap.
+	// Ticks only while the tab is visible and the panel is mounted; cheap
+	// when hidden because we never reach the setState call.
 	const [nowMs, setNowMs] = useState(() => Date.now());
 	useEffect(() => {
-		const handle = window.setInterval(() => setNowMs(Date.now()), 1000);
+		const handle = window.setInterval(() => {
+			if (document.visibilityState === "visible") setNowMs(Date.now());
+		}, 1000);
 		return () => window.clearInterval(handle);
 	}, []);
 

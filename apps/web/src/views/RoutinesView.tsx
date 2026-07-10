@@ -136,7 +136,7 @@ export function RoutinesView() {
 		/>
 	);
 
-	const sidebar = isEditing ? (
+	const sidebar = { content: isEditing ? (
 		<EditorSidebar onBack={closeEditor} onNew={() => openEditor("new")} />
 	) : (
 		<RoutinesSidebar
@@ -152,9 +152,9 @@ export function RoutinesView() {
 				}
 			}}
 		/>
-	);
+	), label: "Routines" };
 
-	const inspector = isEditing ? (
+	const inspector = { content: isEditing ? (
 		<EditorInspector
 			routine={editingRoutine === "new" ? undefined : editingRoutine}
 			onChange={(r) => setRoutines((prev) => prev.map((x) => (x.id === r.id ? r : x)))}
@@ -163,7 +163,7 @@ export function RoutinesView() {
 		/>
 	) : (
 		<IndexInspector routines={routines} metrics={metrics} />
-	);
+	), label: "Routine Inspector" };
 
 	return <Layout sidebar={sidebar} main={mainPane} inspector={inspector} topBar={null} />;
 }

@@ -93,21 +93,24 @@ export function RunDetailView() {
 
 	return (
 		<Layout
-			sidebar={
-				<div className="flex h-full min-h-0 flex-col p-3">
-					<Link to="/routines" className="meta mb-2 flex items-center gap-1 text-ink-3 hover:text-ink">
-						<ArrowLeft className="h-3 w-3" />
-						Back to routines
-					</Link>
-					<div className="meta">Routine</div>
-					<div className="mt-1 truncate text-sm font-medium text-ink">{routine?.name ?? "…"}</div>
-					{routine ? (
-						<div className="mt-0.5 font-mono text-2xs text-ink-3">
-							v{routine.specVersion} · {routine.concurrency}
-						</div>
-					) : null}
-				</div>
-			}
+			sidebar={{
+				content: (
+					<div className="flex h-full min-h-0 flex-col p-3">
+						<Link to="/routines" className="meta mb-2 flex items-center gap-1 text-ink-3 hover:text-ink">
+							<ArrowLeft className="h-3 w-3" />
+							Back to routines
+						</Link>
+						<div className="meta">Routine</div>
+						<div className="mt-1 truncate text-sm font-medium text-ink">{routine?.name ?? "…"}</div>
+						{routine ? (
+							<div className="mt-0.5 font-mono text-2xs text-ink-3">
+								v{routine.specVersion} · {routine.concurrency}
+							</div>
+						) : null}
+					</div>
+				),
+				label: "Routine Detail",
+			}}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">

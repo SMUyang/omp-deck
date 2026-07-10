@@ -91,28 +91,28 @@ export function QueuedMessage({ msg }: { msg: QueuedPrompt }) {
 						· queued{msg.behavior === "steer" ? " · steer" : ""}
 					</span>
 				</span>
-				{!editing ? (
-					<span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-						<button
-							type="button"
-							onClick={startEdit}
-							className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-accent/40 hover:text-accent"
-							title="Edit queued prompt"
-							aria-label="Edit queued prompt"
-						>
-							<Pencil className="h-3 w-3" />
-						</button>
-						<button
-							type="button"
-							onClick={() => cancelQueued(msg.id)}
-							className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-danger/40 hover:text-danger"
-							title="Cancel queued prompt"
-							aria-label="Cancel queued prompt"
-						>
-							<X className="h-3 w-3" />
-						</button>
-					</span>
-				) : null}
+			{!editing ? (
+				<span className="ml-auto flex items-center gap-1 transition-opacity">
+					<button
+						type="button"
+						onClick={startEdit}
+						className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-accent/40 hover:text-accent"
+						title="Edit queued prompt"
+						aria-label="Edit queued prompt"
+					>
+						<Pencil className="h-3 w-3" />
+					</button>
+					<button
+						type="button"
+						onClick={() => cancelQueued(msg.id)}
+						className="rounded border border-line bg-paper px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-danger/40 hover:text-danger"
+						title="Cancel queued prompt"
+						aria-label="Cancel queued prompt"
+					>
+						<X className="h-3 w-3" />
+					</button>
+				</span>
+			) : null}
 			</div>
 
 			<ImagePreviewGrid

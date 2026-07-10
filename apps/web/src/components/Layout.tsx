@@ -5,14 +5,21 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 
-interface Props {
-	sidebar: ReactNode;
-	main: ReactNode;
-	inspector: ReactNode;
-	topBar?: ReactNode;
+interface CapabilityDescriptor {
+	content: ReactNode;
+	label: string;
+	toggleTitle?: string;
 }
 
-export function Layout({ sidebar, main, inspector, topBar }: Props) {
+interface Props {
+	sidebar: CapabilityDescriptor | null;
+	main: ReactNode;
+	inspector: CapabilityDescriptor | null;
+	topBar?: ReactNode;
+	toolCardsToggle?: boolean;
+}
+
+export function Layout({ sidebar, main, inspector, topBar, toolCardsToggle }: Props) {
 	const sidebarOpen = useStore((s) => s.sidebarOpen);
 	const setSidebarOpen = useStore((s) => s.setSidebarOpen);
 	const inspectorOpen = useStore((s) => s.inspectorOpen);
@@ -37,31 +44,35 @@ export function Layout({ sidebar, main, inspector, topBar }: Props) {
 	return (
 		<div className="flex h-full w-full flex-col bg-paper text-ink">
 			<header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-paper px-3">
+				{sidebar !== null ? (
 				<button
 					type="button"
 					className={cn("btn-ghost h-7 w-7 p-0", sidebarOpen && "lg:bg-paper-3")}
 					onClick={() => setSidebarOpen(!sidebarOpen)}
-					aria-label="Toggle sessions"
-					title="Toggle sessions"
+					aria-label={sidebar.toggleTitle ?? sidebar.label}
+					title={sidebar.toggleTitle ?? sidebar.label}
 				>
 					<Menu className="h-4 w-4" />
 				</button>
+				) : null}
 				<div className="font-mono text-[13px] font-medium tracking-tight text-ink">
 					omp<span className="text-ink-3">·</span>deck
 				</div>
 				<div className="ml-auto flex min-w-0 items-center gap-2 overflow-hidden">
 					<div className="hidden min-w-0 truncate sm:block">{topBar}</div>
 					<ConnectionIndicator />
-					<ToolCardsToggle />
+					{toolCardsToggle ? <ToolCardsToggle /> : null}
+					{inspector !== null ? (
 					<button
 						type="button"
 						className={cn("btn-ghost h-7 w-7 p-0", inspectorOpen && "lg:bg-paper-3")}
 						onClick={() => setInspectorOpen(!inspectorOpen)}
-						aria-label="Toggle status panel"
-						title="Toggle status panel"
+						aria-label={inspector.toggleTitle ?? inspector.label}
+						title={inspector.toggleTitle ?? inspector.label}
 					>
 						<PanelRight className="h-4 w-4" />
 					</button>
+					) : null}
 				</div>
 			</header>
 
@@ -80,13 +91,12 @@ export function Layout({ sidebar, main, inspector, topBar }: Props) {
 					/>
 				) : null}
 
-				{/* Sidebar — overlay drawer below lg, push layout at lg+. */}
+				{sidebar !== null ? (
 				<aside
 					className={cn(
 						"absolute inset-y-0 left-0 z-30 w-[280px] max-w-[80%] bg-paper border-r border-line shadow-[1px_0_0_0_rgba(0,0,0,0.04)]",
 						"transform transition-transform duration-200 ease-out",
 						sidebarOpen ? "translate-x-0" : "-translate-x-full",
-						// At lg+: lose the overlay shadow, become a width-animated flex item.
 						"lg:static lg:translate-x-0 lg:max-w-none lg:shadow-none lg:transition-[width]",
 						sidebarOpen ? "lg:w-[240px]" : "lg:w-0",
 						"lg:overflow-hidden",
@@ -94,14 +104,15 @@ export function Layout({ sidebar, main, inspector, topBar }: Props) {
 					aria-hidden={!sidebarOpen}
 				>
 					<div className="flex h-full w-[280px] flex-col lg:w-[240px]">
-						<MobileCloseBar onClose={() => setSidebarOpen(false)} side="left" />
-						<div className="min-h-0 flex-1">{sidebar}</div>
+						<MobileCloseBar label={sidebar.label} onClose={() => setSidebarOpen(false)} />
+						<div className="min-h-0 flex-1">{sidebar.content}</div>
 					</div>
 				</aside>
+				) : null}
 
 				<main className="relative flex min-w-0 flex-1 flex-col bg-paper">{main}</main>
 
-				{/* Status panel — same overlay/push pattern, right side. */}
+				{inspector !== null ? (
 				<aside
 					className={cn(
 						"absolute inset-y-0 right-0 z-30 w-[300px] max-w-[85%] bg-paper border-l border-line shadow-[-1px_0_0_0_rgba(0,0,0,0.04)]",
@@ -114,31 +125,30 @@ export function Layout({ sidebar, main, inspector, topBar }: Props) {
 					aria-hidden={!inspectorOpen}
 				>
 					<div className="flex h-full w-[300px] flex-col lg:w-[260px]">
-						<MobileCloseBar onClose={() => setInspectorOpen(false)} side="right" />
-						<div className="min-h-0 flex-1 overflow-y-auto">{inspector}</div>
+						<MobileCloseBar label={inspector.label} onClose={() => setInspectorOpen(false)} />
+						<div className="min-h-0 flex-1 overflow-y-auto">{inspector.content}</div>
 					</div>
 				</aside>
+				) : null}
 			</div>
 		</div>
 	);
 }
 
-function MobileCloseBar({ onClose, side }: { onClose: () => void; side: "left" | "right" }) {
+function MobileCloseBar({ label, onClose }: { label: string; onClose: () => void }) {
 	return (
 		<div className="flex h-9 items-center border-b border-line px-2 lg:hidden">
 			<button
 				type="button"
 				className="btn-ghost h-7 w-7 p-0"
 				onClick={onClose}
-				aria-label="Close"
+				aria-label={`Close ${label}`}
 			>
 				<X className="h-3.5 w-3.5" />
 			</button>
-			{side === "right" ? (
-				<span className="ml-2 font-mono text-2xs uppercase tracking-meta text-ink-3">
-					Status panel
-				</span>
-			) : null}
+			<span className="ml-2 min-w-0 truncate font-mono text-2xs uppercase tracking-meta text-ink-3">
+				{label}
+			</span>
 		</div>
 	);
 }

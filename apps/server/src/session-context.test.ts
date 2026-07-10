@@ -9,6 +9,7 @@ import { extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSes
 import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
 import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
 import type { EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
+import type { TopologyExtractorModelClient } from "./topology-extractor.ts";
 
 const jsonl = [
 	JSON.stringify({ type: "title", v: 1, title: "Context topology" }),
@@ -89,6 +90,123 @@ describe("classifyNonUserText edge cases", () => {
 		expect(evidence?.title).toContain("10 pass");
 		expect(evidence?.title).toContain("12 expect");
 	});
+});
+
+describe("toolResult content coverage (Phase 1 gap)", () => {
+	test("file read output becomes an evidence node", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-read", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "export function createSession() {\n  const store = new Map();\n  return store;\n}" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		const node = result.nodes.find((n) => n.sourceMessageId === "tr-read");
+		expect(node).toBeDefined();
+		expect(node?.kind).toBe("evidence");
+	});
+
+	test("grep match output becomes an evidence node", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-grep", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "apps/web/src/lib/store.ts:357: async createSession(opts) {" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		const node = result.nodes.find((n) => n.sourceMessageId === "tr-grep");
+		expect(node).toBeDefined();
+		expect(node?.kind).toBe("evidence");
+	});
+
+	test("write success output becomes an evidence node", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-write", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "Successfully wrote to apps/web/src/lib/store.ts (44 lines)" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		const node = result.nodes.find((n) => n.sourceMessageId === "tr-write");
+		expect(node).toBeDefined();
+		expect(node?.kind).toBe("evidence");
+	});
+
+	test("bash command output with no pass/fail keywords becomes an evidence node", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-bash", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "total 48\ndrwxr-xr-x  6 hyan  staff  192 Jul  8 12:00 dist\n-rw-r--r--  1 hyan  staff  2200 Jul  8 12:00 index.html" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		const node = result.nodes.find((n) => n.sourceMessageId === "tr-bash");
+		expect(node).toBeDefined();
+		expect(node?.kind).toBe("evidence");
+	});
+
+	test("assistant message with code block becomes a resolution node", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "a-code", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "assistant", content: [{ type: "text", text: "I refactored the function like this:\n\n```typescript\nconst createInFlight = new Map();\n```" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		const node = result.nodes.find((n) => n.sourceMessageId === "a-code");
+		expect(node).toBeDefined();
+		expect(node?.kind).toBe("resolution");
+	});
+
+	test("trivial toolResult (single word) is still skipped", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-ok", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "ok" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		expect(result.nodes.find((n) => n.sourceMessageId === "tr-ok")).toBeUndefined();
+	});
+
+	test("assistant prose mentioning 'import' without code is not overclassified", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "a-prose", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "assistant", content: [{ type: "text", text: "I will import the data from the API and process it." }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		expect(result.nodes.find((n) => n.sourceMessageId === "a-prose")).toBeUndefined();
+	});
+
+	test("Path not found toolResult becomes an issue node", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-404", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "Path not found: /nonexistent/file.ts" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		const node = result.nodes.find((n) => n.sourceMessageId === "tr-404");
+		expect(node).toBeDefined();
+		expect(node?.kind).toBe("issue");
+	});
+});
+
+describe("toolResult noise filtering", () => {
+	test("[Superseded by a newer read of this file] is skipped", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-sup", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "[Superseded by a newer read of this file]" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		expect(result.nodes.find((n) => n.sourceMessageId === "tr-sup")).toBeUndefined();
+	});
+
+	test("Skipped due to queued user message is skipped", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-skip", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "Skipped due to queued user message. Do not count this skipped result as completed work or verification." }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		expect(result.nodes.find((n) => n.sourceMessageId === "tr-skip")).toBeUndefined();
+	});
+	test("(no output) with trailing wall-time is skipped", () => {
+		const content = [
+			JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
+			JSON.stringify({ type: "message", id: "tr-empty", timestamp: "2026-07-02T00:00:10.000Z", message: { role: "toolResult", content: [{ type: "text", text: "(no output)\n\nWall time: 0.00 seconds" }] } }),
+		].join("\n");
+		const result = extractSessionContextFromJsonl({ sessionId: "s1", content });
+		expect(result.nodes.find((n) => n.sourceMessageId === "tr-empty")).toBeUndefined();
+	});
+
+	// TODO: bare numeric wc-style output like "3\n3\n691 /path\n\nWall time: ..."
+	// passes the >20 char threshold and becomes evidence. Needs a more precise filter.
 });
 
 describe("extractor role and edge generation", () => {
@@ -208,6 +326,70 @@ test("rebuilds context store from a session file", async () => {
 	expect(rebuilt.sourcePath).toBe(sessionFile);
 	const graph = getSessionContextGraph("s1", 50);
 	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
+});
+
+const jsonlSkip = [
+	JSON.stringify({ type: "session", version: 3, id: "s-skip", cwd: "/repo", timestamp: "2026-07-09T00:00:00.000Z" }),
+	JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-09T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Add regression test for topology rebuild" }] } }),
+	JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-09T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "Actually, we must validate FK constraints instead" }] } }),
+	JSON.stringify({ type: "message", id: "tool1", timestamp: "2026-07-09T00:00:03.000Z", message: { role: "tool", content: [{ type: "text", text: "bun test apps/server/src/session-context.test.ts\n10 pass" }] } }),
+].join("\n");
+
+function makeSkipFakeClient(skipId: string): TopologyExtractorModelClient {
+	return {
+		async extractNodes(input) {
+			const parsed = JSON.parse(input.prompt) as Array<{ id: string; kind: string; title: string; body: string; role: string }>;
+			return {
+				nodes: parsed.map((n) => ({
+					id: n.id,
+					kind: n.id === skipId ? "skip" : n.kind,
+					title: n.title,
+					body: n.body,
+				})),
+			};
+		},
+	};
+}
+
+test("rebuild prunes edges and artifacts referencing LLM-skipped nodes without FK violation", async () => {
+	const dir = tempDir();
+	openDb({ path: path.join(dir, "deck.db") });
+	const sessionFile = path.join(dir, "s-skip.jsonl");
+	fs.writeFileSync(sessionFile, jsonlSkip);
+
+	// The regex extractor produces node IDs via makeNode:
+	//   ${sessionId}:${kind}:${turnIndex}:${messageId}
+	// u1 = goal at turn 1   → s-skip:goal:1:u1
+	// u2 = user_intent turn 2 → s-skip:user_intent:2:u2
+	const skippedGoalId = "s-skip:goal:1:u1";
+	const fakeClient = makeSkipFakeClient(skippedGoalId);
+
+	const rebuilt = await rebuildSessionContextFromFile({
+		sessionId: "s-skip",
+		sessionFile,
+		extractorClient: fakeClient,
+		extractorModelRole: "topology_extractor",
+	});
+
+	// The skipped goal node is pruned. Surviving nodes: user_intent + evidence = 2.
+	expect(rebuilt.nodeCount).toBe(2);
+	expect(rebuilt.edgeCount).toBe(0);
+
+	const graph = getSessionContextGraph("s-skip", 50);
+	expect(graph.nodes.length).toBe(2);
+
+	// No edge must reference the skipped node.
+	expect(graph.edges).toHaveLength(0);
+	for (const edge of graph.edges) {
+		expect(edge.sourceNodeId).not.toBe(skippedGoalId);
+		expect(edge.targetNodeId).not.toBe(skippedGoalId);
+	}
+
+	// Artifacts on surviving nodes remain; none reference the skipped node.
+	expect(graph.artifacts.length).toBeGreaterThan(0);
+	for (const artifact of graph.artifacts) {
+		expect(artifact.nodeId).not.toBe(skippedGoalId);
+	}
 });
 
 describe("context replacement", () => {
@@ -343,7 +525,6 @@ describe("context replacement", () => {
 			truncated: false,
 		};
 		const retrieved: RetrievedTopology = {
-			sessionId: "s1",
 			selectedNodeIds: ["n1"],
 			selectedEdgeIds: [],
 			candidateNodeIds: ["n1"],
@@ -351,7 +532,7 @@ describe("context replacement", () => {
 			rankedCandidateNodeIds: ["n1"],
 			ranking: [],
 			artifacts: [],
-			omitted: { nodeCount: 0, edgeCount: 0, artifactCount: 0 },
+			omitted: { nodeCount: 0, edgeCount: 0, reason: "none" },
 			candidateNodeCount: 1,
 		};
 		const focus = renderRetrievedTopologyAsFocus(graph, "s1", "siliconflow rerank", retrieved);

@@ -122,22 +122,23 @@ export function KbView() {
 	return (
 		<>
 		<Layout
-			sidebar={<KbSidebar />}
-			inspector={
-				<KbInspector
-					currentPath={currentPath}
-					onNavigate={(p) => {
-						// Respect current view mode so clicking a backlink from graph
-						// mode keeps the graph mounted (preview-pane behavior).
-						const next = new URLSearchParams(params);
-						next.set("path", p);
-						if (viewMode === "graph") next.set("view", "graph");
-						setParams(next, { replace: false });
-						setMobileDetailOpen(true);
-					}}
-					kbChangeCounter={kbChangeCounter}
-				/>
-			}
+			sidebar={{ content: <KbSidebar />, label: "KB Tree" }}
+			inspector={{
+				content: (
+					<KbInspector
+						currentPath={currentPath}
+						onNavigate={(p) => {
+							const next = new URLSearchParams(params);
+							next.set("path", p);
+							if (viewMode === "graph") next.set("view", "graph");
+							setParams(next, { replace: false });
+							setMobileDetailOpen(true);
+						}}
+						kbChangeCounter={kbChangeCounter}
+					/>
+				),
+				label: "Preview",
+			}}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					{status && status.fileCount === 0 ? (

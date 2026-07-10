@@ -120,25 +120,28 @@ export function MarketplaceView() {
 	return (
 		<>
 			<Layout
-				sidebar={
-					<MarketplaceSidebar
-						sources={data?.sources ?? []}
-						counts={{
-							all: data?.catalog.length ?? 0,
-							installed: data?.installed.length ?? 0,
-							available: (data?.catalog.length ?? 0) - (data?.installed.length ?? 0),
-						}}
-						scope={scope}
-						onScope={setScope}
-						marketplaceFilter={marketplaceFilter}
-						onMarketplaceFilter={setMarketplaceFilter}
-						onAdd={() => setAddOpen(true)}
-						onRefresh={() => void refreshSources()}
-						refreshing={refreshing}
-						onRemoveSource={(name) => void removeSource(name)}
-					/>
-				}
-				inspector={<MarketplaceInspector entry={selected} />}
+				sidebar={{
+					content: (
+						<MarketplaceSidebar
+							sources={data?.sources ?? []}
+							counts={{
+								all: data?.catalog.length ?? 0,
+								installed: data?.installed.length ?? 0,
+								available: (data?.catalog.length ?? 0) - (data?.installed.length ?? 0),
+							}}
+							scope={scope}
+							onScope={setScope}
+							marketplaceFilter={marketplaceFilter}
+							onMarketplaceFilter={setMarketplaceFilter}
+							onAdd={() => setAddOpen(true)}
+							onRefresh={() => void refreshSources()}
+							refreshing={refreshing}
+							onRemoveSource={(name) => void removeSource(name)}
+						/>
+					),
+					label: "Sources",
+				}}
+				inspector={{ content: <MarketplaceInspector entry={selected} />, label: "Details" }}
 				main={
 					<div className="flex h-full min-h-0 flex-col">
 						<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">

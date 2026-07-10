@@ -254,6 +254,15 @@ export const ENV_SCHEMA: EnvSchemaEntry[] = [
 		description: "Maximum topology focus characters injected by the topology-context extension.",
 	},
 	{
+		key: "OMP_DECK_TOPOLOGY_CONTEXT_KEEP_TURNS",
+		defaultValue: "3",
+		valueType: "int",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: true,
+		description: "Number of recent user turns to preserve after topology context injection. Older messages are replaced by the topology focus.",
+	},
+	{
 		key: "OMP_DECK_TOPOLOGY_CONTEXT_TIMEOUT_MS",
 		defaultValue: "1500",
 		valueType: "int",
@@ -476,7 +485,7 @@ export const ENV_SCHEMA: EnvSchemaEntry[] = [
 	},
 	{
 		key: "OMP_DECK_TOPOLOGY_EXTRACTION_MODEL",
-		defaultValue: "deepseek/deepseek-v4-flash:low",
+		defaultValue: "deepseek-v4-flash",
 		valueType: "string",
 		sensitive: false,
 		restartRequired: false,
@@ -501,12 +510,21 @@ export const ENV_SCHEMA: EnvSchemaEntry[] = [
 	},
 	{
 		key: "OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE",
-		defaultValue: "15",
+		defaultValue: "5",
 		valueType: "int",
 		sensitive: false,
 		restartRequired: false,
 		hotApply: true,
 		description: "Number of messages per batch for fast model extraction.",
+	},
+	{
+		key: "OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS",
+		defaultValue: "8000",
+		valueType: "int",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: true,
+		description: "Maximum output tokens for fast model extraction. DeepSeek flash may spend part of this budget on reasoning tokens.",
 	},
 	{
 		key: "OMP_DECK_TOPOLOGY_EXTRACTION_TIMEOUT_MS",

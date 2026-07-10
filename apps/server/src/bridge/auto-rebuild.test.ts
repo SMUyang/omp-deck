@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { AutoRebuildTopology, type AutoRebuildDeps } from "./auto-rebuild.ts";
+import { AutoRebuildTopology, createExtractorPool, type AutoRebuildDeps } from "./auto-rebuild.ts";
+import { buildExtractionPrompt } from "../topology-extractor.ts";
 
 /** Build stub deps with controllable behaviour for deterministic async tests. */
 function makeDeps(overrides: Partial<AutoRebuildDeps> = {}): AutoRebuildDeps {
@@ -125,5 +126,117 @@ describe("AutoRebuildTopology", () => {
 		const result = arb.maybeTrigger();
 		expect(result).toBeUndefined();
 		await rebuildEntered.promise;
+	});
+});
+
+describe("createExtractorPool", () => {
+	test("honors OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE for chunking", async () => {
+		const origFetch = globalThis.fetch;
+		const origApiKey = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY;
+		const origBatchSize = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE;
+		const origModel = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL;
+		try {
+			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY = "test-key";
+			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE = "5";
+
+			const fetchCalls: Array<{ chunkNodeCount: number }> = [];
+			globalThis.fetch = ((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+				const bodyStr = typeof init?.body === "string" ? init.body : "";
+				// createHttpExtractor always builds a standard OpenAI chat completions body
+				const bodyObj = JSON.parse(bodyStr) as { messages: Array<{ role: string; content: string }> };
+				const userMsg = bodyObj.messages.find((m) => m.role === "user");
+				if (!userMsg) throw new Error("no user message in mock fetch");
+				const chunkNodes = JSON.parse(userMsg.content) as Array<{ id: string }>;
+				fetchCalls.push({ chunkNodeCount: chunkNodes.length });
+				return Promise.resolve(Response.json({
+					choices: [{
+						message: {
+							content: JSON.stringify({
+								nodes: chunkNodes.map((n) => ({ id: n.id, kind: "evidence", title: `refined:${n.id}`, body: "body" })),
+							}),
+						},
+					}],
+				}));
+			}) as unknown as typeof globalThis.fetch; // test-only monkey-patch, restored in finally
+
+			const pool = createExtractorPool();
+			expect(pool).not.toBeNull();
+
+			const inputNodes = Array.from({ length: 20 }, (_, i) => ({
+				id: `n${i}`,
+				kind: "evidence",
+				title: `title ${i}`,
+				body: `body ${i}`,
+				role: "toolResult",
+			}));
+			const result = await pool!.extractNodes({
+				modelRole: "topology_extractor",
+				prompt: buildExtractionPrompt(inputNodes),
+				timeoutMs: 60_000,
+			});
+
+			// 20 nodes / 5 per chunk = 4 chunks.
+			// Regression guard: chunking must follow the BATCH_SIZE env value, not a hard-coded default.
+			expect(fetchCalls.length).toBe(4);
+			for (const call of fetchCalls) {
+				expect(call.chunkNodeCount).toBeLessThanOrEqual(5);
+			}
+			if (!result || typeof result !== "object" || !("nodes" in result)) {
+				throw new Error("expected { nodes: [...] } from extractor pool");
+			}
+			expect(Array.isArray(result.nodes)).toBe(true);
+			if (Array.isArray(result.nodes)) {
+				expect(result.nodes.length).toBe(20);
+			}
+		} finally {
+			globalThis.fetch = origFetch;
+			if (origApiKey === undefined) delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY;
+			else process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY = origApiKey;
+			if (origBatchSize === undefined) delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE;
+			else process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE = origBatchSize;
+			if (origModel === undefined) delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL;
+			else process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL = origModel;
+		}
+	});
+
+	test("sends max_tokens from OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS in request body", async () => {
+		const origFetch = globalThis.fetch;
+		const origApiKey = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY;
+		const origMaxTokens = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS;
+		const origModel = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL;
+		try {
+			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY = "test-key";
+			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS = "1234";
+
+			let requestBody: Record<string, unknown> | null = null;
+			globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+				const bodyStr = typeof init?.body === "string" ? init.body : "";
+				requestBody = JSON.parse(bodyStr) as Record<string, unknown>;
+				return Promise.resolve(Response.json({
+					choices: [{ message: { content: JSON.stringify({ nodes: [{ id: "n0", kind: "evidence", title: "t", body: "b" }] }) } }],
+				}));
+			}) as unknown as typeof globalThis.fetch;
+
+			const pool = createExtractorPool();
+			expect(pool).not.toBeNull();
+
+			await pool!.extractNodes({
+				modelRole: "topology_extractor",
+				prompt: buildExtractionPrompt([{ id: "n0", kind: "evidence", title: "t", body: "b", role: "toolResult" }]),
+				timeoutMs: 60_000,
+			});
+
+			expect(requestBody).not.toBeNull();
+			expect(requestBody!.max_tokens).toBe(1234);
+			expect(requestBody!.model).toBe("deepseek-v4-flash");
+		} finally {
+			globalThis.fetch = origFetch;
+			if (origApiKey === undefined) delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY;
+			else process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY = origApiKey;
+			if (origMaxTokens === undefined) delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS;
+			else process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS = origMaxTokens;
+			if (origModel === undefined) delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL;
+			else process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL = origModel;
+		}
 	});
 });

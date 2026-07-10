@@ -2058,6 +2058,7 @@ export interface SessionContextRebuildResponse {
 export interface SessionContextStatusResponse {
 	sessionId: string;
 	built: boolean;
+	rebuilding?: boolean;
 	nodeCount: number;
 	edgeCount: number;
 	rebuiltAt?: string;
@@ -2111,6 +2112,120 @@ export interface SessionContextGraphResponse {
 	artifacts: SessionContextArtifact[];
 	totalNodes: number;
 	truncated: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Replacement Evidence (append-only telemetry for trust verification)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Lifecycle status of a single context replacement event. Every event
+ *  transitions through a linear chain; a status is NEVER back-propagated
+ *  (e.g. `compact_completed` is never promoted to `provider_payload_observed`
+ *  without the provider actually reporting the post-replacement usage). */
+export type ContextReplacementStatus =
+	| "constructed"
+	| "handler_returned"
+	| "compact_requested"
+	| "compact_completed"
+	| "usage_drop_observed"
+	| "provider_payload_observed"
+	| "failed"
+	| "timed_out";
+
+/** How the context replacement was triggered. */
+export type ContextReplacementMechanism =
+	| "context_hook"
+	| "auto_compact";
+
+/**
+ * One append-only row in the `context_replacement_events` table. Every
+ * replacement event records the lifecycle from construction through
+ * provider-payload observation so the deck UI can render a truthful
+ * evidence timeline (no inferred promotion).
+ *
+ * **Token authority:** `beforeTokens` / `afterTokens` come from the SDK's
+ * model-reported {@link ContextUsage}. When the model hasn't reported fresh
+ * numbers yet, both are `null` and `savedTokens` / `savedPercent` stay
+ * `null` — the UI MUST render a "模型未上报" affordance, not a 0.
+ *
+ * **Zero semantics:** `0 → 0` is a real observation (not missing data) and
+ * produces `savedTokens = 0`, `savedPercent = 0`.
+ *
+ * **Focus estimate is separate:** `focusEstimatedTokens` is `ceil(focus.length/4)`
+ * tagged with `estimateMethod: "chars_div_4"` and is NEVER folded into
+ * `savedTokens` / `savedPercent`.
+ */
+export interface ContextReplacementEvent {
+	id: string;
+	sessionId: string;
+	status: ContextReplacementStatus;
+	mechanism: ContextReplacementMechanism;
+	/** Pre-replacement context tokens as reported by the model. null when missing. */
+	beforeTokens: number | null;
+	/** Pre-replacement context utilization percent. null when missing. */
+	beforePercent: number | null;
+	/** Post-replacement context tokens as reported by the model. null when missing. */
+	afterTokens: number | null;
+	/** Post-replacement context utilization percent. null when missing. */
+	afterPercent: number | null;
+	/** computed: max(0, beforeTokens - afterTokens), null when either input is null */
+	savedTokens: number | null;
+	/** computed: round(savedTokens / beforeTokens * 100, 1), null when either input is null */
+	savedPercent: number | null;
+	/** SHA-256 hex digest of the replacement focus text (faster than storing the full text). */
+	focusHash: string;
+	/** First 240 characters of the focus text, for UI preview without DB load. */
+	focusPreview: string;
+	/** Tokens estimated from focus text length: ceil(chars/4). */
+	focusEstimatedTokens: number;
+	/** Estimation method identifier. Always "chars_div_4" per the token-authority contract. */
+	focusEstimateMethod: "chars_div_4";
+	/** Provider role that observed the post-replacement payload. null until the status reaches `provider_payload_observed`. */
+	providerRole: string | null;
+	/** Error message when status is `failed` or `timed_out`. */
+	errorMessage: string | null;
+	retryCount: number;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** Aggregate statistics for the context-evidence timeline. */
+export interface ContextEvidenceStats {
+	total: number;
+	/** Count where `status = "provider_payload_observed"`. */
+	completed: number;
+	/** Sum of `savedTokens` across all events (null-safe: COALESCE to 0). */
+	totalSaved: number;
+	/** Most recent 50 events, newest first. */
+	recent: ContextReplacementEvent[];
+}
+
+/** POST body for `POST /sessions/:id/context-evidence`. */
+export interface CreateContextEvidenceRequest {
+	status: ContextReplacementStatus;
+	mechanism: ContextReplacementMechanism;
+	beforeTokens?: number | null;
+	beforePercent?: number | null;
+	afterTokens?: number | null;
+	afterPercent?: number | null;
+	focusHash: string;
+	focusPreview: string;
+	estimatedFocusTokens?: number;
+	focusEstimateMethod?: "chars_div_4";
+	providerRole?: string | null;
+	errorMessage?: string | null;
+}
+
+/** Update body for `POST /sessions/:id/context-evidence/:eventId`. */
+export interface UpdateContextEvidenceRequest {
+	status: ContextReplacementStatus;
+	beforeTokens?: number | null;
+	beforePercent?: number | null;
+	afterTokens?: number | null;
+	afterPercent?: number | null;
+	focusEstimateMethod?: "chars_div_4";
+	providerRole?: string | null;
+	errorMessage?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

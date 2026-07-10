@@ -6,8 +6,10 @@ import type { AgentBridge } from "./bridge/types.ts";
 import { getSessionContextGraph, getSessionContextStatus } from "./db/session-context.ts";
 import { logger } from "./log.ts";
 import { getStoredQueryTopologyFocus, getStoredSessionContextPack, rebuildSessionContextFromFile } from "./session-context.ts";
+import { createExtractorPool } from "./bridge/auto-rebuild.ts";
 
 const log = logger("routes-session-context");
+
 
 function parseLimit(value: string | undefined, fallback: number): number {
 	const parsed = value ? Number.parseInt(value, 10) : fallback;
@@ -32,6 +34,8 @@ async function resolveSessionContextTarget(bridge: AgentBridge, id: string): Pro
 
 export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 	const app = new Hono();
+	/** Sessions currently undergoing an async rebuild. */
+	const rebuilding = new Set<string>();
 
 	app.post("/sessions/:id/context/rebuild", async (c) => {
 		const id = c.req.param("id");
@@ -39,7 +43,29 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
 			if (!target.sessionFile) return c.json({ error: "session has no session file" }, 404);
-			return c.json(await rebuildSessionContextFromFile({ sessionId: id, sessionFile: target.sessionFile }));
+			if (rebuilding.has(id)) return c.json({ error: "already_rebuilding", sessionId: id }, 409);
+
+			const ec = createExtractorPool();
+			const sessionFile = target.sessionFile;
+			rebuilding.add(id);
+
+			// Fire-and-forget: run the rebuild in the background so the HTTP
+			// connection is not held open past Bun's 255s idleTimeout.
+			rebuildSessionContextFromFile({
+				sessionId: id,
+				sessionFile,
+				extractorClient: ec ?? undefined,
+				extractorModelRole: ec ? "topology_extractor" : undefined,
+			}).then((result) => {
+				log.info(`async rebuild completed: session=${id} nodes=${result.nodeCount}`);
+			}).catch((err) => {
+				const msg = String((err as Error).message ?? err);
+				log.error(`async rebuild failed: session=${id} err=${msg}`);
+			}).finally(() => {
+				rebuilding.delete(id);
+			});
+
+			return c.json({ sessionId: id, status: "rebuilding", nodeCount: 0, edgeCount: 0, sourcePath: sessionFile, rebuiltAt: new Date().toISOString() }, 202);
 		} catch (err) {
 			const msg = String((err as Error).message ?? err);
 			if (msg.includes("session file not found")) {
@@ -55,7 +81,9 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 		try {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
-			return c.json(getSessionContextStatus(id));
+			const status = getSessionContextStatus(id);
+			if (rebuilding.has(id)) status.rebuilding = true;
+			return c.json(status);
 		} catch (err) {
 			log.error("context status failed", err);
 			return c.json({ error: String((err as Error).message ?? err) }, 500);

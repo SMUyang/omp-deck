@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
 import { SessionContextStatusChip } from "./session/SessionContextStatusChip";
-import { TopologyMemoryPanel } from "./session/TopologyMemoryPanel";
 import { DirectoryPickerDialog } from "@/components/ui/DirectoryPickerDialog";
 
 export function Sidebar() {
+
 	const workspaces = useStore((s) => s.workspaces);
 	const { t } = useTranslation();
 	const defaultCwd = useStore((s) => s.defaultCwd);
@@ -233,12 +234,6 @@ export function Sidebar() {
 					</div>
 				) : null}
 
-				<details className="mx-2 mt-2">
-					<summary className="cursor-pointer select-none text-2xs font-semibold uppercase tracking-wider text-ink-3">
-						{t("sidebar.topology", "Topology Memory")}
-					</summary>
-					<TopologyMemoryPanel />
-				</details>
 			</div>
 			</div>
 		</>
@@ -266,6 +261,7 @@ function SessionRow({
 	onClick: () => void;
 	onDelete?: () => void;
 }) {
+	const navigate = useNavigate();
 	const { t } = useTranslation();
 	return (
 		<div
@@ -282,7 +278,7 @@ function SessionRow({
 					) : (
 						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-line-strong" />
 					)}
-					<span className="truncate">{title}</span>
+					<span className="min-w-0 flex-1 truncate">{title}</span>
 					{planMode ? (
 						<span
 							className="ml-auto shrink-0 rounded border border-thinking/40 bg-thinking/10 px-1 py-px font-mono text-[10px] uppercase tracking-meta text-thinking"
@@ -295,14 +291,19 @@ function SessionRow({
 					{subtitle ? <div className="mt-0.5 truncate pl-3 font-mono text-2xs text-ink-3">{subtitle}</div> : null}
 					{meta ? <div className="truncate pl-3 font-mono text-2xs text-ink-4">{meta}</div> : null}
 				</button>
-				<div className="pl-3">
+				<button
+					type="button"
+					className="pl-3"
+					title={t("nav.topology")}
+					onClick={(e) => { e.stopPropagation(); navigate(`/topology?session=${sessionId}`); }}
+				>
 					<SessionContextStatusChip sessionId={sessionId} active={active} />
-				</div>
+				</button>
 			</div>
 			{onDelete ? (
 				<button
 					type="button"
-					className="shrink-0 rounded p-1 text-ink-4 opacity-0 hover:bg-paper-4 hover:text-red-700 group-hover:opacity-100 focus:opacity-100"
+					className="shrink-0 rounded p-1 text-ink-4 opacity-0 hover:bg-paper-3 hover:text-danger group-hover:opacity-100 focus:opacity-100"
 					onClick={onDelete}
 					aria-label={t("sidebar.deleteSession")}
 				>

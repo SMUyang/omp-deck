@@ -38,6 +38,7 @@
 	--warn: 180 83 9;
 	--danger: 153 27 27;
 	--thinking: 107 33 168;
+	--accent-plan: 107 48 168;
 	--font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
 	--font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -60,6 +61,7 @@
 	--warn: 251 191 36;
 	--danger: 248 113 113;
 	--thinking: 192 132 252;
+	--accent-plan: 167 139 250;
 	--font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
 	--font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -86,6 +88,7 @@
 	--warn: 250 183 149;        /* peach #fab795 */
 	--danger: 233 86 120;       /* pink — horizon uses the accent for errors */
 	--thinking: 184 119 219;    /* purple #b877db */
+	--accent-plan: 184 119 219;
 	--font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
 	--font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { createBrowserRouter, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
 import { ChatView } from "./views/ChatView";
 import { TasksView } from "./views/TasksView";
@@ -9,10 +9,14 @@ import { MarketplaceView } from "./views/MarketplaceView";
 import { KbView } from "./views/KbView";
 import { MemoryView } from "./views/MemoryView";
 import { SkillsView } from "./views/SkillsView";
-import { SettingsView } from "./views/SettingsView";
 import { IntegrationsView } from "./views/IntegrationsView";
 import { OnboardingView } from "./views/OnboardingView";
+import { TopologyView } from "./views/TopologyView";
 import { onboardingApi } from "./lib/onboarding-api";
+
+const SettingsView = lazy(() =>
+	import("./views/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
 
 /**
  * First-paint redirect: if the server reports `needsOnboarding`, route
@@ -42,26 +46,39 @@ function OnboardingGate() {
 	return <Outlet />;
 }
 
-const router = createBrowserRouter([
-	{
-		element: <OnboardingGate />,
-		children: [
-			{ path: "/", element: <ChatView /> },
-			{ path: "/tasks", element: <TasksView /> },
-			{ path: "/routines", element: <RoutinesView /> },
-			{ path: "/routines/:id/runs/:runId", element: <RunDetailView /> },
-			{ path: "/inbox", element: <InboxView /> },
-			{ path: "/marketplace", element: <MarketplaceView /> },
-			{ path: "/skills", element: <SkillsView /> },
-			{ path: "/memory", element: <MemoryView /> },
-			{ path: "/kb", element: <KbView /> },
-			{ path: "/integrations", element: <IntegrationsView /> },
-			{ path: "/settings", element: <SettingsView /> },
-			{ path: "/onboarding", element: <OnboardingView /> },
-		],
-	},
-]);
+
+let _router: ReturnType<typeof createBrowserRouter> | undefined;
+
+function getRouter() {
+	return _router ?? (_router = createBrowserRouter([
+		{
+			element: <OnboardingGate />,
+			children: [
+				{ path: "/", element: <ChatView /> },
+				{ path: "/tasks", element: <TasksView /> },
+				{ path: "/routines", element: <RoutinesView /> },
+				{ path: "/routines/:id/runs/:runId", element: <RunDetailView /> },
+				{ path: "/inbox", element: <InboxView /> },
+				{ path: "/marketplace", element: <MarketplaceView /> },
+				{ path: "/skills", element: <SkillsView /> },
+				{ path: "/memory", element: <MemoryView /> },
+				{ path: "/topology", element: <TopologyView /> },
+				{ path: "/kb", element: <KbView /> },
+				{ path: "/integrations", element: <IntegrationsView /> },
+				{
+					path: "/settings",
+					element: (
+						<Suspense fallback={<div className="p-4 text-sm text-ink-3">Loading…</div>}>
+							<SettingsView />
+						</Suspense>
+					),
+				},
+				{ path: "/onboarding", element: <OnboardingView /> },
+			],
+		},
+	]));
+}
 
 export function AppRouter() {
-	return <RouterProvider router={router} />;
+	return <RouterProvider router={getRouter()} />;
 }
