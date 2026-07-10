@@ -11,7 +11,9 @@ import { MemoryView } from "./views/MemoryView";
 import { SkillsView } from "./views/SkillsView";
 import { IntegrationsView } from "./views/IntegrationsView";
 import { OnboardingView } from "./views/OnboardingView";
-import { TopologyView } from "./views/TopologyView";
+const TopologyView = lazy(() =>
+	import("./views/TopologyView").then((m) => ({ default: m.TopologyView })),
+);
 import { onboardingApi } from "./lib/onboarding-api";
 
 const SettingsView = lazy(() =>
@@ -62,7 +64,11 @@ function getRouter() {
 				{ path: "/marketplace", element: <MarketplaceView /> },
 				{ path: "/skills", element: <SkillsView /> },
 				{ path: "/memory", element: <MemoryView /> },
-				{ path: "/topology", element: <TopologyView /> },
+				{ path: "/topology", element: (
+					<Suspense fallback={<div className="flex h-64 items-center justify-center p-4 text-sm text-ink-3">Loading topology…</div>}>
+						<TopologyView />
+					</Suspense>
+				) },
 				{ path: "/kb", element: <KbView /> },
 				{ path: "/integrations", element: <IntegrationsView /> },
 				{

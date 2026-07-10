@@ -641,4 +641,104 @@ describe("ContextEvidenceTracker", () => {
 			expect(ev.savedPercent).toBe(40);  // 10000-6000 = 4000, 40%
 		});
 	});
+
+	describe("focusHash determinism", () => {
+		// SHA-256 is computed by the caller (route/extension) and stored
+		// as-is by the tracker. This test verifies the tracker preserves
+		// exactly what it receives — same input → same stored hash.
+		test("same focus text produces same hash when caller computes consistently", () => {
+			const tracker = new ContextEvidenceTracker();
+			const hash = Bun.SHA256.hash("focus text", "hex");
+
+			const e1 = tracker.recordReplacement({
+				sessionId: "sha1",
+				status: "constructed",
+				mechanism: "context_hook",
+				focusHash: hash,
+				focusPreview: "focus text",
+				focusEstimatedTokens: 3,
+			});
+			const e2 = tracker.recordReplacement({
+				sessionId: "sha1",
+				status: "constructed",
+				mechanism: "context_hook",
+				focusHash: hash,
+				focusPreview: "focus text",
+				focusEstimatedTokens: 3,
+			});
+
+			const events = tracker.getSessionEvidence("sha1");
+			expect(events.find((e) => e.id === e1)!.focusHash).toBe(hash);
+			expect(events.find((e) => e.id === e2)!.focusHash).toBe(hash);
+			// Same input → identical hashes
+			expect(
+				events.find((e) => e.id === e1)!.focusHash,
+			).toBe(events.find((e) => e.id === e2)!.focusHash);
+		});
+
+		test("different focus text produces different hashes", () => {
+			const tracker = new ContextEvidenceTracker();
+			const h1 = Bun.SHA256.hash("alpha", "hex");
+			const h2 = Bun.SHA256.hash("beta", "hex");
+
+			tracker.recordReplacement({
+				sessionId: "sha3",
+				status: "constructed",
+				mechanism: "context_hook",
+				focusHash: h1,
+				focusPreview: "alpha",
+				focusEstimatedTokens: 2,
+			});
+			tracker.recordReplacement({
+				sessionId: "sha3",
+				status: "constructed",
+				mechanism: "context_hook",
+				focusHash: h2,
+				focusPreview: "beta",
+				focusEstimatedTokens: 2,
+			});
+
+			const events = tracker.getSessionEvidence("sha3");
+			expect(events[1]!.focusHash).not.toBe(events[0]!.focusHash);
+		});
+	});
+
+	describe("focusPreview truncation", () => {
+		test("preview is stored exactly as provided — truncation is caller's job", () => {
+			const tracker = new ContextEvidenceTracker();
+			const longText = "a".repeat(500);
+			const preview = longText.slice(0, 240);
+
+			const eventId = tracker.recordReplacement({
+				sessionId: "s-trunc",
+				status: "constructed",
+				mechanism: "context_hook",
+				focusHash: Bun.SHA256.hash(longText, "hex"),
+				focusPreview: preview,
+				focusEstimatedTokens: 125, // ceil(500/4)
+			});
+
+			const ev = tracker.getSessionEvidence("s-trunc").find((e) => e.id === eventId)!;
+			expect(ev.focusPreview.length).toBe(240);
+			expect(ev.focusPreview).toBe("a".repeat(240));
+		});
+
+		test("short focus text preview is identical to original", () => {
+			const tracker = new ContextEvidenceTracker();
+			const shortText = "short focus";
+
+			const eventId = tracker.recordReplacement({
+				sessionId: "s-short",
+				status: "constructed",
+				mechanism: "context_hook",
+				focusHash: Bun.SHA256.hash(shortText, "hex"),
+				focusPreview: shortText,
+				focusEstimatedTokens: 3,
+			});
+
+			const ev = tracker.getSessionEvidence("s-short").find((e) => e.id === eventId)!;
+			expect(ev.focusPreview.length).toBe(11);
+			expect(ev.focusPreview).toBe("short focus");
+		});
+	});
 });

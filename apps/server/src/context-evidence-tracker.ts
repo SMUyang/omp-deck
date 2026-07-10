@@ -100,6 +100,7 @@ function rowToEvent(row: EventRow): ContextReplacementEvent {
 	};
 }
 
+
 // ─── Class ───────────────────────────────────────────────────────────────────
 
 export class ContextEvidenceTracker {
