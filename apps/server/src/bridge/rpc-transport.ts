@@ -6,6 +6,8 @@
  * SDK — it talks to whatever `omp` is on PATH (or OMP_DECK_OMP_BIN).
  */
 import type { FileSink, Subprocess } from "bun";
+import * as os from "node:os";
+import * as path from "node:path";
 import { logger } from "../log.ts";
 
 const log = logger("rpc-transport");
@@ -79,6 +81,8 @@ export interface OmpRpcTransportOptions {
 	extraArgs?: readonly string[];
 	/** Timeout for the ready signal in ms (default: 30 000). */
 	readyTimeoutMs?: number;
+	/** Extra env vars merged into the spawn (wins over process.env). */
+	env?: Record<string, string>;
 }
 
 interface PendingRequest {
@@ -120,6 +124,7 @@ export class OmpRpcTransport {
 	readonly #cwd: string;
 	readonly #extraArgs: readonly string[];
 	readonly #readyTimeoutMs: number;
+	readonly #extraEnv: Record<string, string>;
 	#proc: Subprocess | null = null;
 	#stdin: PipedWriter | null = null;
 	#stdout: PipedReader | null = null;
@@ -136,6 +141,11 @@ export class OmpRpcTransport {
 		this.#cwd = options.cwd;
 		this.#extraArgs = options.extraArgs ?? [];
 		this.#readyTimeoutMs = options.readyTimeoutMs ?? 30_000;
+		// Always pin OMP_AGENT_DIR so every omp subprocess (shared catalog +
+		// per-session) reads the same models.yml, regardless of how the
+		// platform resolves "~". This fixes Windows cross-drive/home mismatches.
+		const agentDir = process.env.OMP_AGENT_DIR?.trim() || path.join(os.homedir(), ".omp", "agent");
+		this.#extraEnv = { OMP_AGENT_DIR: agentDir, ...(options.env ?? {}) };
 	}
 
 	#getStderrPreview(): string {
@@ -155,7 +165,7 @@ export class OmpRpcTransport {
 			stdin: "pipe",
 			stdout: "pipe",
 			stderr: "pipe",
-			env: { ...process.env, NO_COLOR: "1" },
+			env: { ...process.env, NO_COLOR: "1", ...this.#extraEnv },
 		});
 
 		const stdin = this.#proc.stdin;

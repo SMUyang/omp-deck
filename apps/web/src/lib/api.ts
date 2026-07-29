@@ -179,4 +179,13 @@ export const api = {
 	getContextEvidenceStats(): Promise<ContextEvidenceStats> {
 		return request<ContextEvidenceStats>("/stats/context-savings");
 	},
+	listCustomProviders(): Promise<{ providers: Array<{ name: string; baseUrl: string; api: string; modelCount: number; hasKey: boolean }>; path: string }> {
+		return request("/providers/custom");
+	},
+	upsertCustomProvider(body: { name: string; baseUrl: string; api?: string; apiKey?: string; auth?: "apiKey" | "none"; models: Array<{ id: string; name?: string; contextWindow?: number; maxTokens?: number }>; compat?: { supportsDeveloperRole?: boolean; supportsReasoningEffort?: boolean } }): Promise<{ ok: boolean; name: string; reloadRequired?: boolean }> {
+		return request("/providers/custom", { method: "POST", body: JSON.stringify(body) });
+	},
+	deleteCustomProvider(name: string): Promise<{ ok: boolean; reloadRequired?: boolean }> {
+		return request(`/providers/custom/${encodeURIComponent(name)}`, { method: "DELETE" });
+	},
 };

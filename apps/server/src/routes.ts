@@ -45,6 +45,7 @@ import { buildContextSavingsRouter } from "./routes-context-savings.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
 import { buildSessionContextRouter } from "./routes-session-context.ts";
 import { buildContextEvidenceRouter } from "./routes-context-evidence.ts";
+import { buildProvidersRouter } from "./routes-providers.ts";
 import { ContextEvidenceTracker } from "./context-evidence-tracker.ts";
 import type { RoutinesRunner } from "./routines-runner.ts";
 import type { BridgeSupervisor } from "./bridge-supervisor.ts";
@@ -271,6 +272,7 @@ export function buildRouter(
 	app.route("/", buildContextEvidenceRouter(new ContextEvidenceTracker()));
 	app.route("/", buildContextSavingsRouter());
 	app.route("/", buildSessionContextRouter(bridge));
+	app.route("/", buildProvidersRouter({ config, bridge }));
 	app.route("/auth/oauth", buildAuthOAuthRouter());
 	app.route("/onboarding", buildOnboardingRouter());
 

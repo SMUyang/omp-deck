@@ -799,6 +799,7 @@ export class RpcAgentBridge implements AgentBridge {
 	readonly #cwd: string;
 	readonly #sessions = new Map<string, ActiveSession>();
 	readonly #sharedTransport: OmpRpcTransport;
+	#sharedTransportStartPromise: Promise<void> | null = null;
 	#disposed = false;
 
 	constructor(opts: RpcAgentBridgeOpts) {
@@ -811,9 +812,16 @@ export class RpcAgentBridge implements AgentBridge {
 	}
 
 	private async ensureSharedTransport(): Promise<OmpRpcTransport> {
-		if (!this.#sharedTransport.isReady) {
-			await this.#sharedTransport.start();
+		if (this.#sharedTransport.isReady) return this.#sharedTransport;
+		// Guard against concurrent callers racing to start the shared transport
+		// (e.g. models_changed broadcast triggering multiple listModels at once
+		// after refreshModels killed the previous process).
+		if (!this.#sharedTransportStartPromise) {
+			this.#sharedTransportStartPromise = this.#sharedTransport.start().finally(() => {
+				this.#sharedTransportStartPromise = null;
+			});
 		}
+		await this.#sharedTransportStartPromise;
 		return this.#sharedTransport;
 	}
 
@@ -824,6 +832,14 @@ export class RpcAgentBridge implements AgentBridge {
 			? this.#sessions.get(opts.sessionId)?.handle.snapshot().model
 			: undefined;
 		return data.models.map((m) => rpcModelToInfo(m, current));
+	}
+
+	async refreshModels(): Promise<void> {
+		// The shared transport's omp process loaded models.yml at startup.
+		// Kill it so ensureSharedTransport() re-spawns on the next listModels()
+		// call, picking up any provider changes written to disk.
+		this.#sharedTransport.kill();
+		log.info("shared transport killed — model catalog will refresh on next query");
 	}
 
 	async createSession(opts: CreateSessionOpts): Promise<SessionHandle> {

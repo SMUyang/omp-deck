@@ -23,6 +23,7 @@ import type { OnboardingState } from "@omp-deck/protocol";
 
 import { OAuthFlowModal } from "@/components/settings/OAuthFlowModal";
 import { Button } from "@/components/ui/Button";
+import { api } from "@/lib/api";
 import { authApi } from "@/lib/auth-api";
 import { onboardingApi } from "@/lib/onboarding-api";
 import { settingsApi } from "@/lib/settings-api";
@@ -352,6 +353,15 @@ function Step3Provider({
 	const [apiKeyValue, setApiKeyValue] = useState("");
 	const [savingKey, setSavingKey] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [customName, setCustomName] = useState("");
+	const [customBaseUrl, setCustomBaseUrl] = useState("");
+	const [customApiKey, setCustomApiKey] = useState("");
+	const [customApiType, setCustomApiType] = useState("openai-completions");
+	const [customAuthNone, setCustomAuthNone] = useState(false);
+	const [customModelId, setCustomModelId] = useState("");
+	const [customModelName, setCustomModelName] = useState("");
+	const [savingCustom, setSavingCustom] = useState(false);
+	const [customNote, setCustomNote] = useState<string | null>(null);
 
 	function hasProvider(id: string): boolean {
 		return state.providers.some((p) => p.id === id);
@@ -370,6 +380,39 @@ function Step3Provider({
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setSavingKey(false);
+		}
+	}
+
+	async function saveCustomProvider(): Promise<void> {
+		if (!customName.trim() || !customBaseUrl.trim() || !customModelId.trim()) return;
+		if (!customAuthNone && !customApiKey.trim()) return;
+		setSavingCustom(true);
+		setError(null);
+		setCustomNote(null);
+		try {
+			const res = await api.upsertCustomProvider({
+				name: customName.trim(),
+				baseUrl: customBaseUrl.trim(),
+				api: customApiType,
+				...(customAuthNone ? { auth: "none" as const } : { apiKey: customApiKey.trim() }),
+				models: [{
+					id: customModelId.trim(),
+					...(customModelName.trim() ? { name: customModelName.trim() } : {}),
+				}],
+			});
+			setCustomName("");
+			setCustomBaseUrl("");
+			setCustomApiKey("");
+			setCustomModelId("");
+			setCustomModelName("");
+			setCustomNote(res.reloadRequired
+				? "Provider saved. Start a new session to use it."
+				: "Provider saved.");
+			await onRefresh();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSavingCustom(false);
 		}
 	}
 
@@ -433,6 +476,100 @@ function Step3Provider({
 					>
 						Get a key <ExternalLink className="h-3 w-3" />
 					</a>
+				</div>
+
+				{/* Custom OpenAI-compatible provider */}
+				<div className="rounded border border-line bg-paper-2 p-4">
+					<div className="flex items-baseline justify-between">
+						<div>
+							<div className="text-sm font-medium text-ink">Custom provider</div>
+							<div className="mt-0.5 text-xs text-ink-3">
+								Any OpenAI-compatible endpoint. Written to omp's models.yml —
+								syncs to both terminal and deck.
+							</div>
+						</div>
+					</div>
+				<div className="mt-3 grid grid-cols-2 gap-2">
+					<input
+						type="text"
+						value={customName}
+						onChange={(e) => setCustomName(e.target.value)}
+						placeholder="Provider name (e.g. my-provider)"
+						className="field h-8 px-2 font-mono text-xs"
+						autoComplete="off"
+					/>
+					<input
+						type="text"
+						value={customBaseUrl}
+						onChange={(e) => setCustomBaseUrl(e.target.value)}
+						placeholder="Base URL (https://api.example.com/v1)"
+						className="field h-8 px-2 font-mono text-xs"
+						autoComplete="off"
+					/>
+				</div>
+				<select
+					value={customApiType}
+					onChange={(e) => setCustomApiType(e.target.value)}
+					className="field mt-2 h-8 w-full px-2 font-mono text-xs"
+				>
+					<option value="openai-completions">openai-completions</option>
+					<option value="openai-responses">openai-responses</option>
+					<option value="openai-codex-responses">openai-codex-responses</option>
+					<option value="azure-openai-responses">azure-openai-responses</option>
+					<option value="anthropic-messages">anthropic-messages</option>
+					<option value="google-generative-ai">google-generative-ai</option>
+					<option value="google-vertex">google-vertex</option>
+				</select>
+				{!customAuthNone ? (
+					<input
+						type="password"
+						value={customApiKey}
+						onChange={(e) => setCustomApiKey(e.target.value)}
+						placeholder="API key"
+						className="field mt-2 h-8 w-full px-2 font-mono text-xs"
+						autoComplete="off"
+					/>
+				) : null}
+				<label className="mt-2 flex items-center gap-1.5 font-mono text-2xs text-ink-3">
+					<input
+						type="checkbox"
+						checked={customAuthNone}
+						onChange={(e) => setCustomAuthNone(e.target.checked)}
+					/>
+					No auth (local endpoint without API key)
+				</label>
+				<div className="mt-2 flex gap-2">
+					<input
+						type="text"
+						value={customModelId}
+						onChange={(e) => setCustomModelId(e.target.value)}
+						placeholder="Model ID (e.g. gpt-4o)"
+						className="field h-8 flex-1 px-2 font-mono text-xs"
+						autoComplete="off"
+					/>
+					<input
+						type="text"
+						value={customModelName}
+						onChange={(e) => setCustomModelName(e.target.value)}
+						placeholder="Display name (optional)"
+						className="field h-8 w-40 px-2 font-mono text-xs"
+						autoComplete="off"
+					/>
+				</div>
+				<div className="mt-2 flex items-center gap-3">
+					<Button
+						onClick={() => void saveCustomProvider()}
+						disabled={savingCustom || !customName.trim() || !customBaseUrl.trim() || !customModelId.trim() || (!customAuthNone && !customApiKey.trim())}
+						variant="ghost"
+					>
+						{savingCustom ? "Saving…" : "Add provider"}
+					</Button>
+					{customNote ? (
+						<span className="flex items-center gap-1 text-xs text-success">
+							<CheckCircle2 className="h-3.5 w-3.5" /> {customNote}
+						</span>
+					) : null}
+				</div>
 				</div>
 
 				<p className="text-2xs text-ink-3">

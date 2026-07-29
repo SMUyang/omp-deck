@@ -33,6 +33,8 @@ export interface AgentBridge {
 	applyEnvUpdate?(update: RuntimeEnvUpdate): void;
 	/** Catalog of models the SDK knows about, plus a marker on the current one when sessionId is given. */
 	listModels(opts?: { sessionId?: string }): Promise<ModelInfo[]>;
+	/** Kill cached model catalog so the next listModels() re-reads config files. */
+	refreshModels?(): Promise<void>;
 	/** OMP settings-backed model role management. Only available for in-process backend; RPC lacks a set_model_role command. */
 	modelRoles?: ModelRolesCapability;
 
