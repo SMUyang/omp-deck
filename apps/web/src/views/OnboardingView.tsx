@@ -1,12 +1,12 @@
 /**
- * First-run wizard. Five steps:
+ * First-run wizard. Six steps:
  *
  *   1. Welcome           — value prop + intent
  *   2. Knowledge base    — scaffold ~/kb with README + system stubs
  *   3. Connect provider  — Claude / ChatGPT OAuth, or OpenRouter API key
- *   4. Auto-start prompt — write start.md + set OMP_DECK_AUTO_START
- *   5. Done              — handoff to chat
- *
+ *   4. Topology APIs     — SiliconFlow embedding+rerank, extraction model
+ *   5. Auto-start prompt — write start.md + set OMP_DECK_AUTO_START
+ *   6. Done              — handoff to chat
  * Every step is skippable; the wizard is escapable (top-right "Skip
  * setup" link nav to /). On any kind of completion (walked through OR
  * X-ed out) the server-side flag is written so we don't retrigger.
@@ -29,12 +29,13 @@ import { settingsApi } from "@/lib/settings-api";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-type StepKey = "welcome" | "kb" | "provider" | "autostart" | "done";
+type StepKey = "welcome" | "kb" | "provider" | "topology" | "autostart" | "done";
 
 const STEP_ORDER: ReadonlyArray<{ key: StepKey; title: string }> = [
 	{ key: "welcome", title: "Welcome" },
 	{ key: "kb", title: "Knowledge base" },
 	{ key: "provider", title: "Connect provider" },
+	{ key: "topology", title: "Topology APIs" },
 	{ key: "autostart", title: "Session greeting" },
 	{ key: "done", title: "All set" },
 ];
@@ -156,6 +157,7 @@ export function OnboardingView() {
 					{step === "provider" ? (
 						<Step3Provider state={state} onRefresh={refresh} onNext={next} />
 					) : null}
+					{step === "topology" ? <StepTopology onNext={next} /> : null}
 					{step === "autostart" ? (
 						<Step4AutoStart state={state} onRefresh={refresh} onNext={next} />
 					) : null}
@@ -498,6 +500,184 @@ function ProviderTile({
 					Sign in
 				</Button>
 			)}
+		</div>
+	);
+}
+
+// ─── Step 3.5: Topology APIs ────────────────────────────────────────────────
+
+function StepTopology({ onNext }: { onNext: () => void }) {
+	const [sfKey, setSfKey] = useState("");
+	const [sfSaved, setSfSaved] = useState(false);
+	const [extUrl, setExtUrl] = useState("https://api.deepseek.com");
+	const [extKey, setExtKey] = useState("");
+	const [extModel, setExtModel] = useState("deepseek-chat");
+	const [extSaved, setExtSaved] = useState(false);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	async function saveSiliconFlow(): Promise<void> {
+		if (!sfKey.trim()) return;
+		setSaving(true);
+		setError(null);
+		try {
+			await settingsApi.patchEnv({
+				OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED: "true",
+				OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL: "https://api.siliconflow.cn/v1",
+				OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY: sfKey.trim(),
+				OMP_DECK_TOPOLOGY_EMBEDDING_MODEL: "BAAI/bge-large-zh-v1.5",
+				OMP_DECK_TOPOLOGY_RERANK_ENABLED: "true",
+				OMP_DECK_TOPOLOGY_RERANK_PROVIDER: "http",
+				OMP_DECK_TOPOLOGY_RERANK_HTTP_PROTOCOL: "siliconflow-rerank",
+				OMP_DECK_TOPOLOGY_RERANK_HTTP_BASE_URL: "https://api.siliconflow.cn/v1",
+				OMP_DECK_TOPOLOGY_RERANK_HTTP_API_KEY: sfKey.trim(),
+				OMP_DECK_TOPOLOGY_RERANK_HTTP_MODEL: "BAAI/bge-reranker-v2-m3",
+			});
+			setSfKey("");
+			setSfSaved(true);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function saveExtraction(): Promise<void> {
+		if (!extKey.trim()) return;
+		setSaving(true);
+		setError(null);
+		try {
+			await settingsApi.patchEnv({
+				OMP_DECK_TOPOLOGY_EXTRACTION_MODE: "fast_model",
+				OMP_DECK_TOPOLOGY_EXTRACTION_BASE_URL: extUrl.trim() || "https://api.deepseek.com",
+				OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY: extKey.trim(),
+				OMP_DECK_TOPOLOGY_EXTRACTION_MODEL: extModel.trim() || "deepseek-chat",
+			});
+			setExtKey("");
+			setExtSaved(true);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<div className="flex flex-col gap-5">
+			<div>
+				<h1 className="text-xl font-semibold text-ink">Topology APIs</h1>
+				<p className="mt-2 text-sm text-ink-2">
+					The deck's session-context topology system uses optional APIs for
+					semantic search and context compression. All are optional — the deck
+					runs fine without them. Configure later via{" "}
+					<a href="/settings" className="underline">Settings &rarr; Env</a>.
+				</p>
+			</div>
+
+			{/* SiliconFlow — embedding + rerank */}
+			<div className="rounded border border-line bg-paper-2 p-4">
+				<div className="flex items-baseline justify-between">
+					<div>
+						<div className="text-sm font-medium text-ink">SiliconFlow</div>
+						<div className="mt-0.5 text-xs text-ink-3">
+							Embedding (BAAI/bge-large-zh-v1.5) + rerank (BAAI/bge-reranker-v2-m3).
+							One API key covers both.
+						</div>
+					</div>
+					{sfSaved ? (
+						<span className="flex items-center gap-1 text-xs text-success">
+							<CheckCircle2 className="h-4 w-4" /> Saved
+						</span>
+					) : null}
+				</div>
+				<div className="mt-3 flex gap-2">
+					<input
+						type="password"
+						value={sfKey}
+						onChange={(e) => setSfKey(e.target.value)}
+						placeholder="sk-…"
+						className="field h-8 flex-1 px-2 font-mono text-xs"
+						autoComplete="off"
+					/>
+					<Button onClick={() => void saveSiliconFlow()} disabled={saving || !sfKey.trim()}>
+						{saving ? "Saving…" : "Save"}
+					</Button>
+				</div>
+				<a
+					href="https://cloud.siliconflow.cn"
+					target="_blank"
+					rel="noreferrer"
+					className="mt-2 flex items-center gap-1 text-2xs text-ink-3 hover:text-ink"
+				>
+					Get a key <ExternalLink className="h-3 w-3" />
+				</a>
+			</div>
+
+			{/* Extraction — fast model */}
+			<div className="rounded border border-line bg-paper-2 p-4">
+				<div className="flex items-baseline justify-between">
+					<div>
+						<div className="text-sm font-medium text-ink">Extraction</div>
+						<div className="mt-0.5 text-xs text-ink-3">
+							Fast LLM for topology node extraction. DeepSeek, SiliconFlow,
+							or any OpenAI-compatible endpoint.
+						</div>
+					</div>
+					{extSaved ? (
+						<span className="flex items-center gap-1 text-xs text-success">
+							<CheckCircle2 className="h-4 w-4" /> Saved
+						</span>
+					) : null}
+				</div>
+				<div className="mt-3 space-y-2">
+					<input
+						type="text"
+						value={extUrl}
+						onChange={(e) => setExtUrl(e.target.value)}
+						placeholder="https://api.deepseek.com"
+						className="field h-8 w-full px-2 font-mono text-xs"
+					/>
+					<div className="flex gap-2">
+						<input
+							type="password"
+							value={extKey}
+							onChange={(e) => setExtKey(e.target.value)}
+							placeholder="API key"
+							className="field h-8 flex-1 px-2 font-mono text-xs"
+							autoComplete="off"
+						/>
+						<input
+							type="text"
+							value={extModel}
+							onChange={(e) => setExtModel(e.target.value)}
+							placeholder="deepseek-chat"
+							className="field h-8 w-36 px-2 font-mono text-xs"
+						/>
+					</div>
+					<Button onClick={() => void saveExtraction()} disabled={saving || !extKey.trim()} variant="ghost">
+						{saving ? "Saving…" : "Save extraction"}
+					</Button>
+				</div>
+			</div>
+
+			{error ? (
+				<div className="rounded border border-danger/40 bg-danger/5 p-3 text-xs text-danger">
+					{error}
+				</div>
+			) : null}
+
+			<div className="flex items-center justify-between">
+				<button
+					type="button"
+					onClick={onNext}
+					className="text-xs text-ink-3 hover:text-ink"
+				>
+					Skip — I'll configure later
+				</button>
+				<Button onClick={onNext}>
+					Continue <ChevronRight className="ml-1 h-4 w-4" />
+				</Button>
+			</div>
 		</div>
 	);
 }
