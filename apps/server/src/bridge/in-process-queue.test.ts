@@ -8,7 +8,7 @@
  *
  * We don't pull in `@oh-my-pi/pi-coding-agent` here — the InProcessSessionHandle
  * accepts an `AgentSession`-shaped object via duck typing in the constructor
- * (private field is typed but methods access via `unknown as { … }` casts).
+ * (private field is typed but methods access via `unknown` as `{ … }` casts).
  */
 import { describe, expect, test } from "bun:test";
 

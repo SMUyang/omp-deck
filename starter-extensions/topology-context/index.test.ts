@@ -142,15 +142,9 @@ test("replaceTopologyContext does not mutate input", () => {
 });
 
 
-// ─── A5: Mock provider integration — proves topology focus reaches provider ──
+// ─── A5: HTTP evidence integration — proves topology focus reaches provider ─
 
 import { createMockModel } from "@oh-my-pi/pi-ai/providers/mock";
-import type { CreateContextEvidenceRequest } from "@omp-deck/protocol";
-import {
-	setEvidenceRecorder,
-	resetEvidenceRecorder,
-	type EvidenceRecorder,
-} from "./index.ts";
 
 /** Fake pi that captures event handlers. */
 function fakePi(): {
@@ -171,74 +165,67 @@ function fakePi(): {
 	};
 }
 
-/** Fake evidence recorder for in-test inspection. */
-function fakeRecorder(): EvidenceRecorder & { transitions: Array<{ eventId: string; status: string }> } {
-	const state = new Map<string, string>();
-	const transitions: Array<{ eventId: string; status: string }> = [];
-	return {
-		record(params: CreateContextEvidenceRequest): string {
-			const eventId = params.focusHash || crypto.randomUUID();
-			state.set(eventId, params.status);
-			transitions.push({ eventId, status: params.status });
-			return eventId;
-		},
-		update(eventId: string, updates: { status: string; beforeTokens?: number | null; beforePercent?: number | null }) {
-			const prev = state.get(eventId);
-			transitions.push({ eventId, status: updates.status });
-			// Still track current status for verification
-			state.set(eventId, updates.status);
-		},
-		transitions,
-	};
+function jsonResponse(value: unknown, status = 200): Response {
+	return new Response(JSON.stringify(value), {
+		status,
+		headers: { "content-type": "application/json" },
+	});
 }
 
-// Narrowing guards instead of inline casts
-function isAsyncFn(fn: unknown): fn is (...args: unknown[]) => Promise<unknown> {
-	return typeof fn === "function";
+function requestUrl(input: string | URL | Request): string {
+	if (typeof input === "string") return input;
+	if (input instanceof URL) return input.toString();
+	return input.url;
 }
 
-function isFn(fn: unknown): fn is (...args: unknown[]) => unknown {
-	return typeof fn === "function";
+function requestBody(init?: RequestInit): unknown {
+	return typeof init?.body === "string" ? JSON.parse(init.body) : null;
 }
 
-describe("A5: mock provider integration — topology focus reaches provider payload", () => {
-	const prevEnv = { ...process.env };
+function readMessages(value: unknown): unknown[] | null {
+	if (!value || typeof value !== "object" || !("messages" in value)) return null;
+	return Array.isArray(value.messages) ? value.messages : null;
+}
 
-	beforeAll(() => {
+describe("A5: HTTP evidence integration — topology focus reaches provider payload", () => {
+	const previousEnabled = process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED;
+	const previousApiBase = process.env.OMP_DECK_API_BASE;
+
+	beforeEach(() => {
 		process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = "1";
 		process.env.OMP_DECK_API_BASE = "http://127.0.0.1:8787/api";
 	});
 
 	afterAll(() => {
-		resetEvidenceRecorder();
-		Object.assign(process.env, prevEnv);
+		if (previousEnabled === undefined) delete process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED;
+		else process.env.OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = previousEnabled;
+		if (previousApiBase === undefined) delete process.env.OMP_DECK_API_BASE;
+		else process.env.OMP_DECK_API_BASE = previousApiBase;
 	});
 
-	test("context hook → mock provider → before_provider_request full lifecycle", async () => {
+	test("context hook creates evidence before provider hook updates the DB event", async () => {
 		const focusText = "<session_topology_subgraph>\ngoal: fix-bug\naction: write-test\n</session_topology_subgraph>";
-
-		// Mock fetch to return the focus response
-		const origFetch = globalThis.fetch;
-		globalThis.fetch = (() =>
-			Promise.resolve({
-				ok: true,
-				status: 200,
-				json: () => Promise.resolve({ focus: focusText }),
-			})) as unknown as typeof fetch;
-
-		const rec = fakeRecorder();
-		setEvidenceRecorder(rec);
+		const evidencePosts: Array<{ url: string; body: unknown }> = [];
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async (input, init) => {
+			const url = requestUrl(input);
+			if (url.includes("/context-focus")) return jsonResponse({ focus: focusText });
+			if (init?.method === "POST") {
+				evidencePosts.push({ url, body: requestBody(init) });
+				if (url.endsWith("/context-evidence")) return jsonResponse({ eventId: "evt-http-a5" }, 201);
+				return jsonResponse({ ok: true });
+			}
+			return jsonResponse({ error: "unexpected request" }, 500);
+		};
 
 		try {
 			const pi = fakePi();
 			const mod = await import("./index.ts");
 			mod.default(pi as { on: (event: string, handler: (...args: unknown[]) => unknown) => void });
 
-			// Phase 1: Fire context hook → get replaced messages
-			const ctxHandler = pi.handlers["context"];
-			if (!isAsyncFn(ctxHandler)) throw new Error("context handler not registered");
-
-			const result = await ctxHandler(
+			const contextHandler = pi.handlers.context;
+			if (typeof contextHandler !== "function") throw new Error("context handler not registered");
+			const result = await contextHandler(
 				{ messages: [{ role: "user", content: [{ type: "text", text: "fix that bug" }] }] },
 				{
 					sessionManager: { getSessionId: () => "test-session-a5" },
@@ -246,60 +233,245 @@ describe("A5: mock provider integration — topology focus reaches provider payl
 				},
 			);
 
-			// Verify context hook returned replaced messages with focus injected
-			expect(result).toBeDefined();
-			const ctxResult = result as { messages: Array<{ role: string; content: unknown }> } | undefined;
-			expect(ctxResult).toBeDefined();
-			if (!ctxResult) return;
-			expect(ctxResult.messages[0]).toMatchObject({
+			const messages = readMessages(result);
+			expect(messages).not.toBeNull();
+			if (!messages) return;
+			expect(messages[0]).toMatchObject({
 				role: "custom",
 				customType: "deck-session-topology-context",
 				content: focusText,
 			});
 
-			// Phase 2: Create mock model and feed it the replaced messages
-			const mock = createMockModel({
-				handler: (ctx) => ({ content: [`received ${ctx.messages.length} msgs`] }),
-			});
+			const mock = createMockModel({ handler: (ctx) => ({ content: [`received ${ctx.messages.length} msgs`] }) });
+			mock.stream(mock.model, { messages } as Parameters<typeof mock.stream>[1]);
+			expect(mock.calls).toHaveLength(1);
+			const providerContext = mock.calls[0]?.context;
+			expect(providerContext?.messages[0]).toMatchObject({ content: focusText });
 
-			// Record a call by streaming the messages through the mock
-			mock.stream(mock.model, {
-				messages: ctxResult.messages as Array<{ role: string; content: unknown }>,
-			} as Parameters<typeof mock.stream>[1]);
+			const providerHandler = pi.handlers.before_provider_request;
+			if (typeof providerHandler !== "function") throw new Error("before_provider_request handler not registered");
+			await providerHandler(
+				{ payload: providerContext },
+				{ sessionManager: { getSessionId: () => "test-session-a5" } },
+			);
 
-			// Verify the mock captured the call with focus text
-			expect(mock.calls.length).toBe(1);
-			const mockCall = mock.calls[0];
-			expect(mockCall).toBeDefined();
-			const mockCtx = mockCall!.context;
-			expect(mockCtx).toBeDefined();
-			// Focus text should be present in the messages sent to provider
-			const firstMsg = mockCtx!.messages[0];
-			expect(firstMsg).toBeDefined();
-			if (firstMsg && typeof firstMsg === "object" && "content" in firstMsg) {
-				expect(String(firstMsg.content)).toBe(focusText);
-			}
-
-			// Phase 3: Fire before_provider_request with the mock call's context
-			const providerHook = pi.handlers["before_provider_request"];
-			if (!isFn(providerHook)) throw new Error("before_provider_request handler not registered");
-			providerHook({ payload: mockCtx });
-
-			// Verify evidence status transitioned to provider_payload_observed
-			const observed = rec.transitions.find((e) => e.status === "provider_payload_observed");
-			expect(observed).toBeDefined();
-
-			// Evidence lifecycle: constructed → handler_returned → provider_payload_observed
-			const constructed = rec.transitions.find((e) => e.status === "constructed");
-			expect(constructed).toBeDefined();
-			const returned = rec.transitions.find((e) => e.status === "handler_returned");
-			expect(returned).toBeDefined();
-			if (constructed && observed) {
-				expect(observed.eventId).toBe(constructed.eventId);
-			}
+			expect(evidencePosts.map(({ body }) => body)).toEqual([
+				expect.objectContaining({ status: "constructed", mechanism: "context_hook" }),
+				{ status: "handler_returned" },
+				{ status: "provider_payload_observed" },
+			]);
+			expect(evidencePosts.map(({ url }) => url)).toEqual([
+				"http://127.0.0.1:8787/api/sessions/test-session-a5/context-evidence",
+				"http://127.0.0.1:8787/api/sessions/test-session-a5/context-evidence/evt-http-a5",
+				"http://127.0.0.1:8787/api/sessions/test-session-a5/context-evidence/evt-http-a5",
+			]);
 		} finally {
-			globalThis.fetch = origFetch;
-			resetEvidenceRecorder();
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("failed focus fetch posts valid non-empty failure evidence", async () => {
+		const evidenceBodies: unknown[] = [];
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async (input, init) => {
+			const url = requestUrl(input);
+			if (url.includes("/context-focus")) return jsonResponse({ error: "unavailable" }, 503);
+			if (init?.method === "POST") {
+				evidenceBodies.push(requestBody(init));
+				return jsonResponse({ eventId: "evt-failed-focus" }, 201);
+			}
+			return jsonResponse({ error: "unexpected request" }, 500);
+		};
+
+		try {
+			const pi = fakePi();
+			const mod = await import("./index.ts");
+			mod.default(pi as { on: (event: string, handler: (...args: unknown[]) => unknown) => void });
+			const contextHandler = pi.handlers.context;
+			if (typeof contextHandler !== "function") throw new Error("context handler not registered");
+			const result = await contextHandler(
+				{ messages: [{ role: "user", content: [{ type: "text", text: "failure sentinel query" }] }] },
+				{ sessionManager: { getSessionId: () => "failed-session" }, getContextUsage: () => null },
+			);
+
+			expect(result).toBeUndefined();
+			expect(evidenceBodies).toHaveLength(1);
+			expect(evidenceBodies[0]).toMatchObject({
+				status: "failed",
+				mechanism: "context_hook",
+				estimatedFocusTokens: 0,
+			});
+			if (!evidenceBodies[0] || typeof evidenceBodies[0] !== "object") return;
+			expect("focusHash" in evidenceBodies[0] && typeof evidenceBodies[0].focusHash === "string" && evidenceBodies[0].focusHash.length > 0).toBe(true);
+			expect("focusPreview" in evidenceBodies[0] && typeof evidenceBodies[0].focusPreview === "string" && evidenceBodies[0].focusPreview.length > 0).toBe(true);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("does not invent an event id when the evidence create POST fails", async () => {
+		const focusText = "<session_topology_subgraph>race-free</session_topology_subgraph>";
+		const evidenceUrls: string[] = [];
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async (input, init) => {
+			const url = requestUrl(input);
+			if (url.includes("/context-focus")) return jsonResponse({ focus: focusText });
+			if (init?.method === "POST") {
+				evidenceUrls.push(url);
+				return jsonResponse({ error: "create failed" }, 500);
+			}
+			return jsonResponse({ error: "unexpected request" }, 500);
+		};
+
+		try {
+			const pi = fakePi();
+			const mod = await import("./index.ts");
+			mod.default(pi as { on: (event: string, handler: (...args: unknown[]) => unknown) => void });
+			const contextHandler = pi.handlers.context;
+			if (typeof contextHandler !== "function") throw new Error("context handler not registered");
+			await contextHandler(
+				{ messages: [{ role: "user", content: [{ type: "text", text: "race free" }] }] },
+				{ sessionManager: { getSessionId: () => "race-session" }, getContextUsage: () => null },
+			);
+			const providerHandler = pi.handlers.before_provider_request;
+			if (typeof providerHandler !== "function") throw new Error("before_provider_request handler not registered");
+			await providerHandler(
+				{ payload: { messages: [{ content: focusText }] } },
+				{ sessionManager: { getSessionId: () => "race-session" } },
+			);
+
+			expect(evidenceUrls).toEqual([
+				"http://127.0.0.1:8787/api/sessions/race-session/context-evidence",
+			]);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("provider hook ignores events without a payload", async () => {
+		const focusText = "<session_topology_subgraph>missing-payload</session_topology_subgraph>";
+		const evidenceUrls: string[] = [];
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async (input, init) => {
+			const url = requestUrl(input);
+			if (url.includes("/context-focus")) return jsonResponse({ focus: focusText });
+			if (init?.method === "POST") {
+				evidenceUrls.push(url);
+				if (url.endsWith("/context-evidence")) return jsonResponse({ eventId: "evt-missing-payload" }, 201);
+				return jsonResponse({ ok: true });
+			}
+			return jsonResponse({ error: "unexpected request" }, 500);
+		};
+		try {
+			const pi = fakePi();
+			const mod = await import("./index.ts");
+			mod.default(pi as { on: (event: string, handler: (...args: unknown[]) => unknown) => void });
+			const contextHandler = pi.handlers.context;
+			if (typeof contextHandler !== "function") throw new Error("context handler not registered");
+			await contextHandler(
+				{ messages: [{ role: "user", content: [{ type: "text", text: "missing payload" }] }] },
+				{ sessionManager: { getSessionId: () => "missing-payload-session" }, getContextUsage: () => null },
+			);
+			const providerHandler = pi.handlers.before_provider_request;
+			if (typeof providerHandler !== "function") throw new Error("before_provider_request handler not registered");
+			await expect(providerHandler(
+				{},
+				{ sessionManager: { getSessionId: () => "missing-payload-session" } },
+			)).resolves.toBeUndefined();
+			expect(evidenceUrls).toEqual([
+				"http://127.0.0.1:8787/api/sessions/missing-payload-session/context-evidence",
+				"http://127.0.0.1:8787/api/sessions/missing-payload-session/context-evidence/evt-missing-payload",
+			]);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("provider hook updates only the current session when focus text matches multiple pending events", async () => {
+		const focusText = "<session_topology_subgraph>shared-focus</session_topology_subgraph>";
+		const updateUrls: string[] = [];
+		let createCount = 0;
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async (input, init) => {
+			const url = requestUrl(input);
+			if (url.includes("/context-focus")) return jsonResponse({ focus: focusText });
+			if (init?.method === "POST") {
+				if (url.endsWith("/context-evidence")) {
+					createCount++;
+					return jsonResponse({ eventId: `evt-current-${createCount}` }, 201);
+				}
+				const body = requestBody(init);
+				if (body && typeof body === "object" && "status" in body && body.status === "provider_payload_observed") {
+					updateUrls.push(url);
+				}
+				return jsonResponse({ ok: true });
+			}
+			return jsonResponse({ error: "unexpected request" }, 500);
+		};
+
+		try {
+			const pi = fakePi();
+			const mod = await import("./index.ts");
+			mod.default(pi as { on: (event: string, handler: (...args: unknown[]) => unknown) => void });
+			const contextHandler = pi.handlers.context;
+			if (typeof contextHandler !== "function") throw new Error("context handler not registered");
+			for (const sessionId of ["other-session", "current-session"]) {
+				await contextHandler(
+					{ messages: [{ role: "user", content: [{ type: "text", text: "shared focus" }] }] },
+					{ sessionManager: { getSessionId: () => sessionId }, getContextUsage: () => null },
+				);
+			}
+
+			const providerHandler = pi.handlers.before_provider_request;
+			if (typeof providerHandler !== "function") throw new Error("before_provider_request handler not registered");
+			await providerHandler(
+				{ payload: { messages: [{ content: focusText }] } },
+				{ sessionManager: { getSessionId: () => "current-session" } },
+			);
+
+			expect(updateUrls).toEqual([
+				"http://127.0.0.1:8787/api/sessions/current-session/context-evidence/evt-current-2",
+			]);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("evidence helpers reject non-loopback API bases without fetching", async () => {
+		const originalFetch = globalThis.fetch;
+		let fetchCount = 0;
+		globalThis.fetch = async () => {
+			fetchCount++;
+			return jsonResponse({ eventId: "should-not-exist" }, 201);
+		};
+
+		try {
+			const mod = await import("./index.ts");
+			const createHelper = "createContextEvidence" in mod ? mod.createContextEvidence : undefined;
+			const updateHelper = "updateContextEvidence" in mod ? mod.updateContextEvidence : undefined;
+			expect(typeof createHelper).toBe("function");
+			expect(typeof updateHelper).toBe("function");
+			if (typeof createHelper !== "function" || typeof updateHelper !== "function") return;
+
+			const eventId = await createHelper(
+				"https://example.com/api",
+				"session",
+				{ status: "constructed", mechanism: "context_hook", focusHash: "hash", focusPreview: "preview" },
+				1500,
+			);
+			const updated = await updateHelper(
+				"https://example.com/api",
+				"session",
+				"event",
+				{ status: "provider_payload_observed" },
+				1500,
+			);
+
+			expect(eventId).toBeNull();
+			expect(updated).toBe(false);
+			expect(fetchCount).toBe(0);
+		} finally {
+			globalThis.fetch = originalFetch;
 		}
 	});
 });

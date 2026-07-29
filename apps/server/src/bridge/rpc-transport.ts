@@ -274,15 +274,18 @@ export class OmpRpcTransport {
 			}
 		});
 
-		// Start the stdout reader loop; it sets #ready when it sees the signal
-		void this.#pumpStdout(() => {
-			if (this.#ready) {
-				clearTimeout(timer);
-				readyResolve!();
-			}
-		});
+	// Start the stdout reader loop; it sets #ready when it sees the signal
+	void this.#pumpStdout(() => {
+		if (this.#ready) {
+			clearTimeout(timer);
+			// Discard startup stderr so later error previews don't show
+			// stale "Still starting after 10s" messages from the spawn phase.
+			this.#stderrChunks = [];
+			readyResolve!();
+		}
+	});
 
-		await ready;
+	await ready;
 	}
 
 	async #pumpStderr(): Promise<void> {

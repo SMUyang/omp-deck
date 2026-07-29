@@ -274,18 +274,50 @@ function allowedParent(cwd: string): string | undefined {
 	return isCwdAllowed(parent) ? parent : undefined;
 }
 
+/** System directories that should never be browsable, even on other drives. */
+const WIN_SYSTEM_DENYLIST = [
+	"c:\\windows",
+	"c:\\program files",
+	"c:\\program files (x86)",
+	"c:\\programdata",
+	"c:\\system volume information",
+	"c:\\$recycle.bin",
+	"c:\\recovery",
+	"c:\\msocache",
+	"c:\\$winreagent",
+];
+
 function isCwdAllowed(cwd: string): boolean {
-	// Only allow cwds under the user's home directory. The deck is loopback-
-	// only, but a buggy client shouldn't be able to probe `C:\Windows\System32`.
+	// The deck is loopback-only, but a buggy client shouldn't be able to
+	// probe `C:\Windows\System32`. On POSIX we restrict to the user's home
+	// directory. On Windows we also allow other drive roots (users routinely
+	// keep projects on D:\, E:\, etc.) while still blocking system dirs.
 	const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
 	if (!home) return false;
 	try {
 		const resolved = path.resolve(cwd);
+		// Fail closed if the directory doesn't exist on disk.
+		if (!existsSync(resolved) || !statSync(resolved).isDirectory()) return false;
+
 		const homeResolved = path.resolve(home);
 		const rel = path.relative(homeResolved, resolved);
-		if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
-		// Reject if cwd doesn't actually exist on disk — fail closed.
-		return existsSync(resolved) && statSync(resolved).isDirectory();
+
+		// Path is under home — always allowed.
+		if (!rel.startsWith("..") && !path.isAbsolute(rel)) return true;
+
+		// Path is outside home.
+		// On Windows, path.relative returns the absolute path when the two
+		// paths are on different drives (e.g. C:\Users → D:\Projects), so
+		// rel.isAbsolute is true. Allow non-system directories on other drives.
+		if (process.platform === "win32") {
+			const lower = resolved.toLowerCase();
+			for (const denied of WIN_SYSTEM_DENYLIST) {
+				if (lower === denied || lower.startsWith(denied + "\\")) return false;
+			}
+			return true;
+		}
+
+		return false;
 	} catch {
 		return false;
 	}

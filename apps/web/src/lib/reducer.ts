@@ -36,6 +36,28 @@ const EMPTY_USAGE: UsageRollup = {
 	cost: 0,
 };
 
+/**
+ * Messages that must never enter the visible main transcript:
+ * - `display === false` — hidden injections (topology context, autolearn
+ *   nudges). OMP's own TUI hides these; the deck must too.
+ * - `customType` set / `role: "custom"` — machine-to-machine payloads
+ *   (subagent `irc:incoming` / `async-result`, advisor notes). Subagent
+ *   chatter surfaces through the dedicated `irc_message` event instead,
+ *   which the chat renders collapsed; the raw custom message itself is
+ *   not a conversation turn.
+ *
+ * Guarded at every ingestion point so a hidden/custom `message_update`
+ * can't clobber the last visible assistant message via the backward walk.
+ */
+export function isNonTranscriptMessage(msg: unknown): boolean {
+	if (!msg || typeof msg !== "object") return true;
+	const m = msg as { display?: unknown; customType?: unknown; role?: unknown };
+	if (m.display === false) return true;
+	if (typeof m.customType === "string" && m.customType.length > 0) return true;
+	if (m.role === "custom") return true;
+	return false;
+}
+
 export function initSession(snapshot: SessionSnapshot): SessionUi {
 	const state: SessionUi = {
 		sessionId: snapshot.sessionId,
@@ -68,7 +90,6 @@ export function applyEvent(state: SessionUi, event: AgentSessionEventJson): Sess
 			return { ...state, lastError: undefined };
 		case "agent_end":
 			return { ...state, status: "idle" };
-
 		// ─── Turn lifecycle ────────────────────────────────────────────────
 		case "turn_start":
 			return {
@@ -106,19 +127,19 @@ export function applyEvent(state: SessionUi, event: AgentSessionEventJson): Sess
 		// ─── Messages ──────────────────────────────────────────────────────
 		case "message_start": {
 			const msg = (event as any).message;
-			if (!msg) return state;
+			if (isNonTranscriptMessage(msg)) return state;
 			const next = { ...state, messages: state.messages.slice() };
 			ingestMessage(next, msg);
 			return next;
 		}
 		case "message_update": {
 			const msg = (event as any).message;
-			if (!msg || msg.role !== "assistant") return state;
+			if (isNonTranscriptMessage(msg) || msg.role !== "assistant") return state;
 			return updateAssistantMessage(state, msg);
 		}
 		case "message_end": {
 			const msg = (event as any).message;
-			if (!msg) return state;
+			if (isNonTranscriptMessage(msg)) return state;
 			return finalizeMessage(state, msg);
 		}
 
@@ -376,7 +397,7 @@ function pushNotice(state: SessionUi, p: Omit<NoticeMsg, "id" | "role" | "timest
 }
 
 function ingestMessage(state: SessionUi, msg: any): void {
-	if (!msg || typeof msg !== "object") return;
+	if (isNonTranscriptMessage(msg)) return;
 	switch (msg.role) {
 		case "user": {
 			const text = extractText(msg.content);

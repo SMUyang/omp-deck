@@ -24,7 +24,7 @@ set -euo pipefail
 INSTALL_DIR="${HOME}/AI/omp-deck"
 REPO_URL="https://github.com/SMUyang/omp-deck.git"
 AUTO_START=false
-
+SKIP_TOPOLOGY=false
 # ── Colors ──────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
   B='\033[1m'; G='\033[32m'; Y='\033[33m'; R='\033[31m'; D='\033[2m'; N='\033[0m'
@@ -40,16 +40,18 @@ step()  { echo ""; echo "${B}── $1 ──${N}"; }
 # ── Parse args ──────────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir)   INSTALL_DIR="$2"; shift 2 ;;
-    --start) AUTO_START=true; shift ;;
+    --dir)          INSTALL_DIR="$2"; shift 2 ;;
+    --start)        AUTO_START=true; shift ;;
+    --no-topology)  SKIP_TOPOLOGY=true; shift ;;
     --help|-h)
       cat <<USAGE
 Usage: bash install-rpc-deck.sh [OPTIONS]
 
 Options:
-  --dir <path>    Install directory (default: ~/AI/omp-deck)
-  --start         Start the deck immediately after install
-  --help          Show this help
+  --dir <path>      Install directory (default: ~/AI/omp-deck)
+  --start           Start the deck immediately after install
+  --no-topology     Skip interactive topology API configuration
+  --help            Show this help
 
 Environment:
   OMP_DECK_PORT     Server port (default 8787)
@@ -157,6 +159,124 @@ fi
 step "Installing dependencies"
 bun install
 info "Dependencies installed"
+
+# ── 3b. Configure topology APIs ─────────────────────────────────────────
+configure_topology() {
+  step "Configuring topology APIs"
+
+  cat <<'INTRO'
+
+The deck's session-context topology system uses up to three APIs:
+
+  1. SiliconFlow — provides both embedding (BAAI/bge-large-zh-v1.5)
+     and rerank (BAAI/bge-reranker-v2-m3). One API key covers both.
+  2. Extraction — a fast LLM for topology node extraction
+     (DeepSeek, SiliconFlow, or any OpenAI-compatible endpoint).
+
+All optional. You can configure or change them later via
+Settings → Env in the deck UI.
+INTRO
+
+  if [ "$SKIP_TOPOLOGY" = true ]; then
+    warn "Skipping topology configuration (--no-topology)."
+    echo "  Configure later via the deck UI: Settings → Env"
+    return 0
+  fi
+  if [ ! -t 0 ]; then
+    warn "Non-interactive terminal — skipping topology configuration."
+    echo "  Configure later via the deck UI: Settings → Env"
+    return 0
+  fi
+
+  local env_file="$INSTALL_DIR/.env"
+  local topo_tmp
+  topo_tmp="$(mktemp)"
+
+  # ── SiliconFlow (embedding + rerank) ──
+  echo ""
+  echo "${B}SiliconFlow${N} — embedding + rerank (shared API key)"
+  echo "  Get a key at https://cloud.siliconflow.cn"
+  local sf_key=""
+  printf "  API key (blank = skip both): "
+  IFS= read -rs sf_key
+  echo ""
+
+  if [ -n "$sf_key" ]; then
+    cat >> "$topo_tmp" <<EOF
+OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED=true
+OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
+OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY=$sf_key
+OMP_DECK_TOPOLOGY_EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
+OMP_DECK_TOPOLOGY_RERANK_ENABLED=true
+OMP_DECK_TOPOLOGY_RERANK_PROVIDER=http
+OMP_DECK_TOPOLOGY_RERANK_HTTP_PROTOCOL=siliconflow-rerank
+OMP_DECK_TOPOLOGY_RERANK_HTTP_BASE_URL=https://api.siliconflow.cn/v1
+OMP_DECK_TOPOLOGY_RERANK_HTTP_API_KEY=$sf_key
+OMP_DECK_TOPOLOGY_RERANK_HTTP_MODEL=BAAI/bge-reranker-v2-m3
+EOF
+    info "Embedding + Rerank enabled (SiliconFlow)"
+  else
+    warn "Skipping embedding + rerank."
+  fi
+
+  # ── Extraction ──
+  echo ""
+  echo "${B}Extraction${N} — fast model for topology node extraction"
+  local ext_ans=""
+  printf "  Configure? [y/N] "
+  IFS= read -r ext_ans
+  case "$ext_ans" in
+    [Yy]*)
+      local ext_url ext_key ext_model
+      printf "  Base URL [https://api.deepseek.com]: "
+      IFS= read -r ext_url
+      ext_url="${ext_url:-https://api.deepseek.com}"
+      printf "  API Key: "
+      IFS= read -rs ext_key
+      echo ""
+      printf "  Model [deepseek-chat]: "
+      IFS= read -r ext_model
+      ext_model="${ext_model:-deepseek-chat}"
+      if [ -n "$ext_key" ]; then
+        cat >> "$topo_tmp" <<EOF
+OMP_DECK_TOPOLOGY_EXTRACTION_MODE=fast_model
+OMP_DECK_TOPOLOGY_EXTRACTION_BASE_URL=$ext_url
+OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY=$ext_key
+OMP_DECK_TOPOLOGY_EXTRACTION_MODEL=$ext_model
+EOF
+        info "Extraction enabled ($ext_model @ $ext_url)"
+      else
+        warn "No extraction API key — skipping."
+      fi
+      ;;
+    *)
+      warn "Skipping extraction."
+      ;;
+  esac
+
+  # ── Write to .env ──
+  if [ -s "$topo_tmp" ]; then
+    if [ -f "$env_file" ]; then
+      grep -v '^OMP_DECK_TOPOLOGY_' "$env_file" > "${env_file}.tmp" || true
+    else
+      : > "${env_file}.tmp"
+    fi
+    {
+      echo ""
+      echo "# ─── Topology APIs (configured by installer) ───────────────────────"
+      cat "$topo_tmp"
+    } >> "${env_file}.tmp"
+    mv "${env_file}.tmp" "$env_file"
+    info "Topology config written to .env"
+  else
+    warn "No topology APIs configured."
+    echo "  Set them later via the deck UI: Settings → Env"
+  fi
+
+  rm -f "$topo_tmp"
+}
+
+configure_topology
 
 # ── 4. Verify omp RPC mode (if omp is available) ───────────────────────
 if [ -n "$OMP_BIN" ]; then

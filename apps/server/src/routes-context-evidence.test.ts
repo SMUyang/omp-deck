@@ -144,6 +144,12 @@ import { buildContextEvidenceRouter } from "./routes-context-evidence.ts";
 
 const tempDirs: string[] = [];
 
+function expectDefined<T>(value: T | undefined, label: string): T {
+	expect(value).toBeDefined();
+	if (value === undefined) throw new Error(`expected ${label}`);
+	return value;
+}
+
 afterEach(() => {
 	closeDb();
 	for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
@@ -219,8 +225,9 @@ describe("POST /sessions/:id/context-evidence", () => {
 
 		const events = tracker.getSessionEvidence("s1");
 		expect(events).toHaveLength(1);
-		expect(events[0].status).toBe("constructed");
-		expect(events[0].mechanism).toBe("context_hook");
+		const event = expectDefined(events[0], "created event");
+		expect(event.status).toBe("constructed");
+		expect(event.mechanism).toBe("context_hook");
 	});
 
 	test("returns 400 when status is missing", async () => {
@@ -289,7 +296,8 @@ describe("POST /sessions/:id/context-evidence", () => {
 
 		const events = tracker.getSessionEvidence("alpha-session");
 		expect(events).toHaveLength(1);
-		expect(events[0].sessionId).toBe("alpha-session");
+		const event = expectDefined(events[0], "session event");
+		expect(event.sessionId).toBe("alpha-session");
 	});
 
 	test("optional token fields are null when omitted", async () => {
@@ -307,10 +315,11 @@ describe("POST /sessions/:id/context-evidence", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].beforeTokens).toBeNull();
-		expect(events[0].afterTokens).toBeNull();
-		expect(events[0].savedTokens).toBeNull();
-		expect(events[0].savedPercent).toBeNull();
+		const event = expectDefined(events[0], "event with omitted token fields");
+		expect(event.beforeTokens).toBeNull();
+		expect(event.afterTokens).toBeNull();
+		expect(event.savedTokens).toBeNull();
+		expect(event.savedPercent).toBeNull();
 	});
 
 	test("token fields are passed through when provided", async () => {
@@ -333,10 +342,11 @@ describe("POST /sessions/:id/context-evidence", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].beforeTokens).toBe(12000);
-		expect(events[0].afterTokens).toBe(8500);
-		expect(events[0].savedTokens).toBe(3500);
-		expect(events[0].focusEstimatedTokens).toBe(2);
+		const event = expectDefined(events[0], "event with token fields");
+		expect(event.beforeTokens).toBe(12000);
+		expect(event.afterTokens).toBe(8500);
+		expect(event.savedTokens).toBe(3500);
+		expect(event.focusEstimatedTokens).toBe(2);
 	});
 
 	test("providerRole and errorMessage are passed through", async () => {
@@ -356,8 +366,9 @@ describe("POST /sessions/:id/context-evidence", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].providerRole).toBe("slow");
-		expect(events[0].errorMessage).toBeNull();
+		const event = expectDefined(events[0], "event with provider metadata");
+		expect(event.providerRole).toBe("slow");
+		expect(event.errorMessage).toBeNull();
 	});
 
 	test("focusEstimateMethod defaults to chars_div_4", async () => {
@@ -375,7 +386,8 @@ describe("POST /sessions/:id/context-evidence", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].focusEstimateMethod).toBe("chars_div_4");
+		const event = expectDefined(events[0], "event with estimate method");
+		expect(event.focusEstimateMethod).toBe("chars_div_4");
 	});
 });
 
@@ -395,7 +407,8 @@ describe("POST /sessions/:id/context-evidence/:eventId", () => {
 		expect(res.status).toBe(200);
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].status).toBe("provider_payload_observed");
+		const event = expectDefined(events[0], "updated event");
+		expect(event.status).toBe("provider_payload_observed");
 	});
 
 	test("returns 404 when eventId not found", async () => {
@@ -461,8 +474,9 @@ describe("POST /sessions/:id/context-evidence/:eventId", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].savedTokens).toBe(3500);
-		expect(events[0].savedPercent).toBe(29.17);
+		const event = expectDefined(events[0], "event with recomputed savings");
+		expect(event.savedTokens).toBe(3500);
+		expect(event.savedPercent).toBe(29.17);
 	});
 
 	test("providerRole is recorded on update", async () => {
@@ -478,8 +492,9 @@ describe("POST /sessions/:id/context-evidence/:eventId", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].status).toBe("provider_payload_observed");
-		expect(events[0].providerRole).toBe("slow");
+		const event = expectDefined(events[0], "event with provider role");
+		expect(event.status).toBe("provider_payload_observed");
+		expect(event.providerRole).toBe("slow");
 	});
 
 	test("errorMessage is recorded on update", async () => {
@@ -495,8 +510,9 @@ describe("POST /sessions/:id/context-evidence/:eventId", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].status).toBe("failed");
-		expect(events[0].errorMessage).toBe("compact timed out after 30s");
+		const event = expectDefined(events[0], "failed event");
+		expect(event.status).toBe("failed");
+		expect(event.errorMessage).toBe("compact timed out after 30s");
 	});
 });
 
@@ -538,8 +554,10 @@ describe("GET /sessions/:id/context-evidence", () => {
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as { events: ContextReplacementEvent[] };
 		expect(body.events).toHaveLength(2);
-		expect(body.events[0].status).toBe("handler_returned"); // newer first
-		expect(body.events[1].status).toBe("constructed");
+		const newest = expectDefined(body.events[0], "newest event");
+		const oldest = expectDefined(body.events[1], "oldest event");
+		expect(newest.status).toBe("handler_returned"); // newer first
+		expect(oldest.status).toBe("constructed");
 	});
 
 	test("returns only events for the specified session", async () => {
@@ -557,7 +575,8 @@ describe("GET /sessions/:id/context-evidence", () => {
 		const res = await app.request("/sessions/s1/context-evidence");
 		const body = (await res.json()) as { events: ContextReplacementEvent[] };
 		expect(body.events).toHaveLength(1);
-		expect(body.events[0].sessionId).toBe("s1");
+		const event = expectDefined(body.events[0], "session-filtered event");
+		expect(event.sessionId).toBe("s1");
 	});
 
 	test("respects limit and offset query params", async () => {
@@ -598,7 +617,7 @@ describe("GET /sessions/:id/context-evidence", () => {
 
 		const res = await app2.request("/sessions/s1/context-evidence");
 		const body = (await res.json()) as { events: ContextReplacementEvent[] };
-		const e = body.events[0];
+		const e = expectDefined(body.events[0], "event detail");
 		expect(e.id).toBeTruthy();
 		expect(e.sessionId).toBe("s1");
 		expect(e.status).toBe("provider_payload_observed");
@@ -643,8 +662,9 @@ describe("GET /sessions/:id/context-evidence", () => {
 		});
 
 		const events = tracker.getSessionEvidence("s1");
-		expect(events[0].savedTokens).toBe(0);
-		expect(events[0].savedPercent).toBe(0);
+		const event = expectDefined(events[0], "zero-token event");
+		expect(event.savedTokens).toBe(0);
+		expect(event.savedPercent).toBe(0);
 	});
 });
 
@@ -704,7 +724,7 @@ describe("GET /stats/context-evidence", () => {
 		expect(body.total).toBe(60);
 		expect(body.recent.length).toBeLessThanOrEqual(50);
 		// First recent should be newest
-		expect(body.recent[0].focusPreview).toBe("event 59");
+		expect(expectDefined(body.recent[0], "newest recent event").focusPreview).toBe("event 59");
 	});
 });
 

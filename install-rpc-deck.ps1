@@ -15,6 +15,7 @@
 param(
   [string]$InstallDir = "$env:USERPROFILE\AI\omp-deck",
   [switch]$Start,
+  [switch]$SkipTopology,
   [switch]$Help
 )
 
@@ -26,6 +27,7 @@ if ($Help) {
   Write-Output "Options:"
   Write-Output "  -InstallDir <path>  Install directory (default: %USERPROFILE%\AI\omp-deck)"
   Write-Output "  -Start              Start the deck immediately after install"
+  Write-Output "  -SkipTopology       Skip interactive topology API configuration"
   Write-Output "  -Help               Show this help"
   Write-Output ""
   Write-Output "Environment:"
@@ -145,6 +147,98 @@ try {
   Pop-Location
 }
 Write-Ok "Web frontend built"
+
+# -- 3c. Configure topology APIs -----------------------------------------
+function Configure-Topology {
+  Write-Step "Configuring topology APIs"
+
+  Write-Output ""
+  Write-Output "The deck's session-context topology system uses up to three APIs:"
+  Write-Output ""
+  Write-Output "  1. SiliconFlow - embedding (BAAI/bge-large-zh-v1.5)"
+  Write-Output "     + rerank (BAAI/bge-reranker-v2-m3). One API key covers both."
+  Write-Output "  2. Extraction - a fast LLM for topology node extraction"
+  Write-Output "     (DeepSeek, SiliconFlow, or any OpenAI-compatible endpoint)."
+  Write-Output ""
+  Write-Output "All optional. Configure or change them later via"
+  Write-Output "Settings -> Env in the deck UI."
+
+  if ($SkipTopology) {
+    Write-Warn2 "Skipping topology configuration (-SkipTopology)."
+    Write-Output "  Configure later via the deck UI: Settings -> Env"
+    return
+  }
+
+  $envFile = Join-Path $InstallDir ".env"
+  $topoLines = [System.Collections.ArrayList]@()
+
+  # -- SiliconFlow (embedding + rerank) --
+  Write-Output ""
+  Write-Output "SiliconFlow - embedding + rerank (shared API key)"
+  Write-Output "  Get a key at https://cloud.siliconflow.cn"
+  $sfKey = Read-Host "  API key (blank = skip both)"
+
+  if ($sfKey) {
+    [void]$topoLines.AddRange(@(
+      "OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED=true",
+      "OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1",
+      "OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY=$sfKey",
+      "OMP_DECK_TOPOLOGY_EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5",
+      "OMP_DECK_TOPOLOGY_RERANK_ENABLED=true",
+      "OMP_DECK_TOPOLOGY_RERANK_PROVIDER=http",
+      "OMP_DECK_TOPOLOGY_RERANK_HTTP_PROTOCOL=siliconflow-rerank",
+      "OMP_DECK_TOPOLOGY_RERANK_HTTP_BASE_URL=https://api.siliconflow.cn/v1",
+      "OMP_DECK_TOPOLOGY_RERANK_HTTP_API_KEY=$sfKey",
+      "OMP_DECK_TOPOLOGY_RERANK_HTTP_MODEL=BAAI/bge-reranker-v2-m3"
+    ))
+    Write-Ok "Embedding + Rerank enabled (SiliconFlow)"
+  } else {
+    Write-Warn2 "Skipping embedding + rerank."
+  }
+
+  # -- Extraction --
+  Write-Output ""
+  Write-Output "Extraction - fast model for topology node extraction"
+  $extAns = Read-Host "  Configure? [y/N]"
+  if ($extAns -match '^[Yy]') {
+    $extUrl = Read-Host "  Base URL [https://api.deepseek.com]"
+    if (-not $extUrl) { $extUrl = "https://api.deepseek.com" }
+    $extKey = Read-Host "  API Key"
+    $extModel = Read-Host "  Model [deepseek-chat]"
+    if (-not $extModel) { $extModel = "deepseek-chat" }
+    if ($extKey) {
+      [void]$topoLines.AddRange(@(
+        "OMP_DECK_TOPOLOGY_EXTRACTION_MODE=fast_model",
+        "OMP_DECK_TOPOLOGY_EXTRACTION_BASE_URL=$extUrl",
+        "OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY=$extKey",
+        "OMP_DECK_TOPOLOGY_EXTRACTION_MODEL=$extModel"
+      ))
+      Write-Ok "Extraction enabled ($extModel @ $extUrl)"
+    } else {
+      Write-Warn2 "No extraction API key - skipping."
+    }
+  } else {
+    Write-Warn2 "Skipping extraction."
+  }
+
+  # -- Write to .env --
+  if ($topoLines.Count -gt 0) {
+    $existing = @()
+    if (Test-Path $envFile) {
+      $existing = @(Get-Content $envFile | Where-Object { $_ -notmatch '^OMP_DECK_TOPOLOGY_' })
+    }
+    $existing += ""
+    $existing += "# --- Topology APIs (configured by installer) ---"
+    $existing += $topoLines
+    $existing | Set-Content $envFile -Encoding UTF8
+    Write-Ok "Topology config written to $envFile"
+  } else {
+    Write-Warn2 "No topology APIs configured."
+    Write-Output "  Set them later via the deck UI: Settings -> Env"
+  }
+}
+
+Configure-Topology
 
 # -- 4. Summary ------------------------------------------------------------
 Write-Step "Installation complete"

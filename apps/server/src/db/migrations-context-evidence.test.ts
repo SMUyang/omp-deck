@@ -11,6 +11,12 @@ import { closeDb, getDb, openDb } from "./index.ts";
 
 const tempDirs: string[] = [];
 
+function expectDefined<T>(value: T | undefined, label: string): T {
+	expect(value).toBeDefined();
+	if (value === undefined) throw new Error(`expected ${label}`);
+	return value;
+}
+
 function openTempDeckDb(): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-evidence-db-"));
 	tempDirs.push(dir);
@@ -155,7 +161,7 @@ describe("migration 008-context-evidence", () => {
 				status: string;
 				mechanism: string;
 				retry_count: number;
-			}, []>("SELECT id, session_id, status, mechanism, retry_count FROM context_replacement_events WHERE id = ?")
+			}, [string]>("SELECT id, session_id, status, mechanism, retry_count FROM context_replacement_events WHERE id = ?")
 			.get("evt-001")!;
 
 		expect(row.id).toBe("evt-001");
@@ -238,7 +244,7 @@ describe("migration 008-context-evidence", () => {
 		);
 
 		const row = db
-			.query<{ retry_count: number }, []>(
+			.query<{ retry_count: number }, [string]>(
 				"SELECT retry_count FROM context_replacement_events WHERE id = ?",
 			)
 			.get("evt-002")!;
@@ -270,7 +276,7 @@ describe("migration 008-context-evidence", () => {
 				[
 					`evt-s${i}`,
 					"sess-abc",
-					validStatuses[i],
+					expectDefined(validStatuses[i], `status at index ${i}`),
 					"context_hook",
 					`hash${i}`,
 					"...",
@@ -292,7 +298,7 @@ describe("migration 008-context-evidence", () => {
 		const db = getDb();
 
 		const row = db
-			.query<{ name: string }, []>(
+			.query<{ name: string }, [string]>(
 				"SELECT name FROM schema_migrations WHERE name = ?",
 			)
 			.get("008-context-evidence.sql");

@@ -223,3 +223,95 @@ describe("reducer queuedPrompts snapshot hydration", () => {
 		expect(s.queuedPrompts[1]?.behavior).toBe("steer");
 	});
 });
+
+describe("reducer non-transcript message filtering", () => {
+	function assistantStart(text: string) {
+		return {
+			type: "message_start",
+			message: { role: "assistant", content: [{ type: "text", text }], timestamp: 1 },
+		} as never;
+	}
+
+	test("message_start with display:false (hidden injection) is skipped", () => {
+		const s = applyEvent(fresh(), {
+			type: "message_start",
+			message: {
+				role: "custom",
+				customType: "session_topology",
+				display: false,
+				content: "<session_topology_subgraph>{}</session_topology_subgraph>",
+			},
+		} as never);
+		expect(s.messages).toHaveLength(0);
+	});
+
+	test("message_start with a customType (subagent payload) is skipped", () => {
+		const s = applyEvent(fresh(), {
+			type: "message_start",
+			message: {
+				role: "custom",
+				customType: "async-result",
+				display: true,
+				content: "<system-notice> Background job done. huge output …",
+			},
+		} as never);
+		expect(s.messages).toHaveLength(0);
+	});
+
+	test("hidden message_update does not clobber the last assistant message", () => {
+		let s = fresh();
+		s = applyEvent(s, assistantStart("visible answer"));
+		s = applyEvent(s, {
+			type: "message_update",
+			message: {
+				role: "assistant",
+				display: false,
+				content: [{ type: "text", text: "hidden injection" }],
+			},
+		} as never);
+		const last = s.messages.at(-1);
+		expect(last?.role).toBe("assistant");
+		expect(last && "blocks" in last ? last.blocks[0] : undefined).toMatchObject({
+			type: "text",
+			text: "visible answer",
+		});
+	});
+
+	test("snapshot ingestion skips custom/hidden messages but keeps real turns", () => {
+		const s = initSession({
+			sessionId: "s1",
+			cwd: "/tmp/x",
+			isStreaming: false,
+			todoPhases: [],
+			messages: [
+				{ role: "user", content: "hi", timestamp: 1 },
+				{
+					role: "custom",
+					customType: "irc:incoming",
+					display: true,
+					content: "<irc> subagent dump …",
+				},
+				{ role: "assistant", content: [{ type: "text", text: "hello" }], timestamp: 2 },
+			],
+		} as never);
+		expect(s.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+	});
+
+	test("irc_message events still surface as collapsed irc chat messages", () => {
+		const s = applyEvent(fresh(), {
+			type: "irc_message",
+			message: {
+				customType: "irc:incoming",
+				attribution: "ScoutAgent",
+				content: "full subagent report body",
+			},
+		} as never);
+		expect(s.messages).toHaveLength(1);
+		expect(s.messages[0]).toMatchObject({
+			role: "irc",
+			customType: "irc:incoming",
+			from: "ScoutAgent",
+			content: "full subagent report body",
+		});
+	});
+});

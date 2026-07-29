@@ -936,6 +936,7 @@ export class InProcessSessionHandle implements SessionHandle {
 	}
 
 	private async maybeAutoCompactContext(currentQuery = ""): Promise<void> {
+		let recorded = false;
 		try {
 			const before = this.session.getContextUsage?.();
 			if (!before) return;
@@ -945,15 +946,17 @@ export class InProcessSessionHandle implements SessionHandle {
 			const focus = await getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: before.percent ?? null });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, before, focus);
+			recorded = true;
 			log.info(`context replacement triggered for ${this.sessionId} (${before.percent ?? 0}% / ${before.tokens ?? 0} tokens)`);
 			await this.session.compact(focus);
 			const after = this.session.getContextUsage?.();
-			if (after) contextSavingsTracker.recordCompleted(this.sessionId, after);
+			contextSavingsTracker.recordCompleted(this.sessionId, after);
 			const beforeTokens = before.tokens ?? 0;
 			const afterTokens = after?.tokens ?? 0;
 			const saved = Math.max(0, beforeTokens - afterTokens);
 			log.info(`context replacement done for ${this.sessionId}: ${before.percent ?? 0}% → ${after?.percent ?? 0}%, saved ~${saved} tokens`);
 		} catch (err) {
+			if (recorded) contextSavingsTracker.recordFailed(this.sessionId, err);
 			log.warn(`context replacement failed for ${this.sessionId}`, err);
 		}
 	}

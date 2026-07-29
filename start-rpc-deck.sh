@@ -63,6 +63,20 @@ build_env() {
   echo "│  server port: $OMP_DECK_PORT"
   echo "│  web port   : $OMP_DECK_WEB_PORT"
   echo "│  backend    : $OMP_DECK_AGENT_BACKEND"
+
+  # Show topology API status from .env if present
+  local env_file
+  env_file="$(dirname "$0")/.env"
+  local topo_emb topo_rerank topo_ext
+  topo_emb="off"; topo_rerank="off"; topo_ext="regex"
+  if [ -f "$env_file" ]; then
+    grep -q '^OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED=true' "$env_file" && topo_emb="on"
+    grep -q '^OMP_DECK_TOPOLOGY_RERANK_ENABLED=true' "$env_file" && topo_rerank="on"
+    grep -q '^OMP_DECK_TOPOLOGY_EXTRACTION_MODE=fast_model' "$env_file" && topo_ext="fast_model"
+  fi
+  echo "│  embedding  : $topo_emb"
+  echo "│  rerank     : $topo_rerank"
+  echo "│  extraction : $topo_ext"
   echo "└──────────────────────────────────────────────────────────┘"
 }
 

@@ -130,7 +130,10 @@ export function buildRpcCompactCommand(focus?: string): RpcCommandBody {
 	return { type: "compact", customInstructions: focus };
 }
 
-export const RPC_AUTO_COMPACT_TIMEOUT_MS = 30_000;
+// Compact is an LLM-backed operation — 30s failed on Windows with slow API
+// responses (see v0.7.4 compact timeout fix). 90s balances user wait time
+// against the 180s manual-compact ceiling in getRpcCommandTimeoutMs.
+export const RPC_AUTO_COMPACT_TIMEOUT_MS = 90_000;
 export const RPC_AUTO_COMPACT_REMOTE_COOLDOWN_MS = 180_000;
 
 export function buildRpcManualCompactRequest(focus?: string): { command: RpcCommandBody } {
@@ -617,6 +620,7 @@ class RpcSessionHandle implements SessionHandle {
 
 	async maybeAutoCompactContext(currentQuery = ""): Promise<void> {
 		if (shouldSkipRpcAutoCompact(this.#autoCompactInFlightUntil)) return;
+		let recorded = false;
 		try {
 			const usage = this.#state.contextUsage;
 			if (!usage) return;
@@ -626,12 +630,14 @@ class RpcSessionHandle implements SessionHandle {
 			const focus = await getStoredQueryTopologyFocus({ sessionId: this.sessionId, query: currentQuery, contextPercent: usage.percent ?? null });
 			if (!focus) return;
 			contextSavingsTracker.recordTriggered(this.sessionId, usage, focus);
+			recorded = true;
 			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);
 			this.#autoCompactInFlightUntil = rpcAutoCompactCooldownUntil();
 			const autoCompact = buildRpcAutoCompactRequest(focus);
 			await this.#transport.send(autoCompact.command, autoCompact.opts);
 			log.info(`context replacement compact sent for ${this.sessionId} — savings will appear on next context usage update`);
 		} catch (err) {
+			if (recorded) contextSavingsTracker.recordFailed(this.sessionId, err);
 			log.warn(`context replacement failed for ${this.sessionId}`, err);
 		}
 	}

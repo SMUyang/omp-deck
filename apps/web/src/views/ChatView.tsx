@@ -2,7 +2,7 @@ import { Layout } from "@/components/Layout";
 import { Sidebar } from "@/components/Sidebar";
 import { Chat } from "@/components/Chat";
 import { Composer } from "@/components/Composer";
-import { StatusPanel } from "@/components/status/StatusPanel";
+import { ChatInspector } from "@/components/chat/ChatInspector";
 import { StatusBar } from "@/components/chrome/StatusBar";
 import { ExtUiDialog } from "@/components/chat/ExtUiDialog";
 
@@ -17,7 +17,7 @@ export function ChatView() {
 						<Composer />
 					</div>
 				}
-				inspector={{ content: <StatusPanel />, label: "Status" }}
+				inspector={{ content: <ChatInspector />, label: "Inspector" }}
 				toolCardsToggle={true}
 				topBar={<StatusBar />}
 			/>

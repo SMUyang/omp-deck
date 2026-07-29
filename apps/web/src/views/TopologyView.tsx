@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { parseTopologyFocus, latestUserText } from "@/lib/topology-focus";
 
 import type {
 	ContextReplacementEvent,
@@ -11,11 +12,11 @@ import type {
 
 import { Layout } from "@/components/Layout";
 import { SessionContextStatusChip } from "@/components/session/SessionContextStatusChip";
-import { SessionContextTopologyGraph } from "@/components/session/SessionContextTopologyGraph";
+import { TopologyGraph } from "@/components/session/TopologyGraph";
 import { ContextPackPanel } from "@/components/session/ContextPackPanel";
 import { ContextEvidenceTimeline } from "@/components/topology/ContextEvidenceTimeline";
 import { api } from "@/lib/api";
-import { useStore } from "@/lib/store";
+import { useStore, selectActiveSession } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -74,6 +75,49 @@ export function TopologyView() {
 			cancelled = true;
 		};
 	}, [sessionId]);
+
+	// ── Focus state: query-driven selection of next model context ──
+	const [focusQuery, setFocusQuery] = useState(() => searchParams.get("q") ?? "");
+	const [focusIds, setFocusIds] = useState<Set<string>>(new Set());
+	const [focusError, setFocusError] = useState<string | null>(null);
+	const [focusLoading, setFocusLoading] = useState(false);
+	const activeSession = useStore((s) => selectActiveSession(s));
+	const activeQuery = useMemo(
+		() => latestUserText((activeSession?.messages ?? []) as ReadonlyArray<{ role: string; text?: string }>),
+		[activeSession?.messages],
+	);
+	const effectiveQuery = focusQuery || activeQuery;
+
+	useEffect(() => {
+		if (!sessionId) {
+			setFocusIds(new Set());
+			return;
+		}
+		const q = effectiveQuery.trim();
+		if (!q) {
+			setFocusIds(new Set());
+			return;
+		}
+		let cancelled = false;
+		setFocusLoading(true);
+		setFocusError(null);
+		api
+			.getSessionContextFocus(sessionId, { q, contextPercent: 100 })
+			.then((resp) => {
+				if (cancelled) return;
+				const parsed = parseTopologyFocus(resp.focus);
+				setFocusIds(new Set(parsed?.nodes.map((n) => n.id) ?? []));
+			})
+			.catch((err) => {
+				if (!cancelled) setFocusError(err instanceof Error ? err.message : String(err));
+			})
+			.finally(() => {
+				if (!cancelled) setFocusLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [sessionId, effectiveQuery]);
 
 	// ── Fetch evidence when session changes ────────────────────────────
 	useEffect(() => {
@@ -198,14 +242,38 @@ export function TopologyView() {
 
 						{/* ── Main: graph canvas ── */}
 						<main className="flex min-h-0 min-w-0 flex-1 flex-col p-2">
-							<SessionContextTopologyGraph
-								graph={graph}
-								loading={graphLoading}
-								error={graphError ?? undefined}
-								selectedNodeId={selectedNodeId}
-								onSelectNode={setSelectedNodeId}
-								className="flex-1"
-							/>
+							<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2">
+								<div className="flex items-center gap-2 rounded-md border border-line bg-paper-2 px-2 py-1.5">
+									<span className="font-mono text-2xs uppercase tracking-meta text-ink-3">focus query</span>
+									<input
+										type="text"
+										value={focusQuery}
+										onChange={(e) => {
+											setFocusQuery(e.target.value);
+											const next = new URLSearchParams(searchParams);
+											if (e.target.value) next.set("q", e.target.value);
+											else next.delete("q");
+											setSearchParams(next);
+										}}
+										placeholder={activeQuery || "leave empty to use the active chat's last turn"}
+										className="flex-1 rounded border border-line bg-paper px-2 py-1 text-xs text-ink placeholder:text-ink-4"
+									/>
+									{focusLoading ? <span className="font-mono text-2xs text-ink-3">loading…</span> : null}
+									{focusError ? <span className="font-mono text-2xs text-danger">{focusError}</span> : null}
+									{effectiveQuery && focusIds.size > 0 ? (
+										<span className="font-mono text-2xs text-accent">{focusIds.size} nodes highlighted</span>
+									) : null}
+								</div>
+								<TopologyGraph
+									graph={graph}
+									loading={graphLoading}
+									error={graphError ?? undefined}
+									selectedNodeId={selectedNodeId}
+									onSelectNode={setSelectedNodeId}
+									focusIds={focusIds}
+									className="flex-1"
+								/>
+							</div>
 						</main>
 
 						{/* ── Right panel: inspector + evidence + pack ──

@@ -296,7 +296,10 @@ export const useStore = create<StoreState>()(
 		sessionsById: {},
 		subscribed: new Set<string>(),
 		_createInFlight: new Map(),
-		toolView: { allCollapsed: false, perCard: {} },
+		// Tool cards default to collapsed: the one-line header (name + intent +
+		// status + duration) keeps the transcript scannable; the bulk toggle in
+		// the layout header or a per-card click expands on demand.
+		toolView: { allCollapsed: true, perCard: {} },
 		tasksChangeCounter: 0,
 		skillsChangeCounter: 0,
 		kbChangeCounter: 0,

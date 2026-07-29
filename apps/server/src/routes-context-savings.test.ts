@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import type { ContextReplacementEvent } from "@omp-deck/protocol";
+import type { ContextEvidenceStats, ContextReplacementEvent } from "@omp-deck/protocol";
 import { closeDb, getDb, openDb } from "./db/index.ts";
 import { buildContextSavingsRouter } from "./routes-context-savings.ts";
 
@@ -21,6 +21,26 @@ afterEach(() => {
 	closeDb();
 	for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
+
+function expectDefined<T>(value: T | undefined, label: string): T {
+	expect(value).toBeDefined();
+	if (value === undefined) throw new Error(`expected ${label}`);
+	return value;
+}
+
+function expectContextEvidenceStats(value: unknown): asserts value is ContextEvidenceStats {
+	expect(value).not.toBeNull();
+	expect(typeof value).toBe("object");
+	if (value === null || typeof value !== "object") throw new Error("expected context evidence stats object");
+	expect("total" in value).toBe(true);
+	expect("completed" in value).toBe(true);
+	expect("totalSaved" in value).toBe(true);
+	expect("recent" in value).toBe(true);
+	if (!("total" in value) || typeof value.total !== "number") throw new Error("expected numeric total");
+	if (!("completed" in value) || typeof value.completed !== "number") throw new Error("expected numeric completed");
+	if (!("totalSaved" in value) || typeof value.totalSaved !== "number") throw new Error("expected numeric totalSaved");
+	if (!("recent" in value) || !Array.isArray(value.recent)) throw new Error("expected recent event array");
+}
 
 function ensureTable(dbPath: string): void {
 	// Migration 008 may not exist yet; create the table manually for tests.
@@ -78,16 +98,16 @@ function insertEvent(dbPath: string, overrides: Partial<{
 	const sessionId = overrides.sessionId ?? "s1";
 	const status = overrides.status ?? "provider_payload_observed";
 	const mechanism = overrides.mechanism ?? "auto_compact";
-	const beforeTokens = "beforeTokens" in overrides ? overrides.beforeTokens : 12000;
-	const beforePercent = "beforePercent" in overrides ? overrides.beforePercent : 15.85;
-	const afterTokens = "afterTokens" in overrides ? overrides.afterTokens : 8500;
-	const afterPercent = "afterPercent" in overrides ? overrides.afterPercent : 11.33;
-	const savedTokens = "savedTokens" in overrides ? overrides.savedTokens : 3500;
-	const savedPercent = "savedPercent" in overrides ? overrides.savedPercent : 29.17;
+	const beforeTokens = "beforeTokens" in overrides ? (overrides.beforeTokens ?? null) : 12000;
+	const beforePercent = "beforePercent" in overrides ? (overrides.beforePercent ?? null) : 15.85;
+	const afterTokens = "afterTokens" in overrides ? (overrides.afterTokens ?? null) : 8500;
+	const afterPercent = "afterPercent" in overrides ? (overrides.afterPercent ?? null) : 11.33;
+	const savedTokens = "savedTokens" in overrides ? (overrides.savedTokens ?? null) : 3500;
+	const savedPercent = "savedPercent" in overrides ? (overrides.savedPercent ?? null) : 29.17;
 	const focusHash = overrides.focusHash ?? "abcd1234";
 	const focusPreview = overrides.focusPreview ?? "Test focus preview text";
 	const estimatedFocusTokens = overrides.estimatedFocusTokens ?? 12;
-	const providerRole = "providerRole" in overrides ? overrides.providerRole : "default";
+	const providerRole = "providerRole" in overrides ? (overrides.providerRole ?? null) : "default";
 
 	db.run(
 		`INSERT INTO context_replacement_events
@@ -134,13 +154,14 @@ describe("GET /stats/context-savings", () => {
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
+		expectContextEvidenceStats(body);
 		expect(body.total).toBe(3);
 		expect(body.completed).toBe(2);
 		expect(body.totalSaved).toBe(3000);
 		expect(body.recent).toBeArray();
 		expect(body.recent.length).toBe(3);
 		// Most recent first (ordered by created_at DESC)
-		expect(body.recent[0].status).toBe("compact_completed");
+		expect(expectDefined(body.recent[0], "most recent event").status).toBe("compact_completed");
 	});
 
 	test("totalSaved is 0 when no completed events with saved tokens", async () => {
@@ -156,6 +177,7 @@ describe("GET /stats/context-savings", () => {
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
+		expectContextEvidenceStats(body);
 		expect(body.totalSaved).toBe(0);
 	});
 
@@ -170,6 +192,7 @@ describe("GET /stats/context-savings", () => {
 		let req = new Request("http://127.0.0.1/stats/context-savings");
 		let res = await app.fetch(req);
 		let body = await res.json();
+		expectContextEvidenceStats(body);
 		expect(body.total).toBe(1);
 		expect(body.totalSaved).toBe(500);
 
@@ -178,8 +201,9 @@ describe("GET /stats/context-savings", () => {
 		req = new Request("http://127.0.0.1/stats/context-savings");
 		res = await app.fetch(req);
 		body = await res.json();
-		expect(body.total).toBe(1, "total should persist across tracker recreation");
-		expect(body.totalSaved).toBe(500, "totalSaved should persist across tracker recreation");
+		expectContextEvidenceStats(body);
+		expect(body.total).toBe(1);
+		expect(body.totalSaved).toBe(500);
 	});
 
 	test("does not fabricate replacement events — only returns what's in DB", async () => {
@@ -194,6 +218,7 @@ describe("GET /stats/context-savings", () => {
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
+		expectContextEvidenceStats(body);
 		expect(body.total).toBe(0);
 		expect(body.completed).toBe(0);
 		expect(body.recent).toEqual([]);
@@ -218,8 +243,9 @@ describe("GET /stats/context-savings", () => {
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(body.totalSaved).toBe(0, "null saved tokens should not contribute to total");
-		const event = body.recent[0] as ContextReplacementEvent;
+		expectContextEvidenceStats(body);
+		expect(body.totalSaved).toBe(0);
+		const event = expectDefined(body.recent[0], "recent event with null savings");
 		expect(event.savedTokens).toBeNull();
 		expect(event.savedPercent).toBeNull();
 		expect(event.beforeTokens).toBeNull();
@@ -238,8 +264,9 @@ describe("GET /stats/context-savings", () => {
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(body.totalSaved).toBe(0, "0 saved tokens contributes 0 to sum");
-		const event = body.recent[0] as ContextReplacementEvent;
+		expectContextEvidenceStats(body);
+		expect(body.totalSaved).toBe(0);
+		const event = expectDefined(body.recent[0], "recent zero-savings event");
 		expect(event.savedTokens).toBe(0);
 		expect(event.savedPercent).toBe(0);
 	});
@@ -261,7 +288,8 @@ describe("GET /stats/context-savings", () => {
 
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		const event = body.recent[0] as ContextReplacementEvent;
+		expectContextEvidenceStats(body);
+		const event = expectDefined(body.recent[0], "recent event with focus estimate");
 		expect(event.focusEstimatedTokens).toBe(42);
 		expect(event.savedTokens).toBe(3500);
 		// The estimate must never be folded into savedTokens.

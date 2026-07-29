@@ -21,6 +21,7 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [reloadNonce, setReloadNonce] = useState(0);
+	const [pathInput, setPathInput] = useState("");
 
 	useEffect(() => {
 		if (open) setCwd(initialCwd);
@@ -58,7 +59,6 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 					<X className="h-4 w-4" />
 				</button>
 			</div>
-
 			<div className="flex items-center gap-2 border-b border-line px-4 py-2">
 				<button
 					type="button"
@@ -73,7 +73,23 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 					<RefreshCw className="h-3.5 w-3.5" />
 					Refresh
 				</button>
-				<label className="ml-auto flex items-center gap-1.5 font-mono text-2xs text-ink-3">
+				{/* Manual path entry — lets users type/paste a path directly, which is
+				    essential on Windows where directories on different drives (C:\, D:\)
+				    can't be reached by clicking up/down from the current drive. */}
+				<input
+					type="text"
+					className="ml-auto h-7 flex-1 max-w-[280px] rounded border border-line bg-paper px-2 font-mono text-2xs text-ink placeholder:text-ink-4 focus:border-accent focus:outline-none"
+					placeholder={t("sidebar.typePath")}
+					value={pathInput}
+					onChange={(e) => setPathInput(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" && pathInput.trim()) {
+							setCwd(pathInput.trim());
+							setPathInput("");
+						}
+					}}
+				/>
+				<label className="flex items-center gap-1.5 font-mono text-2xs text-ink-3">
 					<input type="checkbox" checked={showHidden} onChange={(event) => setShowHidden(event.target.checked)} />
 					{t("sidebar.showHiddenDirectories")}
 				</label>

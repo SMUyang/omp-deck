@@ -43,6 +43,9 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
 			if (!target.sessionFile) return c.json({ error: "session has no session file" }, 404);
+			if (!(await Bun.file(target.sessionFile).exists())) {
+				return c.json({ error: "session_file_not_ready", retryable: true }, 409);
+			}
 			if (rebuilding.has(id)) return c.json({ error: "already_rebuilding", sessionId: id }, 409);
 
 			const ec = createExtractorPool();
@@ -146,7 +149,22 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 		}
 	});
 
-	app.get("/sessions/:id/context-graph", async (c) => {
+
+
+	app.get("/sessions/:id/context-usage", async (c) => {
+		const id = c.req.param("id");
+		const handle = bridge.getSession(id);
+		if (!handle) return c.json({ error: "session_not_active", sessionId: id }, 404);
+		try {
+			const usage = handle.getContextUsage();
+			if (!usage) return c.json({ error: "usage_unavailable", sessionId: id }, 404);
+			return c.json({ sessionId: id, ...usage });
+		} catch (err) {
+			return c.json({ error: String((err as Error).message ?? err) }, 500);
+		}
+	});
+
+		app.get("/sessions/:id/context-graph", async (c) => {
 		const id = c.req.param("id");
 		try {
 			const target = await resolveSessionContextTarget(bridge, id);

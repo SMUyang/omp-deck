@@ -1,5 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useStore, selectActiveSession } from "@/lib/store";
+import { groupChatItems, type ChatRenderItem } from "@/lib/chat-items";
+import type { ChatMessage, ToolCallStream } from "@/lib/types";
 import { ChatHeader } from "./chat/ChatHeader";
 import { SessionPicker } from "./chat/SessionPicker";
 import { UserMessage } from "./messages/UserMessage";
@@ -7,9 +9,26 @@ import { AssistantMessage } from "./messages/AssistantMessage";
 import { Notice } from "./messages/Notice";
 import { CompactionLine } from "./messages/CompactionLine";
 import { TtsrLine } from "./messages/TtsrLine";
-import { IrcLine } from "./messages/IrcLine";
+import { IrcGroup } from "./messages/IrcGroup";
 import { QueuedMessage } from "./messages/QueuedMessage";
 import { PlanApproval } from "./messages/PlanApproval";
+
+function renderMessage(m: ChatMessage, toolCalls: Record<string, ToolCallStream>) {
+	switch (m.role) {
+		case "user":
+			return <UserMessage msg={m} />;
+		case "assistant":
+			return <AssistantMessage msg={m} toolCalls={toolCalls} />;
+		case "notice":
+			return <Notice msg={m} />;
+		case "compaction":
+			return <CompactionLine msg={m} />;
+		case "ttsr":
+			return <TtsrLine msg={m} />;
+		default:
+			return null;
+	}
+}
 
 export function Chat() {
 	const session = useStore(selectActiveSession);
@@ -19,6 +38,10 @@ export function Chat() {
 	const messages = session?.messages ?? [];
 	const toolCalls = session?.toolCalls ?? {};
 	const queuedPrompts = session?.queuedPrompts ?? [];
+
+	// Collapse runs of consecutive subagent/IRC messages into a single
+	// expandable group so delegation chatter doesn't flood the transcript.
+	const items = useMemo(() => groupChatItems(messages), [messages]);
 
 	useEffect(() => {
 		const el = scrollRef.current;
@@ -52,23 +75,19 @@ export function Chat() {
 						</div>
 					) : null}
 
-					{messages.map((m) => {
-						switch (m.role) {
-							case "user":
-								return <UserMessage key={m.id} msg={m} />;
-							case "assistant":
-								return <AssistantMessage key={m.id} msg={m} toolCalls={toolCalls} />;
-							case "notice":
-								return <Notice key={m.id} msg={m} />;
-							case "compaction":
-								return <CompactionLine key={m.id} msg={m} />;
-							case "ttsr":
-								return <TtsrLine key={m.id} msg={m} />;
-							case "irc":
-								return <IrcLine key={m.id} msg={m} />;
-							default:
-								return null;
+					{items.map((item: ChatRenderItem, i: number) => {
+						if (item.kind === "irc-group") {
+							return <IrcGroup key={item.key} msgs={item.msgs} />;
 						}
+						const m = item.msg;
+						// Turn separator: each new user message opens a turn — give it a
+						// hairline + extra breathing room so multi-turn sessions scan.
+						const turnStart = m.role === "user" && i > 0;
+						return (
+							<div key={m.id} className={turnStart ? "border-t border-line pt-7" : undefined}>
+								{renderMessage(m, toolCalls)}
+							</div>
+						);
 					})}
 
 					{queuedPrompts.map((q) => (

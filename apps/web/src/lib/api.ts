@@ -18,6 +18,7 @@ import type {
 	ModelRef,
 	CpaUsageResponse,
 	ProviderUsageResponse,
+	SessionContextFocusResponse,
 	SessionContextGraphResponse,
 	SessionContextPackResponse,
 	SessionContextStatusResponse,
@@ -158,6 +159,19 @@ export const api = {
 	},
 	getSessionContextGraph(id: string, limit = 200): Promise<SessionContextGraphResponse> {
 		return request<SessionContextGraphResponse>(`/sessions/${encodeURIComponent(id)}/context-graph?limit=${encodeURIComponent(String(limit))}`);
+	},
+	getSessionContextFocus(
+		id: string,
+		params: { q?: string; contextPercent?: number } = {},
+	): Promise<SessionContextFocusResponse> {
+		const search = new URLSearchParams();
+		if (params.q) search.set("q", params.q);
+		if (params.contextPercent !== undefined) search.set("contextPercent", String(params.contextPercent));
+		const qs = search.toString();
+		return request<SessionContextFocusResponse>(`/sessions/${encodeURIComponent(id)}/context-focus${qs ? `?${qs}` : ""}`);
+	},
+	getSessionContextUsage(id: string): Promise<{ sessionId: string; tokens?: number; percent?: number; contextWindow?: number }> {
+		return request(`/sessions/${encodeURIComponent(id)}/context-usage`);
 	},
 	getContextEvidence(id: string): Promise<ContextReplacementEvent[]> {
 		return request<{ events: ContextReplacementEvent[] }>(`/sessions/${encodeURIComponent(id)}/context-evidence`).then((r) => r.events);

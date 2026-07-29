@@ -11,8 +11,8 @@ describe("RPC compact command", () => {
 });
 
 describe("RPC auto compact guard", () => {
-	test("uses a short pre-prompt wait budget while leaving manual compact command shape unchanged", () => {
-		expect(buildRpcAutoCompactSendOptions()).toEqual({ timeoutMs: 30_000 });
+	test("auto-compact timeout is 90s (LLM-backed, not a local op)", () => {
+		expect(buildRpcAutoCompactSendOptions()).toEqual({ timeoutMs: 90_000 });
 		expect(buildRpcCompactCommand("topology focus")).toEqual({ type: "compact", customInstructions: "topology focus" });
 	});
 

@@ -1,15 +1,24 @@
-import type { ContextUsage } from "@omp-deck/protocol";
+import { createHash } from "node:crypto";
+import type { ContextReplacementStatus, ContextUsage } from "@omp-deck/protocol";
+// 'awaiting_usage' is deck-internal: focus was sent to the LLM but the post-
+// replace usage drop never arrived within RPC_USAGE_UPDATE_TIMEOUT_MS. The
+// bridge / a poll loop can still backfill `after` via completePendingFromUsage.
+type AwaitingUsageStatus = "awaiting_usage";
+import { ContextEvidenceTracker } from "./context-evidence-tracker.ts";
 import { logger } from "./log.ts";
-
 const log = logger("context-savings");
 
 export interface ReplacementRecord {
 	sessionId: string;
+	status: ContextReplacementStatus | AwaitingUsageStatus;
 	before: { tokens: number; percent: number };
 	focus?: string;
 	after?: { tokens: number; percent: number };
+	afterStatus: "unknown" | "below_threshold" | "populated";
 	triggeredAt: number;
 	completedAt?: number;
+	evidenceEventId?: string;
+	createdAtMs: number;
 }
 
 export interface SessionSavingsStats {
@@ -34,44 +43,97 @@ interface PendingRpc {
 	beforeTokens: number;
 	beforePercent: number;
 	triggeredAt: number;
+	evidenceEventId?: string;
+	cancelTimeout: () => void;
 }
+
+export interface ContextSavingsScheduler {
+	schedule(callback: () => void, delayMs: number): () => void;
+}
+
+const RPC_USAGE_UPDATE_TIMEOUT_MS = 30_000;
+const defaultScheduler: ContextSavingsScheduler = {
+	schedule(callback, delayMs) {
+		const timeout = setTimeout(callback, delayMs);
+		return () => clearTimeout(timeout);
+	},
+};
 
 export class ContextSavingsTracker {
 	#records: ReplacementRecord[] = [];
 	#pendingRpc: Map<string, PendingRpc> = new Map();
 	#maxRecent = 100;
 
+	constructor(
+		private readonly evidence?: ContextEvidenceTracker,
+		private readonly scheduler: ContextSavingsScheduler = defaultScheduler,
+	) {}
+
 	recordTriggered(sessionId: string, before: ContextUsage, focus?: string): ReplacementRecord {
+		const triggeredAt = Date.now();
 		const record: ReplacementRecord = {
 			sessionId,
+			status: "compact_requested" as ContextReplacementStatus,
 			before: { tokens: before.tokens ?? 0, percent: before.percent ?? 0 },
-			triggeredAt: Date.now(),
+			afterStatus: "unknown",
+			triggeredAt,
+			createdAtMs: triggeredAt,
 		};
 		if (focus !== undefined) record.focus = focus;
+		if (this.evidence) {
+			const evidenceFocus = focus ?? "[auto compact focus unavailable]";
+			record.evidenceEventId = this.evidence.recordReplacement({
+				sessionId,
+				status: "compact_requested",
+				mechanism: "auto_compact",
+				beforeTokens: before.tokens,
+				beforePercent: before.percent,
+				focusHash: createHash("sha256").update(evidenceFocus).digest("hex"),
+				focusPreview: evidenceFocus.slice(0, 240),
+				focusEstimatedTokens: Math.ceil(evidenceFocus.length / 4),
+			});
+		}
 		this.#records.push(record);
 		this.#trim();
-		this.#pendingRpc.set(sessionId, {
+		this.#clearPending(sessionId);
+		const pending: PendingRpc = {
 			beforeTokens: record.before.tokens,
 			beforePercent: record.before.percent,
 			triggeredAt: record.triggeredAt,
-		});
+			evidenceEventId: record.evidenceEventId,
+			cancelTimeout: () => {},
+		};
+		pending.cancelTimeout = this.scheduler.schedule(() => {
+			this.#recordTimedOut(sessionId, pending);
+		}, RPC_USAGE_UPDATE_TIMEOUT_MS);
+		this.#pendingRpc.set(sessionId, pending);
 		log.info(`recorded context replacement trigger for ${sessionId} (${record.before.percent}% / ${record.before.tokens} tokens)`);
 		return record;
 	}
 
-	recordCompleted(sessionId: string, after: ContextUsage): ReplacementRecord | undefined {
+	recordCompleted(
+		sessionId: string,
+		after?: ContextUsage,
+		status: ContextReplacementStatus = "compact_completed",
+	): ReplacementRecord | undefined {
 		// Find the most recent uncompleted record for this session.
 		const record = [...this.#records].reverse().find(
 			(r) => r.sessionId === sessionId && !r.completedAt,
 		);
 		if (!record) return undefined;
 
-		record.after = { tokens: after.tokens ?? 0, percent: after.percent ?? 0 };
+		if (after) record.after = { tokens: after.tokens ?? 0, percent: after.percent ?? 0 };
 		record.completedAt = Date.now();
-		this.#pendingRpc.delete(sessionId);
-		const saved = Math.max(0, record.before.tokens - record.after.tokens);
+		this.#clearPending(sessionId);
+		if (record.evidenceEventId && this.evidence) {
+			this.evidence.updateStatus(record.evidenceEventId, status, {
+				afterTokens: after?.tokens ?? null,
+				afterPercent: after?.percent ?? null,
+			});
+		}
+		const saved = record.after ? Math.max(0, record.before.tokens - record.after.tokens) : null;
 		log.info(
-			`recorded context replacement completion for ${sessionId}: ${record.before.percent}% → ${record.after.percent}%, saved ~${saved} tokens`,
+			`recorded context replacement completion for ${sessionId}: ${record.before.percent}% → ${record.after?.percent ?? "unknown"}%, saved ${saved === null ? "unknown" : `~${saved} tokens`}`,
 		);
 		return record;
 	}
@@ -81,7 +143,11 @@ export class ContextSavingsTracker {
 	 * treat the first usage update that is lower than the pending trigger as the
 	 * post-compaction state. If no pending trigger exists, this is a no-op.
 	 */
-	maybeCompleteFromRpcUpdate(sessionId: string, usage: ContextUsage): ReplacementRecord | undefined {
+	maybeCompleteFromRpcUpdate(
+		sessionId: string,
+		usage: ContextUsage,
+		now = Date.now(),
+	): ReplacementRecord | undefined {
 		const pending = this.#pendingRpc.get(sessionId);
 		if (!pending) return undefined;
 
@@ -91,14 +157,96 @@ export class ContextSavingsTracker {
 		// and not too much time has passed (30s window).
 		const tokenDrop = pending.beforeTokens - tokens;
 		const percentDrop = pending.beforePercent - percent;
-		const elapsed = Date.now() - pending.triggeredAt;
-		if (elapsed > 30_000) {
-			this.#pendingRpc.delete(sessionId);
+		const elapsed = now - pending.triggeredAt;
+		if (elapsed > RPC_USAGE_UPDATE_TIMEOUT_MS) {
+			this.#recordTimedOut(sessionId, pending);
 			return undefined;
 		}
 		if (tokenDrop < 50 && percentDrop < 5) return undefined;
 
-		return this.recordCompleted(sessionId, usage);
+		return this.recordCompleted(sessionId, usage, "usage_drop_observed");
+	}
+
+	discardPending(sessionId: string): void {
+		this.#clearPending(sessionId);
+	}
+
+	recordFailed(sessionId: string, error: unknown): void {
+		const pending = this.#pendingRpc.get(sessionId);
+		if (!pending) return;
+
+		if (pending.evidenceEventId && this.evidence) {
+			this.evidence.updateStatus(pending.evidenceEventId, "failed", {
+				errorMessage: error instanceof Error ? error.message : String(error),
+			});
+		}
+		this.#clearPending(sessionId, pending);
+	}
+
+	markAwaitingUsage(sessionId: string, pending: PendingRpc): void {
+		if (this.#pendingRpc.get(sessionId) !== pending) return;
+		if (pending.evidenceEventId && this.evidence) {
+			this.evidence.updateStatus(pending.evidenceEventId, "awaiting_usage" as AwaitingUsageStatus, {
+				errorMessage: `awaiting post-replace usage update (>${RPC_USAGE_UPDATE_TIMEOUT_MS}ms)`,
+			});
+		}
+	}
+
+	/**
+	 * Backfill a still-open (awaiting_usage) pending record with a fresh
+	 * `usage` snapshot. Returns the completed record, or undefined if no
+	 * pending entry exists / the usage didn't drop meaningfully.
+	 */
+	completePendingFromUsage(
+		sessionId: string,
+		usage: ContextUsage,
+		now = Date.now(),
+	): ReplacementRecord | undefined {
+		const pending = this.#pendingRpc.get(sessionId);
+		if (!pending) return undefined;
+
+		const tokens = usage.tokens ?? 0;
+		const percent = usage.percent ?? 0;
+		const tokenDrop = pending.beforeTokens - tokens;
+		const percentDrop = pending.beforePercent - percent;
+
+		// Below threshold: usage didn't actually drop (or OMP usage is stale).
+		// Stay in awaiting_usage; future polls can complete this record.
+		if (tokenDrop < 50 && percentDrop < 5) {
+			const idx = this.#records.findIndex((r) => r.evidenceEventId === pending.evidenceEventId);
+			const rec = idx >= 0 ? this.#records[idx] : undefined;
+			if (rec) rec.afterStatus = "below_threshold";
+			return undefined;
+		}
+
+		const completed = this.recordCompleted(sessionId, usage, "usage_drop_observed");
+		if (completed) completed.afterStatus = "populated";
+		return completed;
+	}
+
+	#recordTimedOut(sessionId: string, pending: PendingRpc): void {
+		if (this.#pendingRpc.get(sessionId) !== pending) return;
+		// Move the evidence event to `awaiting_usage` (focus was confirmed at
+		// provider_payload_observed; we just couldn't observe a usage drop in
+		// time). Keeps the pending entry alive for a later backfill via
+		// `completePendingFromUsage` once a poll returns a fresh usage.
+		this.markAwaitingUsage(sessionId, pending);
+		if (pending.evidenceEventId) {
+			const idx = this.#records.findIndex((r) => r.evidenceEventId === pending.evidenceEventId);
+			const rec = idx >= 0 ? this.#records[idx] : undefined;
+			if (rec) rec.status = "awaiting_usage" as AwaitingUsageStatus;
+		}
+	}
+
+	hasPending(sessionId: string): boolean {
+		return this.#pendingRpc.has(sessionId);
+	}
+
+	#clearPending(sessionId: string, expected?: PendingRpc): void {
+		const pending = this.#pendingRpc.get(sessionId);
+		if (!pending || (expected && pending !== expected)) return;
+		pending.cancelTimeout();
+		this.#pendingRpc.delete(sessionId);
 	}
 
 	getStats(): ContextSavingsStats {
@@ -151,4 +299,4 @@ export class ContextSavingsTracker {
 	}
 }
 
-export const contextSavingsTracker = new ContextSavingsTracker();
+export const contextSavingsTracker = new ContextSavingsTracker(new ContextEvidenceTracker());

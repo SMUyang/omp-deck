@@ -6,26 +6,6 @@ import type {
 
 export const CUSTOM_TYPE = "deck-session-topology-context";
 
-// ── Evidence recording ──────────────────────────────────────────────────────
-
-/** Callback contracts for the extension to record lifecycle evidence.
- *  The server wires the real DB-backed tracker; tests wire a capture spy. */
-export interface EvidenceRecorder {
-	record(params: CreateContextEvidenceRequest): string;
-	update(eventId: string, params: UpdateContextEvidenceRequest): void;
-}
-
-let evidenceRecorder: EvidenceRecorder | null = null;
-
-/** Wire the evidence recorder. Call once during server startup. */
-export function setEvidenceRecorder(recorder: EvidenceRecorder): void {
-	evidenceRecorder = recorder;
-}
-
-/** Remove the evidence recorder (test cleanup). */
-export function resetEvidenceRecorder(): void {
-	evidenceRecorder = null;
-}
 
 // ── Token & hash helpers ────────────────────────────────────────────────────
 
@@ -147,6 +127,16 @@ export function parseFocusResponse(value: unknown): string | null {
 	return typeof value.focus === "string" ? value.focus : null;
 }
 
+function parseEventIdResponse(value: unknown): string | null {
+	if (!value || typeof value !== "object" || !("eventId" in value)) return null;
+	return typeof value.eventId === "string" && value.eventId ? value.eventId : null;
+}
+
+function readPayload(value: unknown): unknown {
+	if (!value || typeof value !== "object" || !("payload" in value)) return undefined;
+	return value.payload;
+}
+
 export function appendTopologyContextMessage<T>(messages: readonly T[], focus: string): Array<T | TopologyContextMessage> {
 	return [
 		...messages,
@@ -172,8 +162,7 @@ export function replaceTopologyContext<T>(messages: readonly T[], focus: string,
 	let userCount = 0;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		kept.unshift(messages[i]!);
-		const role = (messages[i] as Record<string, unknown>).role;
-		if (role === "user") {
+		if (readRole(messages[i]) === "user") {
 			userCount++;
 			if (userCount >= keepRecentUserTurns) break;
 		}
@@ -213,6 +202,55 @@ async function fetchFocus(url: string, timeoutMs: number): Promise<string | null
 	}
 }
 
+async function postJson(url: string, body: unknown, timeoutMs: number): Promise<Response | null> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		return await fetch(url, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+			signal: controller.signal,
+		});
+	} catch {
+		return null;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+export async function createContextEvidence(
+	base: string,
+	sessionId: string,
+	params: CreateContextEvidenceRequest,
+	timeoutMs: number,
+): Promise<string | null> {
+	const normalized = normalizeDeckApiBase(base);
+	if (!isLoopbackApiBase(normalized)) return null;
+	const url = `${normalized}/sessions/${encodeURIComponent(sessionId)}/context-evidence`;
+	const response = await postJson(url, params, timeoutMs);
+	if (!response?.ok) return null;
+	try {
+		return parseEventIdResponse(await response.json());
+	} catch {
+		return null;
+	}
+}
+
+export async function updateContextEvidence(
+	base: string,
+	sessionId: string,
+	eventId: string,
+	params: UpdateContextEvidenceRequest,
+	timeoutMs: number,
+): Promise<boolean> {
+	const normalized = normalizeDeckApiBase(base);
+	if (!isLoopbackApiBase(normalized) || !eventId) return false;
+	const url = `${normalized}/sessions/${encodeURIComponent(sessionId)}/context-evidence/${encodeURIComponent(eventId)}`;
+	const response = await postJson(url, params, timeoutMs);
+	return response?.ok === true;
+}
+
 // ── Extension hooks ──────────────────────────────────────────────────────────
 
 /**
@@ -247,21 +285,18 @@ export default function topologyContextExtension(pi: ExtensionAPI): void {
 		const focus = await fetchFocus(url, timeoutMs);
 
 		if (!focus) {
-			// fetchFocus returns null on any failure (network, abort, non-ok).
-			// Conservatively record `failed` — the server layer can refine to timed_out
-			// when it has access to the original AbortSignal reason.
-			const rec = evidenceRecorder;
-			if (rec) {
-				rec.record({
-					status: "failed",
-					mechanism: "context_hook",
-					beforeTokens,
-					beforePercent,
-					focusHash: "",
-					focusPreview: "",
-					estimatedFocusTokens: 0,
-				});
-			}
+			const failurePreview = buildFocusPreview(`Topology focus fetch failed for query: ${query}`);
+			await createContextEvidence(apiBase, sessionId, {
+				status: "failed",
+				mechanism: "context_hook",
+				beforeTokens,
+				beforePercent,
+				focusHash: sha256Hex(`focus-fetch-failed\n${sessionId}\n${query}`),
+				focusPreview: failurePreview,
+				estimatedFocusTokens: 0,
+				focusEstimateMethod: "chars_div_4",
+				errorMessage: "context-focus request failed",
+			}, timeoutMs);
 			return undefined;
 		}
 
@@ -270,39 +305,36 @@ export default function topologyContextExtension(pi: ExtensionAPI): void {
 		const focusPreview = buildFocusPreview(bounded);
 		const focusEstimatedTokens = Math.ceil(bounded.length / 4);
 
-		const rec = evidenceRecorder;
-		let eventId = "";
-		if (rec) {
-			eventId = rec.record({
-				status: "constructed",
-				mechanism: "context_hook",
-				beforeTokens,
-				beforePercent,
-				focusHash,
-				focusPreview,
-				estimatedFocusTokens: focusEstimatedTokens,
-			});
-			// Immediately update to handler_returned since we're about to return.
-			rec.update(eventId, { status: "handler_returned" });
-		} else {
-			eventId = crypto.randomUUID();
+		const eventId = await createContextEvidence(apiBase, sessionId, {
+			status: "constructed",
+			mechanism: "context_hook",
+			beforeTokens,
+			beforePercent,
+			focusHash,
+			focusPreview,
+			estimatedFocusTokens: focusEstimatedTokens,
+			focusEstimateMethod: "chars_div_4",
+		}, timeoutMs);
+		if (eventId) {
+			await updateContextEvidence(apiBase, sessionId, eventId, { status: "handler_returned" }, timeoutMs);
+			pending.set(sessionId, { eventId, focus: bounded });
 		}
 
-		// Track pending evidence for before_provider_request hook.
-		pending.set(sessionId, { eventId, focus: bounded });
 
 		const keepTurns = readBoundedEnvInt("OMP_DECK_TOPOLOGY_CONTEXT_KEEP_TURNS", 3, 1, 20);
 		return { messages: replaceTopologyContext(event.messages, bounded, keepTurns) };
 	});
 
-	pi.on("before_provider_request", (_event) => {
-		const rec = evidenceRecorder;
-		if (!rec || pending.size === 0) return;
+	pi.on("before_provider_request", async (_event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (!sessionId) return;
+		const evidence = pending.get(sessionId);
+		if (!evidence) return;
 
 		// The event carries the full provider payload. We check whether our
 		// injected focus text appears anywhere in the payload to prove it
 		// survived through convertToLlm().
-		const payloadRaw = JSON.stringify((_event as Record<string, unknown>).payload ?? "");
+		const payloadRaw = JSON.stringify(readPayload(_event) ?? "");
 
 		// JSON.stringify escapes special characters (e.g. newlines → \n).
 		// We must match the escaped form so focus text in the payload is found.
@@ -310,15 +342,17 @@ export default function topologyContextExtension(pi: ExtensionAPI): void {
 			return JSON.stringify(text).slice(1, -1);
 		}
 
-		// Walk all pending sessions and check if their focus is in the payload.
-		for (const [sessionId, p] of pending) {
-			if (payloadRaw.includes(escapeForJsonMatch(p.focus))) {
-				rec.update(p.eventId, {
-					status: "provider_payload_observed",
-				});
-				pending.delete(sessionId);
-			}
-			// If focus not found, leave pending — it may appear in a later request.
-		}
+		if (!payloadRaw.includes(escapeForJsonMatch(evidence.focus))) return;
+		const apiBase = normalizeDeckApiBase(process.env.OMP_DECK_API_BASE);
+		if (!isLoopbackApiBase(apiBase)) return;
+		const timeoutMs = readBoundedEnvInt("OMP_DECK_TOPOLOGY_CONTEXT_TIMEOUT_MS", 1500, 100, 30_000);
+		const updated = await updateContextEvidence(
+			apiBase,
+			sessionId,
+			evidence.eventId,
+			{ status: "provider_payload_observed" },
+			timeoutMs,
+		);
+		if (updated) pending.delete(sessionId);
 	});
 }

@@ -129,6 +129,14 @@ describe("session context routes", () => {
 			expect(res.status).toBe(404);
 		});
 
+		test("returns retryable 409 when session file is missing", async () => {
+			const missingFile = path.join(tempDir(), "not-created.jsonl");
+			const app = buildSessionContextRouter(makeBridge({ sessionId: "s1", sessionFile: missingFile }));
+			const res = await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+			expect(res.status).toBe(409);
+			expect(await res.json()).toEqual({ error: "session_file_not_ready", retryable: true });
+		});
+
 		test("returns 202 and rebuilds async when session has a file", async () => {
 			const { app, sessionFile } = setupSession();
 			const res = await app.request("/sessions/s1/context/rebuild", { method: "POST" });
