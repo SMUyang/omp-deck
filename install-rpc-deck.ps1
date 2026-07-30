@@ -45,8 +45,21 @@ function Write-Ok($msg)   { Write-Output "[OK] $msg" }
 function Write-Warn2($msg){ Write-Output "[!]  $msg" }
 function Write-Err2($msg) { Write-Output "[X]  $msg" }
 
+function Invoke-Native {
+  param([string]$Exe, [string[]]$ArgList = @(), [switch]$Quiet)
+  # Native commands (git, bun) write progress to stderr. PowerShell 5.1
+  # wraps each stderr line as ErrorRecord; under ErrorActionPreference=Stop
+  # these become terminating errors. Temporarily relax and merge stderr.
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'SilentlyContinue'
+  try {
+    if ($Quiet) { & $Exe @ArgList 2>&1 | Out-Null }
+    else        { & $Exe @ArgList 2>&1 }
+  } finally { $ErrorActionPreference = $prev }
+}
+
 function Invoke-Checked($FilePath, $Arguments, $FailureMessage) {
-  & $FilePath @Arguments
+  Invoke-Native $FilePath $Arguments
   if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
 }
 
@@ -60,7 +73,7 @@ if (-not $bunCmd) {
   Write-Output '  Install: powershell -c "irm bun.sh/install.ps1 | iex"'
   exit 1
 }
-$bunVer = (& bun --version 2>&1 | Out-String).Trim()
+$bunVer = (Invoke-Native "bun" @("--version") | Out-String).Trim()
 Write-Ok "Bun $bunVer found"
 
 # omp CLI
@@ -81,7 +94,7 @@ if (-not $OmpBin) {
   Write-Output "  To use the RPC backend, install omp first:"
   Write-Output "    bun add -g @oh-my-pi/pi-coding-agent"
 } else {
-  $ompVer = & $OmpBin --version 2>&1 | Select-Object -First 1
+  $ompVer = (Invoke-Native $OmpBin @("--version") | Out-String).Trim()
   Write-Ok "omp $ompVer found at $OmpBin"
 }
 
@@ -91,11 +104,11 @@ if (-not $gitCmd) {
   Write-Warn2 "Git is not installed. Attempting to install..."
   $winget = Get-Command winget -ErrorAction SilentlyContinue
   if ($winget) {
-    & winget install Git.Git --accept-package-agreements --accept-source-agreements
+    Invoke-Native "winget" @("install","Git.Git","--accept-package-agreements","--accept-source-agreements")
   } else {
     $choco = Get-Command choco -ErrorAction SilentlyContinue
     if ($choco) {
-      & choco install git -y
+      Invoke-Native "choco" @("install","git","-y")
     } else {
       Write-Err2 "Could not auto-install git. Please install manually: winget install Git.Git"
       exit 1
@@ -118,7 +131,7 @@ if (Test-Path "$InstallDir\.git") {
   Write-Ok "Existing clone found at $InstallDir - pulling latest"
   Push-Location $InstallDir
   try {
-    & git pull --ff-only origin main 2>&1 | Out-Null
+    Invoke-Native "git" @("pull","--ff-only","origin","main") -Quiet
     if ($LASTEXITCODE -ne 0) { Write-Warn2 "git pull failed, continuing with existing state" }
   } finally {
     Pop-Location

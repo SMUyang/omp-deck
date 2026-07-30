@@ -26,6 +26,19 @@ if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out
 
 function Write-Info($Text) { Write-Output $Text }
 
+function Invoke-Native {
+  param([string]$Exe, [string[]]$ArgList = @(), [switch]$Quiet)
+  # Native commands (git, bun) write progress to stderr. PowerShell 5.1
+  # wraps each stderr line as ErrorRecord; under ErrorActionPreference=Stop
+  # these become terminating errors. Temporarily relax and merge stderr.
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'SilentlyContinue'
+  try {
+    if ($Quiet) { & $Exe @ArgList 2>&1 | Out-Null }
+    else        { & $Exe @ArgList 2>&1 }
+  } finally { $ErrorActionPreference = $prev }
+}
+
 function Resolve-OmpBin {
   if ($env:OMP_DECK_OMP_BIN) { return $env:OMP_DECK_OMP_BIN }
   $cmd = Get-Command omp -ErrorAction SilentlyContinue
@@ -37,7 +50,8 @@ function Resolve-OmpBin {
 
 function Ensure-Omp($OmpBin) {
   try {
-    $ompVer = & $OmpBin --version 2>&1 | Select-Object -First 1
+    $ompVer = (Invoke-Native $OmpBin @("--version") | Out-String).Trim()
+    if (-not $ompVer) { throw "omp --version produced no output" }
     Write-Info "omp found: $OmpBin ($ompVer)"
   } catch {
     throw "omp binary is not runnable: $OmpBin. Run 'omp --version' in this PowerShell, or set OMP_DECK_OMP_BIN to the full omp.exe path. $($_.Exception.Message)"
@@ -49,7 +63,7 @@ function Ensure-Bun {
   if (-not $bun) {
     throw 'bun not found on PATH. If you installed Bun in this session, close and reopen PowerShell, then try again. Install with: powershell -c "irm bun.sh/install.ps1 | iex"'
   }
-  $bunVer = (& bun --version 2>&1 | Out-String).Trim()
+  $bunVer = (Invoke-Native "bun" @("--version") | Out-String).Trim()
   Write-Info "bun found: $($bun.Source) ($bunVer)"
 }
 
@@ -59,7 +73,7 @@ function Ensure-Dependencies {
   $webModules = Join-Path $Root "apps\web\node_modules"
   if ((Test-Path $rootModules) -and (Test-Path $serverModules) -and (Test-Path $webModules)) { return }
   Write-Info "Installing dependencies with bun install..."
-  & bun install
+  Invoke-Native "bun" @("install")
   if ($LASTEXITCODE -ne 0) { throw "bun install failed" }
 }
 
@@ -68,12 +82,12 @@ function Update-Repo {
   $gitCmd = Get-Command git -ErrorAction SilentlyContinue
   if (-not $gitCmd) { return $false }
   Write-Info "pulling latest updates..."
-  & git pull --ff-only origin main 2>&1 | Out-Null
+  Invoke-Native "git" @("pull","--ff-only","origin","main") -Quiet
   if ($LASTEXITCODE -eq 0) {
-    & bun install --frozen-lockfile 2>&1 | Out-Null
+    Invoke-Native "bun" @("install","--frozen-lockfile") -Quiet
     Write-Info "dependencies updated"
     Write-Info "rebuilding web frontend..."
-    & bun run --filter '@omp-deck/web' build 2>&1 | Out-Null
+    Invoke-Native "bun" @("run","--filter","@omp-deck/web","build") -Quiet
     return $true
   } else {
     Write-Info "WARNING: git pull failed, continuing with current state"
@@ -85,7 +99,7 @@ function Ensure-WebBuild {
   $index = Join-Path $Root "apps\web\dist\index.html"
   if (Test-Path $index) { return }
   Write-Info "Building web frontend..."
-  & bun run --filter '@omp-deck/web' build
+  Invoke-Native "bun" @("run","--filter","@omp-deck/web","build")
   if ($LASTEXITCODE -ne 0) { throw "web build failed" }
 }
 
