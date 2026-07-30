@@ -2702,6 +2702,7 @@ function CpaSection() {
 	const [usageUrl, setUsageUrl] = useState("");
 	const [usageUser, setUsageUser] = useState("");
 	const [usagePass, setUsagePass] = useState("");
+	const [usagePassSet, setUsagePassSet] = useState(false);
 	const [usageTimeout, setUsageTimeout] = useState("10000");
 	const [savingUsage, setSavingUsage] = useState(false);
 
@@ -2731,8 +2732,8 @@ function CpaSection() {
 			const find = (key: string) => env.entries.find((e) => e.key === key);
 			setUsageUrl(find("CPA_USAGE_BASE_URL")?.masked ?? "");
 			setUsageUser(find("CPA_USAGE_USERNAME")?.masked ?? "");
-			setUsagePass(find("CPA_USAGE_PASSWORD")?.masked ?? "");
-			setUsageTimeout(find("CPA_USAGE_TIMEOUT_MS")?.masked ?? "10000");
+		setUsagePassSet(find("CPA_USAGE_PASSWORD")?.isSet ?? false);
+		setUsageTimeout(find("CPA_USAGE_TIMEOUT_MS")?.masked ?? "10000");
 		} catch { /* ignore */ }
 	}
 
@@ -2782,14 +2783,13 @@ function CpaSection() {
 		setNote(undefined);
 		setError(undefined);
 		try {
-			const updates: Record<string, string> = {};
-			if (usageUrl.trim()) updates.CPA_USAGE_BASE_URL = usageUrl.trim();
-			if (usageUser.trim()) updates.CPA_USAGE_USERNAME = usageUser.trim();
+			const updates: Record<string, string | null> = {
+				CPA_USAGE_BASE_URL: usageUrl.trim() || null,
+				CPA_USAGE_USERNAME: usageUser.trim() || null,
+				CPA_USAGE_TIMEOUT_MS: usageTimeout.trim() || null,
+			};
 			if (usagePass.trim()) updates.CPA_USAGE_PASSWORD = usagePass.trim();
-			if (usageTimeout.trim()) updates.CPA_USAGE_TIMEOUT_MS = usageTimeout.trim();
-			if (Object.keys(updates).length > 0) {
-				await settingsApi.patchEnv(updates);
-			}
+			await settingsApi.patchEnv(updates);
 			setUsagePass("");
 			setNote("Usage monitoring saved.");
 			await refreshUsage();
@@ -2847,7 +2847,7 @@ function CpaSection() {
 					<input type="text" value={usageUrl} onChange={(e) => setUsageUrl(e.target.value)} placeholder="Collector base URL" className="field h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
 					<div className="mt-2 grid grid-cols-2 gap-2">
 						<input type="text" value={usageUser} onChange={(e) => setUsageUser(e.target.value)} placeholder="Username" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
-						<input type="password" value={usagePass} onChange={(e) => setUsagePass(e.target.value)} placeholder="Password (enter new to update)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="password" value={usagePass} onChange={(e) => setUsagePass(e.target.value)} placeholder={usagePassSet ? "Currently set — enter new to replace" : "Password"} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
 					</div>
 					<input type="text" value={usageTimeout} onChange={(e) => setUsageTimeout(e.target.value)} placeholder="Timeout (ms)" className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
 					<div className="mt-2 flex items-center gap-3">
