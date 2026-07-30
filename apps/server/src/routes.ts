@@ -262,6 +262,7 @@ export function buildRouter(
 			agentDir: config.agentDir,
 			listModels: () => bridge.listModels(),
 		}),
+		onRolesChanged: async () => { await bridge.refreshModels?.(); },
 	}));
 	app.route("/", buildOrientationRouter());
 	app.route("/", buildBridgesRouter(supervisor));

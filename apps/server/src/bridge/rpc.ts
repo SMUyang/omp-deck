@@ -693,11 +693,8 @@ class RpcSessionHandle implements SessionHandle {
 
 	async setModel(ref: ModelRef): Promise<void> {
 		await this.#transport.send({ type: "set_model", provider: ref.provider, modelId: ref.id });
-		if (this.#state.model) {
-			this.#state.model = { provider: ref.provider, id: ref.id };
-		} else {
-			this.#state.model = { provider: ref.provider, id: ref.id };
-		}
+		this.#state.model = { provider: ref.provider, id: ref.id };
+		this.#emitSessionUpdated();
 	}
 
 	async dispatchSlashCommand(_text: string): Promise<SlashDispatchResult> {

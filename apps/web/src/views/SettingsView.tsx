@@ -45,7 +45,7 @@ import {
 
 const SECTIONS = [
 	{ id: "env", label: "Env", description: "Process and deck-managed variables" },
-	{ id: "providers", label: "Providers", description: "OAuth sign-in and API-key state" },
+	{ id: "providers", label: "Providers", description: "OAuth, custom API providers" },
 	{ id: "messaging", label: "Messaging", description: "Telegram and future chat bridges" },
 	{ id: "orientation", label: "Orientation", description: "Prelude, /start, maintenance gate" },
 	{ id: "model-roles", label: "Model Roles", description: "OMP model role bindings" },
@@ -100,7 +100,10 @@ export function SettingsView() {
 							{selected === "env" ? (
 								<EnvSection />
 							) : selected === "providers" ? (
-								<ProvidersSection />
+								<div className="flex flex-col gap-6">
+									<ProvidersSection />
+									<CustomProvidersSection />
+								</div>
 							) : selected === "messaging" ? (
 								<MessagingSection />
 							) : selected === "orientation" ? (
@@ -2669,6 +2672,154 @@ function formatUptime(startedIso: string): string {
 	return `${days}d${hours % 24}h`;
 }
 
+/**
+ * Custom providers — any OpenAI-compatible endpoint written to omp's
+ * models.yml. Full CRUD via /api/providers/custom. Syncs to both
+ * terminal omp and the deck model picker.
+ */
+function CustomProvidersSection() {
+	const [providers, setProviders] = useState<Array<{ name: string; baseUrl: string; api: string; modelCount: number; hasKey: boolean }>>([]);
+	const [loaded, setLoaded] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+	const [note, setNote] = useState<string | undefined>();
+
+	const [name, setName] = useState("");
+	const [baseUrl, setBaseUrl] = useState("");
+	const [apiType, setApiType] = useState("openai-completions");
+	const [apiKey, setApiKey] = useState("");
+	const [modelId, setModelId] = useState("");
+	const [modelName, setModelName] = useState("");
+	const [authNone, setAuthNone] = useState(false);
+	const [saving, setSaving] = useState(false);
+	const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+	async function refresh() {
+		try {
+			const resp = await api.listCustomProviders();
+			setProviders(resp.providers);
+			setError(undefined);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setLoaded(true);
+		}
+	}
+
+	useEffect(() => { void refresh(); }, []);
+
+	async function save() {
+		if (!name.trim() || !baseUrl.trim() || !modelId.trim()) return;
+		if (!authNone && !apiKey.trim()) return;
+		setSaving(true);
+		setNote(undefined);
+		setError(undefined);
+		try {
+			const res = await api.upsertCustomProvider({
+				name: name.trim(),
+				baseUrl: baseUrl.trim(),
+				api: apiType,
+				...(authNone ? { auth: "none" as const } : { apiKey: apiKey.trim() }),
+				models: [{ id: modelId.trim(), ...(modelName.trim() ? { name: modelName.trim() } : {}) }],
+			});
+			setName(""); setBaseUrl(""); setApiKey(""); setModelId(""); setModelName("");
+			setNote(res.reloadRequired ? "Provider saved — start a new session to use it." : "Provider saved.");
+			await refresh();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function remove(providerName: string) {
+		try {
+			await api.deleteCustomProvider(providerName);
+			setConfirmDelete(null);
+			await refresh();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	if (!loaded) return <div className="font-mono text-2xs text-ink-3">Loading custom providers…</div>;
+
+	return (
+		<div>
+			<h2 className="meta">Custom Providers</h2>
+			<p className="mt-1 text-xs text-ink-3">
+				Add any OpenAI-compatible endpoint. Written to omp's models.yml — syncs to both terminal and deck.
+			</p>
+			{providers.length > 0 ? (
+				<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+					{providers.map((p) => (
+						<div key={p.name} className="rounded border border-line bg-paper-2/30 p-3">
+							<div className="flex items-start justify-between gap-2">
+								<div className="min-w-0">
+									<div className="text-sm font-medium text-ink">{p.name}</div>
+									<div className="mt-0.5 truncate font-mono text-2xs text-ink-3">{p.baseUrl}</div>
+									<div className="mt-0.5 text-2xs text-ink-3">
+										{p.api} · {p.modelCount} model{p.modelCount !== 1 ? "s" : ""} · {p.hasKey ? "key set" : "no key"}
+									</div>
+								</div>
+								<Button variant="ghost" className="shrink-0 text-xs text-danger hover:text-danger" onClick={() => setConfirmDelete(p.name)}>
+									Delete
+								</Button>
+							</div>
+						</div>
+					))}
+				</div>
+			) : null}
+			<div className="mt-3 rounded border border-line bg-paper-2 p-4">
+				<div className="text-sm font-medium text-ink">Add custom provider</div>
+				<div className="mt-3 grid grid-cols-2 gap-2">
+					<input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Provider name (e.g. my-provider)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Base URL (https://api.example.com/v1)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+				</div>
+				<select value={apiType} onChange={(e) => setApiType(e.target.value)} className="field mt-2 h-8 w-full px-2 font-mono text-xs">
+					<option value="openai-completions">openai-completions</option>
+					<option value="openai-responses">openai-responses</option>
+					<option value="openai-codex-responses">openai-codex-responses</option>
+					<option value="azure-openai-responses">azure-openai-responses</option>
+					<option value="anthropic-messages">anthropic-messages</option>
+					<option value="google-generative-ai">google-generative-ai</option>
+					<option value="google-vertex">google-vertex</option>
+				</select>
+				{!authNone ? (
+					<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="API key" className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+				) : null}
+				<label className="mt-2 flex items-center gap-1.5 font-mono text-2xs text-ink-3">
+					<input type="checkbox" checked={authNone} onChange={(e) => setAuthNone(e.target.checked)} />
+					No auth (local endpoint without API key)
+				</label>
+				<div className="mt-2 flex gap-2">
+					<input type="text" value={modelId} onChange={(e) => setModelId(e.target.value)} placeholder="Model ID (e.g. gpt-4o)" className="field h-8 flex-1 px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="Display name (optional)" className="field h-8 w-40 px-2 font-mono text-xs" autoComplete="off" />
+				</div>
+				<div className="mt-2 flex items-center gap-3">
+					<Button onClick={() => void save()} disabled={saving || !name.trim() || !baseUrl.trim() || !modelId.trim() || (!authNone && !apiKey.trim())} variant="ghost">
+						{saving ? "Saving…" : "Add provider"}
+					</Button>
+					{note ? <span className="text-xs text-success">{note}</span> : null}
+				</div>
+			</div>
+			<Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} widthClass="max-w-md">
+				<div className="flex flex-col gap-3 p-5">
+					<h2 className="text-base font-semibold text-ink">Delete {confirmDelete}?</h2>
+					<p className="text-xs text-ink-3">
+						The provider and its models will be removed from models.yml. Active sessions may lose access.
+					</p>
+					<div className="flex justify-end gap-2 border-t border-line pt-3">
+						<Button variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+						<Button variant="danger" onClick={() => confirmDelete && void remove(confirmDelete)}>Delete</Button>
+					</div>
+				</div>
+			</Modal>
+			{error ? (
+				<div className="mt-2 rounded border border-danger/40 bg-danger/5 p-3 text-xs text-danger">{error}</div>
+			) : null}
+		</div>
+	);
+}
 /**
  * Providers section — list every OAuth-capable provider with its current
  * auth state. Login opens OAuthFlowModal; Revoke clears credentials and

@@ -16,6 +16,9 @@ export interface ModelRolesRouterDeps {
 		patch(updates: ModelRolesPatchRequest): Promise<ModelRolesSnapshot>;
 		put(roles: Record<string, string>): Promise<ModelRolesSnapshot>;
 	};
+	/** Called after a successful PATCH/PUT so the backend can hot-reload
+	 *  model-role changes (e.g. restart the omp subprocess in RPC mode). */
+	onRolesChanged?: () => Promise<void>;
 }
 
 type SerializedJob<T> = () => Promise<T>;
@@ -40,7 +43,9 @@ export function buildModelRolesRouter(deps: ModelRolesRouterDeps): Hono {
 		const error = validatePatchBody(body);
 		if (error) return c.json({ error }, 400);
 		try {
-			return c.json(await serializeWrite(() => deps.ompSettings!.patch(body)));
+			const result = await serializeWrite(() => deps.ompSettings!.patch(body));
+			if (deps.onRolesChanged) await deps.onRolesChanged();
+			return c.json(result);
 		} catch (err) {
 			return modelRoleErrorResponse(c, err);
 		}
@@ -59,7 +64,9 @@ export function buildModelRolesRouter(deps: ModelRolesRouterDeps): Hono {
 		const roles = body.roles;
 		if (!roles) return c.json({ error: "roles is required" }, 400);
 		try {
-			return c.json(await serializeWrite(() => deps.ompSettings!.put(roles)));
+			const result = await serializeWrite(() => deps.ompSettings!.put(roles));
+			if (deps.onRolesChanged) await deps.onRolesChanged();
+			return c.json(result);
 		} catch (err) {
 			return modelRoleErrorResponse(c, err);
 		}

@@ -573,8 +573,8 @@ function Step3Provider({
 				</div>
 
 				<p className="text-2xs text-ink-3">
-					For other providers (OpenAI direct, Anthropic API, Google, Groq, xAI,
-					etc.), see <a href="/settings" className="underline">Settings → Providers</a> after onboarding.
+					For more providers, use the form above or visit
+					<a href="/settings" className="underline"> Settings → Providers</a> anytime.
 				</p>
 
 				{error ? (
