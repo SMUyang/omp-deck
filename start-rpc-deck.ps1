@@ -49,7 +49,7 @@ function Ensure-Bun {
   if (-not $bun) {
     throw 'bun not found on PATH. If you installed Bun in this session, close and reopen PowerShell, then try again. Install with: powershell -c "irm bun.sh/install.ps1 | iex"'
   }
-  $bunVer = & bun --version 2>$null
+  $bunVer = (& bun --version 2>&1 | Out-String).Trim()
   Write-Info "bun found: $($bun.Source) ($bunVer)"
 }
 
@@ -68,12 +68,12 @@ function Update-Repo {
   $gitCmd = Get-Command git -ErrorAction SilentlyContinue
   if (-not $gitCmd) { return $false }
   Write-Info "pulling latest updates..."
-  & git pull --ff-only origin main 2>$null
+  & git pull --ff-only origin main 2>&1 | Out-Null
   if ($LASTEXITCODE -eq 0) {
-    & bun install --frozen-lockfile 2>$null
+    & bun install --frozen-lockfile 2>&1 | Out-Null
     Write-Info "dependencies updated"
     Write-Info "rebuilding web frontend..."
-    & bun run --filter '@omp-deck/web' build 2>$null
+    & bun run --filter '@omp-deck/web' build 2>&1 | Out-Null
     return $true
   } else {
     Write-Info "WARNING: git pull failed, continuing with current state"

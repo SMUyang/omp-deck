@@ -60,7 +60,7 @@ if (-not $bunCmd) {
   Write-Output '  Install: powershell -c "irm bun.sh/install.ps1 | iex"'
   exit 1
 }
-$bunVer = & bun --version 2>$null
+$bunVer = (& bun --version 2>&1 | Out-String).Trim()
 Write-Ok "Bun $bunVer found"
 
 # omp CLI
@@ -118,7 +118,7 @@ if (Test-Path "$InstallDir\.git") {
   Write-Ok "Existing clone found at $InstallDir - pulling latest"
   Push-Location $InstallDir
   try {
-    & git pull --ff-only origin main 2>$null
+    & git pull --ff-only origin main 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Warn2 "git pull failed, continuing with existing state" }
   } finally {
     Pop-Location
