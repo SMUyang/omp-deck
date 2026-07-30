@@ -50,6 +50,7 @@ const SECTIONS = [
 	{ id: "messaging", label: "Messaging", description: "Telegram and future chat bridges" },
 	{ id: "orientation", label: "Orientation", description: "Prelude, /start, maintenance gate" },
 	{ id: "model-roles", label: "Model Roles", description: "OMP model role bindings" },
+	{ id: "omp-config", label: "OMP Config", description: "All omp native settings" },
 	{ id: "appearance", label: "Appearance", description: "Themes, colors, fonts" },
 	{ id: "workspaces", label: "Workspaces", description: "Pinned roots and display names" },
 	{ id: "notifications", label: "Notifications", description: "Idle alerts and quiet hours" },
@@ -115,6 +116,8 @@ export function SettingsView() {
 								<AppearanceSection />
 							) : selected === "model-roles" ? (
 								<ModelRolesSection />
+							) : selected === "omp-config" ? (
+								<OmpConfigSection />
 							) : selected === "notifications" ? (
 								<NotificationsSection />
 							) : selected === "about" ? (
@@ -2675,6 +2678,218 @@ function formatUptime(startedIso: string): string {
 	return `${days}d${hours % 24}h`;
 }
 
+/**
+ * OMP Config section — edit omp's native config.yml settings.
+ * High-frequency form for common settings + raw JSON editor for everything else.
+ */
+function OmpConfigSection() {
+	const [config, setConfig] = useState<Record<string, unknown> | null>(null);
+	const [configPath, setConfigPath] = useState("");
+	const [loaded, setLoaded] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+	const [note, setNote] = useState<string | undefined>();
+	const [savingField, setSavingField] = useState<string | undefined>();
+	const [showRaw, setShowRaw] = useState(false);
+	const [rawText, setRawText] = useState("");
+	const [rawError, setRawError] = useState<string | undefined>();
+
+	async function refresh() {
+		try {
+			const resp = await settingsApi.getOmpConfig();
+			setConfig(resp.config);
+			setConfigPath(resp.path);
+			setRawText(JSON.stringify(resp.config, null, 2));
+			setError(undefined);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setLoaded(true);
+		}
+	}
+
+	useEffect(() => { void refresh(); }, []);
+
+	async function saveField(path: string, value: unknown): Promise<void> {
+		setSavingField(path);
+		setNote(undefined);
+		setError(undefined);
+		try {
+			const parts = path.split(".");
+			const updates: Record<string, unknown> = {};
+			let cursor = updates;
+			for (let i = 0; i < parts.length; i++) {
+				if (i === parts.length - 1) {
+					cursor[parts[i]!] = value;
+				} else {
+					const next: Record<string, unknown> = {};
+					cursor[parts[i]!] = next;
+					cursor = next;
+				}
+			}
+			const resp = await settingsApi.patchOmpConfig(updates);
+			setConfig(resp.config);
+			setRawText(JSON.stringify(resp.config, null, 2));
+			setNote(`Saved: ${path}`);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSavingField(undefined);
+		}
+	}
+
+	async function saveRaw(): Promise<void> {
+		setNote(undefined);
+		setRawError(undefined);
+		try {
+			const parsed = JSON.parse(rawText) as Record<string, unknown>;
+			const resp = await settingsApi.patchOmpConfig(parsed);
+			setConfig(resp.config);
+			setRawText(JSON.stringify(resp.config, null, 2));
+			setNote("Raw config saved.");
+		} catch (err) {
+			setRawError(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	if (!loaded) return <div className="font-mono text-2xs text-ink-3">Loading omp config…</div>;
+
+	const get = (p: string): unknown => {
+		const parts = p.split(".");
+		let cursor: unknown = config;
+		for (const part of parts) {
+			if (typeof cursor === "object" && cursor !== null && !Array.isArray(cursor)) {
+				cursor = (cursor as Record<string, unknown>)[part];
+			} else {
+				return undefined;
+			}
+		}
+		return cursor;
+	};
+
+	const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"];
+
+	return (
+		<div className="flex flex-col gap-6">
+			<div>
+				<h2 className="meta">OMP Native Settings</h2>
+				<p className="mt-1 text-xs text-ink-3">
+					Read/write <code className="text-2xs">{configPath || "~/.omp/agent/config.yml"}</code>. Changes take effect on next session or restart.
+				</p>
+			</div>
+			{/* High-frequency settings */}
+			<div className="rounded border border-line bg-paper-2 p-4">
+				<div className="text-sm font-medium text-ink">Common Settings</div>
+				<div className="mt-3 grid grid-cols-2 gap-3">
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">defaultThinkingLevel</span>
+						<select
+							className="field h-8 px-2 font-mono text-xs"
+							value={String(get("defaultThinkingLevel") ?? "auto")}
+							onChange={(e) => void saveField("defaultThinkingLevel", e.target.value)}
+						>
+							{THINKING_LEVELS.map((lv) => <option key={lv} value={lv}>{lv}</option>)}
+						</select>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">temperature</span>
+						<input
+							type="number"
+							step="0.1"
+							min="0"
+							max="2"
+							className="field h-8 px-2 font-mono text-xs"
+							value={String(get("temperature") ?? "")}
+							placeholder="default"
+							onBlur={(e) => { if (e.target.value) void saveField("temperature", Number(e.target.value)); }}
+						/>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">autoResume</span>
+						<input
+							type="checkbox"
+							checked={get("autoResume") === true}
+							onChange={(e) => void saveField("autoResume", e.target.checked)}
+						/>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">hideThinkingBlock</span>
+						<input
+							type="checkbox"
+							checked={get("hideThinkingBlock") === true}
+							onChange={(e) => void saveField("hideThinkingBlock", e.target.checked)}
+						/>
+					</label>
+				</div>
+				<div className="mt-3 grid grid-cols-2 gap-3">
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">compaction.enabled</span>
+						<input
+							type="checkbox"
+							checked={get("compaction.enabled") === true || get("compaction") === undefined}
+							onChange={(e) => void saveField("compaction.enabled", e.target.checked)}
+						/>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">retry.enabled</span>
+						<input
+							type="checkbox"
+							checked={get("retry.enabled") === true}
+							onChange={(e) => void saveField("retry.enabled", e.target.checked)}
+						/>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">retry.maxRetries</span>
+						<input
+							type="number"
+							min="0"
+							max="10"
+							className="field h-8 px-2 font-mono text-xs"
+							value={String(get("retry.maxRetries") ?? "")}
+							placeholder="default"
+							onBlur={(e) => { if (e.target.value) void saveField("retry.maxRetries", Number(e.target.value)); }}
+						/>
+					</label>
+					<label className="flex flex-col gap-1">
+						<span className="font-mono text-2xs text-ink-3">quietStartup</span>
+						<input
+							type="checkbox"
+							checked={get("quietStartup") === true}
+							onChange={(e) => void saveField("quietStartup", e.target.checked)}
+						/>
+					</label>
+				</div>
+				{savingField ? <div className="mt-2 text-2xs text-ink-3">Saving {savingField}…</div> : null}
+			</div>
+			{/* Raw config.yml editor */}
+			<div>
+				<button
+					type="button"
+					onClick={() => setShowRaw((v) => !v)}
+					className="btn-secondary h-7 text-2xs"
+				>
+					{showRaw ? "Hide" : "Show"} raw config.yml
+				</button>
+				{showRaw ? (
+					<div className="mt-2">
+						<textarea
+							className="field h-96 w-full p-2 font-mono text-2xs"
+							value={rawText}
+							onChange={(e) => setRawText(e.target.value)}
+							spellCheck={false}
+						/>
+						<div className="mt-2 flex items-center gap-3">
+							<Button onClick={() => void saveRaw()} variant="ghost">Save raw config</Button>
+							<Button onClick={() => void refresh()} variant="ghost">Reset</Button>
+							{rawError ? <span className="text-xs text-danger">{rawError}</span> : null}
+						</div>
+					</div>
+				) : null}
+			</div>
+			{note ? <div className="rounded border border-success/30 bg-success/5 p-2 text-xs text-success">{note}</div> : null}
+			{error ? <div className="rounded border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{error}</div> : null}
+		</div>
+	);
+}
 /**
  * CPA section — CLIProxyAPI connection, usage monitoring, and config management.
  * Reads/writes ~/.config/pi-cliproxyapi/config.json and CPA_USAGE_* env vars.

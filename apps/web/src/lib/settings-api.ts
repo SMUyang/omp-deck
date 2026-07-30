@@ -46,4 +46,13 @@ export const settingsApi = {
 	restartServer(): Promise<RestartServerResponse> {
 		return req<RestartServerResponse>("/server/restart", { method: "POST" });
 	},
+	getOmpConfig(): Promise<{ config: Record<string, unknown>; path: string }> {
+		return req<{ config: Record<string, unknown>; path: string }>("/settings/omp-config");
+	},
+	patchOmpConfig(updates: Record<string, unknown>): Promise<{ ok: boolean; config: Record<string, unknown>; path: string }> {
+		return req<{ ok: boolean; config: Record<string, unknown>; path: string }>("/settings/omp-config", {
+			method: "PATCH",
+			body: JSON.stringify({ updates }),
+		});
+	},
 };
