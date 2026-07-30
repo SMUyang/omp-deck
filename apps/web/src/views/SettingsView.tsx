@@ -46,6 +46,7 @@ import {
 const SECTIONS = [
 	{ id: "env", label: "Env", description: "Process and deck-managed variables" },
 	{ id: "providers", label: "Providers", description: "OAuth, custom API providers" },
+	{ id: "cpa", label: "CPA", description: "CLIProxyAPI connection and usage" },
 	{ id: "messaging", label: "Messaging", description: "Telegram and future chat bridges" },
 	{ id: "orientation", label: "Orientation", description: "Prelude, /start, maintenance gate" },
 	{ id: "model-roles", label: "Model Roles", description: "OMP model role bindings" },
@@ -104,6 +105,8 @@ export function SettingsView() {
 									<ProvidersSection />
 									<CustomProvidersSection />
 								</div>
+							) : selected === "cpa" ? (
+								<CpaSection />
 							) : selected === "messaging" ? (
 								<MessagingSection />
 							) : selected === "orientation" ? (
@@ -2672,6 +2675,246 @@ function formatUptime(startedIso: string): string {
 	return `${days}d${hours % 24}h`;
 }
 
+/**
+ * CPA section — CLIProxyAPI connection, usage monitoring, and config management.
+ * Reads/writes ~/.config/pi-cliproxyapi/config.json and CPA_USAGE_* env vars.
+ */
+function CpaSection() {
+	const [config, setConfig] = useState<{
+		proxy?: { endpoint: string; hasKey: boolean; providerPrefix?: string };
+		builtinProviders?: Record<string, { enabled: boolean; apiOverride?: string; models?: string[] }>;
+		customProviders?: Record<string, { api: string; models: Array<{ id: string; name?: string; contextWindow?: number; maxTokens?: number }> }>;
+	} | null>(null);
+	const [configPath, setConfigPath] = useState("");
+	const [loaded, setLoaded] = useState(false);
+	const [error, setError] = useState<string | undefined>();
+	const [note, setNote] = useState<string | undefined>();
+
+	// Connection form
+	const [endpoint, setEndpoint] = useState("");
+	const [apiKey, setApiKey] = useState("");
+	const [providerPrefix, setProviderPrefix] = useState("");
+	const [savingConn, setSavingConn] = useState(false);
+	const [testing, setTesting] = useState(false);
+	const [testResult, setTestResult] = useState<string | undefined>();
+
+	// Usage monitoring form
+	const [usageUrl, setUsageUrl] = useState("");
+	const [usageUser, setUsageUser] = useState("");
+	const [usagePass, setUsagePass] = useState("");
+	const [usageTimeout, setUsageTimeout] = useState("10000");
+	const [savingUsage, setSavingUsage] = useState(false);
+
+	// Clear cache
+	const [clearing, setClearing] = useState(false);
+
+	async function refresh() {
+		try {
+			const resp = await api.getCpaConfig();
+			setConfig(resp.config);
+			setConfigPath(resp.path);
+			if (resp.config?.proxy) {
+				setEndpoint(resp.config.proxy.endpoint);
+				setProviderPrefix(resp.config.proxy.providerPrefix ?? "");
+			}
+			setError(undefined);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setLoaded(true);
+		}
+	}
+
+	async function refreshUsage() {
+		try {
+			const env = await settingsApi.listEnv();
+			const find = (key: string) => env.entries.find((e) => e.key === key);
+			setUsageUrl(find("CPA_USAGE_BASE_URL")?.masked ?? "");
+			setUsageUser(find("CPA_USAGE_USERNAME")?.masked ?? "");
+			setUsagePass(find("CPA_USAGE_PASSWORD")?.masked ?? "");
+			setUsageTimeout(find("CPA_USAGE_TIMEOUT_MS")?.masked ?? "10000");
+		} catch { /* ignore */ }
+	}
+
+	useEffect(() => { void refresh(); void refreshUsage(); }, []);
+
+	async function saveConnection() {
+		setSavingConn(true);
+		setNote(undefined);
+		setError(undefined);
+		try {
+			const proxy: Record<string, string> = { endpoint: endpoint.trim() };
+			if (apiKey.trim()) proxy.apiKey = apiKey.trim();
+			if (providerPrefix.trim()) proxy.providerPrefix = providerPrefix.trim();
+			await api.updateCpaConfig({ proxy });
+			setApiKey("");
+			setNote("CPA connection saved.");
+			await refresh();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSavingConn(false);
+		}
+	}
+
+	async function testConnection() {
+		setTesting(true);
+		setTestResult(undefined);
+		try {
+			const body: Record<string, string> = {};
+			if (endpoint.trim()) body.endpoint = endpoint.trim();
+			if (apiKey.trim()) body.apiKey = apiKey.trim();
+			const res = await api.testCpaConnection(body);
+			if (res.ok) {
+				setTestResult(`Connected — ${res.modelCount ?? 0} models available.`);
+			} else {
+				setTestResult(`Failed: ${res.error ?? "unknown error"}`);
+			}
+		} catch (err) {
+			setTestResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
+		} finally {
+			setTesting(false);
+		}
+	}
+
+	async function saveUsage() {
+		setSavingUsage(true);
+		setNote(undefined);
+		setError(undefined);
+		try {
+			const updates: Record<string, string> = {};
+			if (usageUrl.trim()) updates.CPA_USAGE_BASE_URL = usageUrl.trim();
+			if (usageUser.trim()) updates.CPA_USAGE_USERNAME = usageUser.trim();
+			if (usagePass.trim()) updates.CPA_USAGE_PASSWORD = usagePass.trim();
+			if (usageTimeout.trim()) updates.CPA_USAGE_TIMEOUT_MS = usageTimeout.trim();
+			if (Object.keys(updates).length > 0) {
+				await settingsApi.patchEnv(updates);
+			}
+			setUsagePass("");
+			setNote("Usage monitoring saved.");
+			await refreshUsage();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSavingUsage(false);
+		}
+	}
+
+	async function clearCache() {
+		setClearing(true);
+		try {
+			const res = await api.clearCpaCache();
+			setNote(res.existed ? "Discovery cache cleared." : "No cache file found.");
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setClearing(false);
+		}
+	}
+
+	if (!loaded) return <div className="font-mono text-2xs text-ink-3">Loading CPA config…</div>;
+
+	return (
+		<div className="flex flex-col gap-6">
+			{/* CPA Connection */}
+			<div>
+				<h2 className="meta">CLIProxyAPI Connection</h2>
+				<p className="mt-1 text-xs text-ink-3">
+					The proxy endpoint that omp connects to. Config: <code className="text-2xs">{configPath || "not found"}</code>
+				</p>
+				<div className="mt-3 rounded border border-line bg-paper-2 p-4">
+					<div className="grid grid-cols-2 gap-2">
+						<input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="Proxy endpoint (https://api.example.com/v1)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="text" value={providerPrefix} onChange={(e) => setProviderPrefix(e.target.value)} placeholder="Provider prefix (optional)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+					</div>
+					<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config?.proxy?.hasKey ? "API key set — enter new to replace" : "API key"} className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<div className="mt-2 flex items-center gap-3">
+						<Button onClick={() => void saveConnection()} disabled={savingConn || !endpoint.trim()} variant="ghost">
+							{savingConn ? "Saving…" : "Save connection"}
+						</Button>
+						<Button onClick={() => void testConnection()} disabled={testing || !endpoint.trim()} variant="ghost">
+							{testing ? "Testing…" : "Test connection"}
+						</Button>
+						{testResult ? <span className="text-xs text-ink-2">{testResult}</span> : null}
+					</div>
+				</div>
+			</div>
+			{/* CPA Usage Monitoring */}
+			<div>
+				<h2 className="meta">Usage Monitoring</h2>
+				<p className="mt-1 text-xs text-ink-3">Collector credentials for the Status panel usage stats.</p>
+				<div className="mt-3 rounded border border-line bg-paper-2 p-4">
+					<input type="text" value={usageUrl} onChange={(e) => setUsageUrl(e.target.value)} placeholder="Collector base URL" className="field h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<div className="mt-2 grid grid-cols-2 gap-2">
+						<input type="text" value={usageUser} onChange={(e) => setUsageUser(e.target.value)} placeholder="Username" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="password" value={usagePass} onChange={(e) => setUsagePass(e.target.value)} placeholder="Password (enter new to update)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+					</div>
+					<input type="text" value={usageTimeout} onChange={(e) => setUsageTimeout(e.target.value)} placeholder="Timeout (ms)" className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<div className="mt-2 flex items-center gap-3">
+						<Button onClick={() => void saveUsage()} disabled={savingUsage} variant="ghost">
+							{savingUsage ? "Saving…" : "Save monitoring"}
+						</Button>
+					</div>
+				</div>
+			</div>
+			{/* CPA Custom Providers */}
+			{config?.customProviders && Object.keys(config.customProviders).length > 0 ? (
+				<div>
+					<h2 className="meta">CPA Custom Providers</h2>
+					<p className="mt-1 text-xs text-ink-3">Model metadata registered in CPA config.json.</p>
+					<div className="mt-3 grid grid-cols-1 gap-2">
+						{Object.entries(config.customProviders).map(([name, prov]) => (
+							<div key={name} className="rounded border border-line bg-paper-2/30 p-3">
+								<div className="text-sm font-medium text-ink">{name}</div>
+								<div className="mt-0.5 text-2xs text-ink-3">{prov.api} · {prov.models.length} model{prov.models.length !== 1 ? "s" : ""}</div>
+								<div className="mt-1 flex flex-wrap gap-1">
+									{prov.models.slice(0, 8).map((m) => (
+										<span key={m.id} className="rounded bg-paper-3 px-1.5 py-0.5 font-mono text-2xs text-ink-2">{m.id}</span>
+									))}
+									{prov.models.length > 8 ? <span className="text-2xs text-ink-3">+{prov.models.length - 8} more</span> : null}
+								</div>
+							</div>
+						))}
+					</div>
+				</div>
+			) : null}
+			{/* CPA Built-in Providers */}
+			{config?.builtinProviders && Object.keys(config.builtinProviders).length > 0 ? (
+				<div>
+					<h2 className="meta">Built-in Providers</h2>
+					<p className="mt-1 text-xs text-ink-3">Providers proxied through CPA with discovery.</p>
+					<div className="mt-3 grid grid-cols-1 gap-2">
+						{Object.entries(config.builtinProviders).map(([name, prov]) => (
+							<div key={name} className="rounded border border-line bg-paper-2/30 p-3">
+								<div className="flex items-center justify-between">
+									<div className="text-sm font-medium text-ink">{name}</div>
+									<Badge tone={prov.enabled ? "success" : "default"}>{prov.enabled ? "enabled" : "disabled"}</Badge>
+								</div>
+								{prov.apiOverride ? <div className="mt-0.5 text-2xs text-ink-3">API: {prov.apiOverride}</div> : null}
+								{prov.models && prov.models.length > 0 ? (
+									<div className="mt-1 flex flex-wrap gap-1">
+										{prov.models.slice(0, 8).map((m) => (
+											<span key={m} className="rounded bg-paper-3 px-1.5 py-0.5 font-mono text-2xs text-ink-2">{m}</span>
+										))}
+										{prov.models.length > 8 ? <span className="text-2xs text-ink-3">+{prov.models.length - 8} more</span> : null}
+									</div>
+								) : null}
+							</div>
+						))}
+					</div>
+				</div>
+			) : null}
+			{/* Actions */}
+			<div>
+				<Button onClick={() => void clearCache()} disabled={clearing} variant="ghost">
+					{clearing ? "Clearing…" : "Clear discovery cache"}
+				</Button>
+			</div>
+			{note ? <div className="rounded border border-success/30 bg-success/5 p-2 text-xs text-success">{note}</div> : null}
+			{error ? <div className="rounded border border-danger/40 bg-danger/5 p-2 text-xs text-danger">{error}</div> : null}
+		</div>
+	);
+}
 /**
  * Custom providers — any OpenAI-compatible endpoint written to omp's
  * models.yml. Full CRUD via /api/providers/custom. Syncs to both

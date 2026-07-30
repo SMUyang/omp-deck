@@ -41,6 +41,7 @@ import { buildAuthOAuthRouter } from "./routes-auth-oauth.ts";
 import { buildOnboardingRouter } from "./routes-onboarding.ts";
 import { buildStatusRouter } from "./routes-status.ts";
 import { buildCpaUsageRouter } from "./routes-cpa-usage.ts";
+import { buildCpaConfigRouter } from "./routes-cpa-config.ts";
 import { buildContextSavingsRouter } from "./routes-context-savings.ts";
 import { buildMemoryRouter } from "./routes-memory.ts";
 import { buildSessionContextRouter } from "./routes-session-context.ts";
@@ -255,6 +256,7 @@ export function buildRouter(
 	app.route("/", buildSlashCommandsRouter());
 	app.route("/", buildFsRouter());
 	app.route("/", buildStatusRouter(config));
+	app.route("/", buildCpaConfigRouter());
 	app.route("/", buildCpaUsageRouter(config));
 	app.route("/", buildSettingsRouter(bridge, config, opts));
 	app.route("/", buildModelRolesRouter({

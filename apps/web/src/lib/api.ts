@@ -117,6 +117,29 @@ export const api = {
 	getCpaUsage(): Promise<CpaUsageResponse> {
 		return request<CpaUsageResponse>("/status/cpa-usage");
 	},
+	getCpaConfig(): Promise<{
+		config: {
+			proxy?: { endpoint: string; hasKey: boolean; providerPrefix?: string };
+			builtinProviders?: Record<string, { enabled: boolean; apiOverride?: string; models?: string[] }>;
+			customProviders?: Record<string, { api: string; models: Array<{ id: string; name?: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean }> }>;
+		} | null;
+		path: string;
+		exists: boolean;
+	}> {
+		return request("/cpa/config");
+	},
+	updateCpaConfig(body: {
+		proxy?: { endpoint?: string; apiKey?: string; providerPrefix?: string };
+		customProviders?: Record<string, { api: string; models: Array<{ id: string; name?: string; contextWindow?: number; maxTokens?: number }> }>;
+	}): Promise<{ ok: boolean; error?: string }> {
+		return request("/cpa/config", { method: "PUT", body: JSON.stringify(body) });
+	},
+	testCpaConnection(body: { endpoint?: string; apiKey?: string }): Promise<{ ok: boolean; modelCount?: number; models?: string[]; error?: string }> {
+		return request("/cpa/test", { method: "POST", body: JSON.stringify(body) });
+	},
+	clearCpaCache(): Promise<{ ok: boolean; existed: boolean }> {
+		return request("/cpa/clear-cache", { method: "POST" });
+	},
 	getMemoryStatus(): Promise<MemoryStatusResponse> {
 		return request<MemoryStatusResponse>("/memory/status");
 	},
