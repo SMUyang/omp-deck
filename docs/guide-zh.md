@@ -168,7 +168,6 @@ bash start-rpc-deck.sh status
 # 状态
 .\start-rpc-deck.ps1 status
 
-# 或直接双击 Start-OMP-Deck.cmd
 ```
 
 > **自动更新**：每次启动时，脚本会自动执行 `git pull --ff-only origin main`
@@ -419,7 +418,6 @@ tailscale serve --bg --https=443 http://127.0.0.1:8787
 ├── install-rpc-deck.ps1         # Windows 安装脚本
 ├── start-rpc-deck.sh            # macOS/Linux 启动脚本
 ├── start-rpc-deck.ps1           # Windows 启动脚本
-├── Start-OMP-Deck.cmd           # Windows CMD 快捷方式
 └── docker-compose.yml           # Docker 部署
 ```
 

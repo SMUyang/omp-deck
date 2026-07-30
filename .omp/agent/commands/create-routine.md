@@ -138,7 +138,7 @@ Pick ONE path:
 - File: `apps/server/src/templates/<slug>.yaml`
 - Loaded at server boot, available to all installs
 - Required when the routine is part of the product itself (daily-briefing, observer-daily, etc)
-- Server must restart to pick up template changes: `powershell -File scripts/start-deck-server.ps1`
+- Server must restart to pick up template changes (use `.\start-rpc-deck.sh restart` on macOS/Linux, or `.\start-rpc-deck.ps1` on Windows)
 
 ### B. User routine (lives in this user's DB)
 - POST `http://127.0.0.1:8787/api/routines` with `{name, description, specYaml}`
