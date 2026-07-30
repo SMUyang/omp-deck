@@ -101,6 +101,9 @@ self_update() {
   echo "  pulling latest updates..."
   if git pull --ff-only origin main 2>/dev/null; then
     bun install --frozen-lockfile > "$LOG_DIR/install.log" 2>&1 || true
+    echo "  rebuilding web frontend..."
+    bun run --filter '@omp-deck/web' build > "$LOG_DIR/build.log" 2>&1 || \
+      echo "  WARNING: web build failed — background mode may serve stale assets"
   else
     echo "  WARNING: git pull failed, continuing with current state"
   fi
@@ -117,23 +120,33 @@ case "${1:-foreground}" in
     build_env
     check_omp
     self_update
+    # Ensure web frontend is built for production server
+    if [ ! -f "apps/web/dist/index.html" ]; then
+      echo "  building web frontend (first run)..."
+      bun run --filter '@omp-deck/web' build > "$LOG_DIR/build.log" 2>&1 || \
+        echo "  WARNING: web build failed"
+    fi
+    # Production mode: single server process serving built frontend.
+    # dev mode (bun run dev) spawns two processes (server + vite) that
+    # don't survive reliably in background — SIGTERM kills the server
+    # while vite keeps retrying ECONNREFUSED.
     nohup env \
       OMP_DECK_AGENT_BACKEND="$OMP_DECK_AGENT_BACKEND" \
       OMP_DECK_OMP_BIN="$OMP_DECK_OMP_BIN" \
       OMP_DECK_PORT="$OMP_DECK_PORT" \
-      OMP_DECK_WEB_PORT="$OMP_DECK_WEB_PORT" \
       NO_COLOR="$NO_COLOR" \
-      bun run dev > "$LOG_FILE" 2>&1 &
+      NODE_ENV=production \
+      bun run start > "$LOG_FILE" 2>&1 < /dev/null &
     PID=$!
+    disown "$PID" 2>/dev/null || true
     echo "$PID" > "$PID_FILE"
     echo "omp-deck (RPC) started (PID $PID). Logs: $LOG_FILE"
-    sleep 5
-    DECK_URL="http://127.0.0.1:${OMP_DECK_WEB_PORT}"
+    sleep 3
+    DECK_URL="http://127.0.0.1:${OMP_DECK_PORT}"
     if command -v open >/dev/null 2>&1; then open "$DECK_URL"
     elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$DECK_URL"
     else echo "Open $DECK_URL in your browser."
     fi
-    ;;
 
   stop)
     if [ -f "$PID_FILE" ]; then
