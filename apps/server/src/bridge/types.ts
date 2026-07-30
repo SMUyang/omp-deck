@@ -158,6 +158,8 @@ export interface SessionHandle {
 	compact(focus?: string): Promise<void>;
 	/** Swap the live agent session to a different model. Throws on unknown ref or missing auth. */
 	setModel(ref: ModelRef): Promise<void>;
+	/** Set the agent session's thinking/reasoning effort level. */
+	setThinkingLevel(level: string): Promise<void>;
 	/**
 	 * Try to dispatch a leading slash command via the omp SDK's text-mode
 	 * dispatcher. Returns `"fallthrough"` when nothing matched — caller should

@@ -697,6 +697,12 @@ class RpcSessionHandle implements SessionHandle {
 		this.#emitSessionUpdated();
 	}
 
+	async setThinkingLevel(level: string): Promise<void> {
+		await this.#transport.send({ type: "set_thinking_level", level });
+		this.#state.thinkingLevel = level;
+		this.#emitSessionUpdated();
+	}
+
 	async dispatchSlashCommand(_text: string): Promise<SlashDispatchResult> {
 		return { kind: "fallthrough" };
 	}

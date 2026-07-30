@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import * as path from "node:path";
 
 import type { BrowseDirectoryEntry, BrowseDirectoryResponse, FilePathMatch, ListFilePathsResponse } from "@omp-deck/protocol";
@@ -90,6 +90,34 @@ export function buildFsRouter(): Hono {
 		return c.json(body);
 	});
 
+	app.post("/fs/mkdir", async (c) => {
+		let body: { cwd?: string; name?: string };
+		try {
+			body = (await c.req.json()) as { cwd?: string; name?: string };
+		} catch {
+			return c.json({ error: "invalid json body" }, 400);
+		}
+		const cwd = body.cwd?.trim();
+		const name = body.name?.trim();
+		if (!cwd || !path.isAbsolute(cwd)) {
+			return c.json({ error: "cwd must be an absolute path" }, 400);
+		}
+		if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+			return c.json({ error: "invalid folder name" }, 400);
+		}
+		if (!isCwdAllowed(cwd)) {
+			return c.json({ error: "cwd is not under an allowed root" }, 403);
+		}
+		const target = path.join(cwd, name);
+		try {
+			mkdirSync(target, { recursive: false });
+			return c.json({ ok: true, path: target });
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			const status = msg.includes("EEXIST") ? 409 : 500;
+			return c.json({ error: msg }, status);
+		}
+	});
 	return app;
 }
 

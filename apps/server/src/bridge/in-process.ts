@@ -858,6 +858,17 @@ export class InProcessSessionHandle implements SessionHandle {
 		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
 	}
 
+	async setThinkingLevel(level: string): Promise<void> {
+		const s = this.session as unknown as {
+			setThinkingLevel?: (level: unknown) => void;
+		};
+		if (typeof s.setThinkingLevel !== "function") {
+			throw new Error("session.setThinkingLevel is not available on this SDK build");
+		}
+		s.setThinkingLevel(level);
+		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+	}
+
 	async dispatchDeckSlashCommand(text: string): Promise<SlashDispatchResult> {
 		if (!text.startsWith("/")) return { kind: "fallthrough" };
 		let result: DeckSlashResult | "fallthrough";

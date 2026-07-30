@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { Brain, ChevronDown, Plus } from "lucide-react";
 import type { SessionUi } from "@/lib/types";
+import { api } from "@/lib/api";
 import { selectActiveSession, useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
 import { ContextIndicator } from "./ContextIndicator";
@@ -34,6 +35,14 @@ function Inner({ session }: { session: SessionUi }) {
 	const [switcherOpen, setSwitcherOpen] = useState(false);
 	const [modelOpen, setModelOpen] = useState(false);
 	const switcherRef = useRef<HTMLDivElement>(null);
+
+	const THINKING_CYCLE = ["auto", "low", "medium", "high"] as const;
+	function cycleThinking(): void {
+		const current = session.thinkingLevel ?? "auto";
+		const idx = THINKING_CYCLE.indexOf(current as (typeof THINKING_CYCLE)[number]);
+		const next = THINKING_CYCLE[(idx + 1) % THINKING_CYCLE.length] ?? "auto";
+		void api.setSessionThinkingLevel(session.sessionId, next);
+	}
 
 	useEffect(() => {
 		setDraft(session.sessionName ?? "");
@@ -151,6 +160,18 @@ function Inner({ session }: { session: SessionUi }) {
 				>
 					<span className="truncate max-w-[180px]">{session.model.id}</span>
 					<ChevronDown className="h-3 w-3" />
+				</button>
+			) : null}
+
+			{session.model ? (
+				<button
+					type="button"
+					onClick={cycleThinking}
+					title={`Thinking: ${session.thinkingLevel ?? "auto"} (click to cycle)`}
+					className="hidden h-6 items-center gap-1 rounded-md border border-line bg-paper-2/60 px-2 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-ink/30 hover:text-ink sm:flex"
+				>
+					<Brain className="h-3 w-3" />
+					<span>{(session.thinkingLevel ?? "auto").slice(0, 4)}</span>
 				</button>
 			) : null}
 

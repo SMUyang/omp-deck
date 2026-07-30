@@ -62,6 +62,9 @@ export const api = {
 		if (showHidden) params.set("showHidden", "1");
 		return request<BrowseDirectoryResponse>(`/fs/browse?${params.toString()}`);
 	},
+	createDirectory(cwd: string, name: string): Promise<{ ok: boolean; path: string }> {
+		return request("/fs/mkdir", { method: "POST", body: JSON.stringify({ cwd, name }) });
+	},
 	listSessions(cwd?: string): Promise<ListSessionsResponse> {
 		const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
 		return request<ListSessionsResponse>(`/sessions${q}`);
@@ -89,6 +92,12 @@ export const api = {
 		return request(`/sessions/${encodeURIComponent(id)}`, {
 			method: "PATCH",
 			body: JSON.stringify({ model }),
+		});
+	},
+	setSessionThinkingLevel(id: string, level: string): Promise<{ ok: true; sessionId: string }> {
+		return request(`/sessions/${encodeURIComponent(id)}`, {
+			method: "PATCH",
+			body: JSON.stringify({ thinkingLevel: level }),
 		});
 	},
 	compactSession(id: string, focus?: string): Promise<{ ok: true }> {

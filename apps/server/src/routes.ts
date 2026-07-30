@@ -184,9 +184,9 @@ export function buildRouter(
 		const id = c.req.param("id");
 		const handle = bridge.getSession(id);
 		if (!handle) return c.json({ error: "session not found or not active" }, 404);
-		let body: { name?: string; model?: { provider?: unknown; id?: unknown } };
+		let body: { name?: string; model?: { provider?: unknown; id?: unknown }; thinkingLevel?: unknown };
 		try {
-			body = (await c.req.json()) as { name?: string; model?: { provider?: unknown; id?: unknown } };
+			body = (await c.req.json()) as { name?: string; model?: { provider?: unknown; id?: unknown }; thinkingLevel?: unknown };
 		} catch {
 			return c.json({ error: "invalid json body" }, 400);
 		}
@@ -201,6 +201,9 @@ export function buildRouter(
 					return c.json({ error: "model requires provider and id strings" }, 400);
 				}
 				await handle.setModel({ provider, id: modelId });
+			}
+			if (typeof body.thinkingLevel === "string") {
+				await handle.setThinkingLevel(body.thinkingLevel);
 			}
 			return c.json({ ok: true, sessionId: id });
 		} catch (err) {

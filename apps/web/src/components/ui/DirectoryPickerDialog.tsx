@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, FolderIcon, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, FolderIcon, FolderPlus, RefreshCw, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { BrowseDirectoryResponse } from "@omp-deck/protocol";
 import { api } from "@/lib/api";
@@ -22,6 +22,8 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 	const [loading, setLoading] = useState(false);
 	const [reloadNonce, setReloadNonce] = useState(0);
 	const [pathInput, setPathInput] = useState("");
+	const [newFolderName, setNewFolderName] = useState("");
+	const [showNewFolder, setShowNewFolder] = useState(false);
 
 	useEffect(() => {
 		if (open) setCwd(initialCwd);
@@ -89,6 +91,38 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 						}
 					}}
 				/>
+				{showNewFolder ? (
+					<input
+						type="text"
+						autoFocus
+						className="h-7 w-40 rounded border border-accent bg-paper px-2 font-mono text-2xs text-ink focus:outline-none"
+						placeholder="Folder name"
+						value={newFolderName}
+						onChange={(e) => setNewFolderName(e.target.value)}
+						onKeyDown={async (e) => {
+							if (e.key === "Enter" && newFolderName.trim()) {
+								try {
+									await api.createDirectory(cwd, newFolderName.trim());
+									setNewFolderName("");
+									setShowNewFolder(false);
+									setReloadNonce((v) => v + 1);
+								} catch (err) {
+									setError(String(err));
+								}
+							}
+							if (e.key === "Escape") {
+								setShowNewFolder(false);
+								setNewFolderName("");
+							}
+						}}
+						onBlur={() => { if (!newFolderName.trim()) setShowNewFolder(false); }}
+					/>
+				) : (
+					<button type="button" className="btn-secondary h-7 text-2xs" disabled={loading} onClick={() => setShowNewFolder(true)}>
+						<FolderPlus className="h-3.5 w-3.5" />
+						New Folder
+					</button>
+				)}
 				<label className="flex items-center gap-1.5 font-mono text-2xs text-ink-3">
 					<input type="checkbox" checked={showHidden} onChange={(event) => setShowHidden(event.target.checked)} />
 					{t("sidebar.showHiddenDirectories")}
