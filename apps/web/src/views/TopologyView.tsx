@@ -62,7 +62,7 @@ export function TopologyView() {
 		setGraphLoading(true);
 		setGraphError(null);
 		api
-			.getSessionContextGraph(sessionId)
+			.getSessionContextGraph(sessionId, 500) // match focus retrieval limit (getStoredQueryTopologyFocus uses 500)
 			.then((g) => {
 				if (!cancelled) setGraph(g);
 			})
