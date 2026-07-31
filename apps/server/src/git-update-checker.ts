@@ -60,6 +60,7 @@ async function checkOnce(
 	onUpdate?: () => void,
 ) {
 	if (status.checking) return; // prevent concurrent checks
+	status.checking = true;
 	try {
 		// Fetch quietly — don't merge, just update remote refs
 		await runGit(["fetch", "origin", "main", "--quiet"], repoRoot);
