@@ -14,7 +14,7 @@ const log = logger("routes-session-context");
 function parseLimit(value: string | undefined, fallback: number): number {
 	const parsed = value ? Number.parseInt(value, 10) : fallback;
 	if (!Number.isFinite(parsed)) return fallback;
-	return Math.min(Math.max(parsed, 1), 500);
+	return Math.min(Math.max(parsed, 1), 1000);
 }
 
 function parseBudget(value: string | undefined): number {
@@ -115,7 +115,10 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 		try {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
-			const graph = getSessionContextGraph(id, 200);
+			// Probe the SAME node pool focus retrieval uses (500; 1000 with
+			// full=1) so nodeCount/truncated match what the model actually sees.
+			const fullGraph = c.req.query("full") === "1" || c.req.query("full") === "true";
+			const graph = getSessionContextGraph(id, fullGraph ? 1000 : 500);
 			if (graph.nodes.length === 0) {
 				return c.json({
 					sessionId: id,
@@ -127,7 +130,6 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 					emptyReason: "session_not_built",
 				} satisfies SessionContextFocusResponse);
 			}
-			const fullGraph = c.req.query("full") === "1" || c.req.query("full") === "true";
 			const focus = await getStoredQueryTopologyFocus({
 				sessionId: id,
 				query,
@@ -169,7 +171,7 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 		try {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
-			return c.json(getSessionContextGraph(id, parseLimit(c.req.query("limit"), 200)));
+			return c.json(getSessionContextGraph(id, parseLimit(c.req.query("limit"), 500)));
 		} catch (err) {
 			log.error("context graph failed", err);
 			return c.json({ error: String((err as Error).message ?? err) }, 500);
