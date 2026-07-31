@@ -4,8 +4,7 @@
  * Periodically fetches origin/main and compares HEAD. When new commits
  * are detected:
  *   - If OMP_DECK_AUTO_UPDATE=true: pulls, rebuilds, and restarts.
- *   - Otherwise: broadcasts a WS 'git_update_available' event so the
- *     UI can prompt the user.
+ *   - Otherwise: status is exposed via GET /api/git-update for polling.
  *
  * This complements the npm-registry update-check (which tracks the
  * upstream npm package). For git/fork installs, this is the relevant
