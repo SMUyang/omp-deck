@@ -5,6 +5,9 @@ import type { AgentBridge } from "./bridge/types.ts";
 import { broadcastBus } from "./broadcast-bus.ts";
 import { logger } from "./log.ts";
 import { getBuildInfo, getUptimeSecs } from "./build-info.ts";
+
+/** Max bytes buffered per WS connection before superseded frames are dropped. */
+const MAX_BUFFERED_BYTES = 1 << 20; // 1 MiB
 const log = logger("ws");
 
 /** Per-connection state. */
@@ -429,5 +432,19 @@ export class WsHub {
 }
 
 function send(ws: ServerWebSocket<ConnectionData>, frame: ServerFrame): void {
+	// Backpressure: if a slow client's send queue is backed up, drop
+	// superseded frames (heartbeat, session events, list updates) instead
+	// of buffering without bound — a lagging client would otherwise let the
+	// hub accumulate unboundedly and stall everyone. Protocol-critical
+	// frames (hello/subscribed/error) are never dropped.
+	const buffered = typeof ws.getBufferedAmount === "function" ? ws.getBufferedAmount() : 0;
+	if (
+		buffered > MAX_BUFFERED_BYTES &&
+		frame.type !== "hello" &&
+		frame.type !== "subscribed" &&
+		frame.type !== "error"
+	) {
+		return;
+	}
 	ws.send(JSON.stringify(frame));
 }

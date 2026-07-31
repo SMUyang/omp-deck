@@ -855,7 +855,7 @@ export class InProcessSessionHandle implements SessionHandle {
 		await s.setModel(model);
 		// Synthetic event so WS subscribers refresh the session header's model
 		// label without waiting for the next assistant turn.
-		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+		this.emitSessionUpdated();
 	}
 
 	async setThinkingLevel(level: string): Promise<void> {
@@ -866,7 +866,7 @@ export class InProcessSessionHandle implements SessionHandle {
 			throw new Error("session.setThinkingLevel is not available on this SDK build");
 		}
 		s.setThinkingLevel(level);
-		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+		this.emitSessionUpdated();
 	}
 
 	async cycleThinkingLevel(): Promise<void> {
@@ -880,7 +880,18 @@ export class InProcessSessionHandle implements SessionHandle {
 		const current = (typeof s.thinkingLevel === "string" ? s.thinkingLevel : "auto") as string;
 		const idx = LEVELS.indexOf(current as (typeof LEVELS)[number]);
 		s.setThinkingLevel(LEVELS[(idx + 1) % LEVELS.length]);
-		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+		this.emitSessionUpdated();
+	}
+
+	private emitSessionUpdated(): void {
+		const full = this.snapshot();
+		// Same strip as the RPC bridge: the client only reads header fields
+		// (model/sessionName/thinkingLevel) from session_updated; the
+		// transcript arrives via message_* events.
+		this.emit({
+			type: "session_updated",
+			snapshot: { ...full, messages: [] } as SessionSnapshot,
+		} as unknown as AgentSessionEventJson);
 	}
 
 	async dispatchDeckSlashCommand(text: string): Promise<SlashDispatchResult> {

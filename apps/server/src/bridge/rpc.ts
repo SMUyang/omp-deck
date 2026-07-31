@@ -557,7 +557,15 @@ class RpcSessionHandle implements SessionHandle {
 	}
 
 	#emitSessionUpdated(): void {
-		this.#emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+		const full = this.snapshot();
+		// The client reducer only reads model/sessionName/thinkingLevel from
+		// session_updated — the transcript is delivered via message_* events.
+		// Strip the full history so these frames stay small (long sessions
+		// would otherwise re-send MB-scale arrays on every header mutation).
+		this.#emit({
+			type: "session_updated",
+			snapshot: { ...full, messages: [] } as SessionSnapshot,
+		} as unknown as AgentSessionEventJson);
 	}
 
 	#writeAutoSessionName(name: string): void {
