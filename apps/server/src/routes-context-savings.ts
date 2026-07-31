@@ -6,9 +6,9 @@ import { getDb } from "./db/index.ts";
  * GET /api/stats/context-savings
  *
  * Returns aggregate context replacement savings across all sessions from the
- * persistent context_replacement_events table, plus recent replacement events.
- * Stats survive process restart; they are not reset when the in-memory tracker
- * is recreated.
+ * persistent context_replacement_events table, plus recent replacement events
+ * and per-session / per-mechanism breakdowns. Stats survive process restart;
+ * they are not reset when the in-memory tracker is recreated.
  */
 export function buildContextSavingsRouter(): Hono {
 	const app = new Hono();
@@ -45,12 +45,36 @@ export function buildContextSavingsRouter(): Hono {
 				 ORDER BY created_at DESC, rowid DESC LIMIT 50`,
 			)
 			.all();
+		const bySession = db
+			.query(
+				`SELECT session_id AS "sessionId",
+				        COUNT(*) AS count,
+				        COALESCE(SUM(CASE WHEN status = 'provider_payload_observed' THEN 1 ELSE 0 END), 0) AS completed,
+				        COALESCE(SUM(saved_tokens), 0) AS "savedTokens",
+				        MAX(created_at) AS "lastAt"
+				 FROM context_replacement_events
+				 GROUP BY session_id
+				 ORDER BY "savedTokens" DESC LIMIT 20`,
+			)
+			.all();
+		const byMechanism = db
+			.query(
+				`SELECT mechanism,
+				        COUNT(*) AS count,
+				        COALESCE(SUM(saved_tokens), 0) AS "savedTokens"
+				 FROM context_replacement_events
+				 GROUP BY mechanism
+				 ORDER BY "savedTokens" DESC`,
+			)
+			.all();
 
 		return c.json({
 			total: totalRow?.n ?? 0,
 			completed: completedRow?.n ?? 0,
 			totalSaved: totalSavedRow?.n ?? 0,
 			recent,
+			bySession,
+			byMechanism,
 		});
 	});
 

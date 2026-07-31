@@ -15,6 +15,7 @@ import { SessionContextStatusChip } from "@/components/session/SessionContextSta
 import { TopologyGraph } from "@/components/session/TopologyGraph";
 import { ContextPackPanel } from "@/components/session/ContextPackPanel";
 import { ContextEvidenceTimeline } from "@/components/topology/ContextEvidenceTimeline";
+import { ContextSavingsCard } from "@/components/topology/ContextSavingsCard";
 import { api } from "@/lib/api";
 import { useStore, selectActiveSession } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -243,6 +244,7 @@ export function TopologyView() {
 						{/* ── Main: graph canvas ── */}
 						<main className="flex min-h-0 min-w-0 flex-1 flex-col p-2">
 							<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2">
+								<ContextSavingsCard />
 								<div className="flex items-center gap-2 rounded-md border border-line bg-paper-2 px-2 py-1.5">
 									<span className="font-mono text-2xs uppercase tracking-meta text-ink-3">focus query</span>
 									<input

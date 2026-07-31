@@ -1,6 +1,8 @@
 import type {
 	ContextReplacementEvent,
 	ContextEvidenceStats,
+	ContextEvidenceSessionAggregate,
+	ContextEvidenceMechanismAggregate,
 	ContextReplacementStatus,
 	ContextReplacementMechanism,
 } from "@omp-deck/protocol";
@@ -257,6 +259,29 @@ export class ContextEvidenceTracker {
 
 		const recent = recentRows.map(rowToEvent);
 
-		return { total, completed, totalSaved, recent };
+		const bySession = db
+			.query<ContextEvidenceSessionAggregate, []>(
+				`SELECT session_id AS "sessionId",
+				        COUNT(*) AS count,
+				        COALESCE(SUM(CASE WHEN status = 'provider_payload_observed' THEN 1 ELSE 0 END), 0) AS completed,
+				        COALESCE(SUM(saved_tokens), 0) AS "savedTokens",
+				        MAX(created_at) AS "lastAt"
+				 FROM context_replacement_events
+				 GROUP BY session_id
+				 ORDER BY "savedTokens" DESC LIMIT 20`,
+			)
+			.all();
+		const byMechanism = db
+			.query<ContextEvidenceMechanismAggregate, []>(
+				`SELECT mechanism,
+				        COUNT(*) AS count,
+				        COALESCE(SUM(saved_tokens), 0) AS "savedTokens"
+				 FROM context_replacement_events
+				 GROUP BY mechanism
+				 ORDER BY "savedTokens" DESC`,
+			)
+			.all();
+
+		return { total, completed, totalSaved, recent, bySession, byMechanism };
 	}
 }

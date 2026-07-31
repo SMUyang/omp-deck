@@ -130,6 +130,8 @@ class StubContextEvidenceTracker {
 			completed,
 			totalSaved,
 			recent: all.slice(-50).reverse(),
+			bySession: [],
+			byMechanism: [],
 		};
 	}
 }

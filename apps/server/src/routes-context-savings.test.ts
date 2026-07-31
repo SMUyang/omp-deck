@@ -162,6 +162,22 @@ describe("GET /stats/context-savings", () => {
 		expect(body.recent.length).toBe(3);
 		// Most recent first (ordered by created_at DESC)
 		expect(expectDefined(body.recent[0], "most recent event").status).toBe("compact_completed");
+		// Per-session aggregation: s1 saved 1000, s2 saved 2000 → s2 first.
+		expect(body.bySession).toBeArray();
+		expect(body.bySession).toHaveLength(2);
+		const [topSession, secondSession] = body.bySession as Array<{ sessionId: string; count: number; completed: number; savedTokens: number }>;
+		expect(topSession!.sessionId).toBe("s2");
+		expect(topSession!.savedTokens).toBe(2000);
+		expect(topSession!.count).toBe(1);
+		expect(topSession!.completed).toBe(1);
+		expect(secondSession!.sessionId).toBe("s1");
+		expect(secondSession!.savedTokens).toBe(1000);
+		expect(secondSession!.count).toBe(2);
+		expect(secondSession!.completed).toBe(1);
+		// Per-mechanism aggregation: all inserted as auto_compact.
+		expect(body.byMechanism).toBeArray();
+		expect(body.byMechanism).toHaveLength(1);
+		expect(body.byMechanism[0]).toMatchObject({ mechanism: "auto_compact", count: 3, savedTokens: 3000 });
 	});
 
 	test("totalSaved is 0 when no completed events with saved tokens", async () => {

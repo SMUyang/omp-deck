@@ -2189,6 +2189,22 @@ export interface ContextReplacementEvent {
 	updatedAt: string;
 }
 
+/** Per-session aggregate of context replacement savings. */
+export interface ContextEvidenceSessionAggregate {
+	sessionId: string;
+	count: number;
+	completed: number;
+	savedTokens: number;
+	lastAt: string | null;
+}
+
+/** Per-mechanism aggregate (auto_compact / context_hook). */
+export interface ContextEvidenceMechanismAggregate {
+	mechanism: ContextReplacementMechanism;
+	count: number;
+	savedTokens: number;
+}
+
 /** Aggregate statistics for the context-evidence timeline. */
 export interface ContextEvidenceStats {
 	total: number;
@@ -2198,6 +2214,10 @@ export interface ContextEvidenceStats {
 	totalSaved: number;
 	/** Most recent 50 events, newest first. */
 	recent: ContextReplacementEvent[];
+	/** Savings grouped by session, descending by savedTokens (top 20). */
+	bySession: ContextEvidenceSessionAggregate[];
+	/** Savings grouped by mechanism, descending by savedTokens. */
+	byMechanism: ContextEvidenceMechanismAggregate[];
 }
 
 /** POST body for `POST /sessions/:id/context-evidence`. */
