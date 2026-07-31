@@ -181,7 +181,7 @@ switch ($Command) {
     $logEsc = $LogFile.Replace("'", "''")
     $ompEsc = $env:OMP_DECK_OMP_BIN.Replace("'", "''")
     $runScript = @"
-`$ErrorActionPreference = "Stop"
+`$ErrorActionPreference = "SilentlyContinue"
 Set-Location -LiteralPath '$rootEsc'
 `$env:OMP_DECK_AGENT_BACKEND = 'rpc'
 `$env:OMP_DECK_OMP_BIN = '$ompEsc'

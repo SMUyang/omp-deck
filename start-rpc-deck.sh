@@ -147,6 +147,7 @@ case "${1:-foreground}" in
     elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$DECK_URL"
     else echo "Open $DECK_URL in your browser."
     fi
+    ;;
 
   stop)
     if [ -f "$PID_FILE" ]; then
