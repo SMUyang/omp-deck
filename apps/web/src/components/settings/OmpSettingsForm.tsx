@@ -38,21 +38,31 @@ export function OmpSettingsForm() {
 	const [showRaw, setShowRaw] = useState(false);
 	const [rawText, setRawText] = useState("");
 	const [rawError, setRawError] = useState<string | undefined>();
+	const [schemaUnavailable, setSchemaUnavailable] = useState(false);
 	// Draft text for array/record textareas (unparsed until blur).
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 
 	async function refresh() {
 		try {
-			const [cfg, schema] = await Promise.all([settingsApi.getOmpConfig(), settingsApi.getOmpSchema()]);
+			const cfg = await settingsApi.getOmpConfig();
 			setConfig(cfg.config);
 			setConfigPath(cfg.path);
-			setTabs(schema.tabs);
 			setRawText(JSON.stringify(cfg.config, null, 2));
 			setError(undefined);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
+			return;
 		} finally {
 			setLoaded(true);
+		}
+		// Schema is optional: an older server without /settings/omp-schema
+		// degrades to the raw editor instead of failing the whole panel.
+		try {
+			const schema = await settingsApi.getOmpSchema();
+			setTabs(schema.tabs);
+			setSchemaUnavailable(false);
+		} catch {
+			setSchemaUnavailable(true);
 		}
 	}
 
@@ -236,6 +246,12 @@ export function OmpSettingsForm() {
 					Read/write <code className="text-2xs">{configPath || "~/.omp/agent/config.yml"}</code>. Changes take effect on next session or restart.
 				</p>
 			</div>
+
+			{schemaUnavailable ? (
+				<div className="rounded border border-warn/40 bg-warn/5 p-3 text-xs text-ink-2">
+					Schema form unavailable (server too old for /settings/omp-schema) — use the raw config.yml editor below. Restart the deck server to enable the form.
+				</div>
+			) : null}
 
 			{tabs.map((tab) => {
 				if (tab.settings.length === 0) return null;
