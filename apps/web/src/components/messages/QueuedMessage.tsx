@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Pencil, X } from "lucide-react";
 
 import type { QueuedPrompt } from "@/lib/types";
@@ -21,8 +21,7 @@ import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
  * a `queue_state` frame and the reducer replaces the queue wholesale —
  * no optimistic update needed.
  */
-export function QueuedMessage({ msg }: { msg: QueuedPrompt }) {
-	const cancelQueued = useStore((s) => s.cancelQueued);
+export const QueuedMessage = memo(function QueuedMessage({ msg }: { msg: QueuedPrompt }) { const cancelQueued = useStore((s) => s.cancelQueued);
 	const editQueued = useStore((s) => s.editQueued);
 
 	const [editing, setEditing] = useState(false);
@@ -166,8 +165,7 @@ export function QueuedMessage({ msg }: { msg: QueuedPrompt }) {
 				<span className="font-mono text-2xs text-ink-3">(empty prompt)</span>
 			)}
 		</div>
-	);
-}
+	); });
 
 function autoresize(ta: HTMLTextAreaElement): void {
 	ta.style.height = "auto";

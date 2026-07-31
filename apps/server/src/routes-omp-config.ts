@@ -18,7 +18,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { SETTINGS_SCHEMA } from "@oh-my-pi/pi-coding-agent/config/settings-schema";
+import { SETTINGS_SCHEMA, SETTING_TABS, TAB_METADATA } from "@oh-my-pi/pi-coding-agent/config/settings-schema";
 
 type ConfigDoc = Record<string, unknown>;
 
@@ -178,8 +178,44 @@ function isNodeErrno(err: unknown, code: string): boolean {
 	return typeof err === "object" && err !== null && (err as Record<string, unknown>).code === code;
 }
 
-export function buildOmpConfigRouter(): Hono {
+	export function buildOmpConfigRouter(): Hono {
 	const app = new Hono();
+
+	app.get("/settings/omp-schema", (c) => {
+		const tabs = SETTING_TABS.map((tabId) => ({
+			id: tabId,
+			label: TAB_METADATA[tabId]?.label ?? tabId,
+			settings: [] as Array<{
+				path: string;
+				label: string;
+				description?: string;
+				type: string;
+				values?: readonly string[];
+				default?: unknown;
+			}>,
+		}));
+		const byTab = new Map(tabs.map((t) => [t.id, t]));
+		for (const [path, def] of Object.entries(SETTINGS_SCHEMA)) {
+			const typed = def as {
+				type?: string;
+				values?: readonly string[];
+				default?: unknown;
+				ui?: { tab?: string; label?: string; description?: string };
+			};
+			if (!typed.ui?.tab) continue;
+			const tab = byTab.get(typed.ui.tab as keyof typeof TAB_METADATA);
+			if (!tab) continue;
+			tab.settings.push({
+				path,
+				label: typed.ui.label ?? path,
+				description: typed.ui.description,
+				type: typed.type ?? "unknown",
+				...(typed.values ? { values: typed.values } : {}),
+				...(typed.default !== undefined ? { default: typed.default } : {}),
+			});
+		}
+		return c.json({ tabs });
+	});
 
 	app.get("/settings/omp-config", async (c) => {
 		const configPath = resolveConfigPath();

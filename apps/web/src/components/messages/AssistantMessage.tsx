@@ -1,4 +1,5 @@
 import type { AssistantMsg, ToolCallStream } from "@/lib/types";
+import { memo } from "react";
 import { Markdown } from "@/lib/markdown";
 import { formatCost, formatDurationMs, formatTokens } from "@/lib/utils";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -9,8 +10,7 @@ interface Props {
 	toolCalls: Record<string, ToolCallStream>;
 }
 
-export function AssistantMessage({ msg, toolCalls }: Props) {
-	const lastBlockIdx = msg.blocks.length - 1;
+export const AssistantMessage = memo(function AssistantMessage({ msg, toolCalls }: Props) { const lastBlockIdx = msg.blocks.length - 1;
 
 	return (
 		<div className="space-y-2">
@@ -83,5 +83,4 @@ export function AssistantMessage({ msg, toolCalls }: Props) {
 				})}
 			</div>
 		</div>
-	);
-}
+	); });

@@ -1,9 +1,9 @@
 import type { UserMsg } from "@/lib/types";
+import { memo } from "react";
 import { Markdown } from "@/lib/markdown";
 import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
 
-export function UserMessage({ msg }: { msg: UserMsg }) {
-	return (
+export const UserMessage = memo(function UserMessage({ msg }: { msg: UserMsg }) { return (
 		<div className="space-y-1.5">
 			<div className="meta">
 				you
@@ -16,5 +16,4 @@ export function UserMessage({ msg }: { msg: UserMsg }) {
 			/>
 			{msg.text ? <Markdown>{msg.text}</Markdown> : null}
 		</div>
-	);
-}
+	); });

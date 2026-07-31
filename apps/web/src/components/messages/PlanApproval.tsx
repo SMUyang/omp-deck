@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
 
 import { useStore } from "@/lib/store";
-import type { SessionUi } from "@/lib/types";
 import { Markdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
@@ -28,8 +27,9 @@ import { Badge } from "@/components/ui/Badge";
  * is the canonical clearing signal. The bridge replays any still-pending
  * proposal on a fresh subscribe, so a stale optimistic clear self-heals.
  */
-export function PlanApproval({ session }: { session: SessionUi }) {
-	const approval = session.pendingPlanApproval;
+export function PlanApproval() {
+	const approval = useStore((s) => s.sessionsById[s.activeId ?? ""]?.pendingPlanApproval);
+	const sessionId = useStore((s) => s.sessionsById[s.activeId ?? ""]?.sessionId);
 	const respond = useStore((s) => s.respondToPlanApproval);
 
 	const [title, setTitle] = useState<string>(approval?.suggestedTitle ?? "");
@@ -45,9 +45,9 @@ export function PlanApproval({ session }: { session: SessionUi }) {
 	}, [approval?.proposalId, approval?.suggestedTitle, approval?.planContent]);
 
 	// Cheap guard so the early-return below narrows for the closures.
-	if (!approval) return null;
+	if (!approval || !sessionId) return null;
 	const a = approval;
-	const sessionId = session.sessionId;
+	const sid = sessionId;
 
 	const trimmedTitle = title.trim();
 	const titleChanged = trimmedTitle.length > 0 && trimmedTitle !== a.suggestedTitle;
@@ -56,12 +56,12 @@ export function PlanApproval({ session }: { session: SessionUi }) {
 		: a.suggestedFinalPath;
 
 	function reject(): void {
-		respond({ sessionId, proposalId: a.proposalId, approved: false });
+		respond({ sessionId: sid, proposalId: a.proposalId, approved: false });
 	}
 
 	function approve(opts: { withEdits: boolean }): void {
 		respond({
-			sessionId,
+			sessionId: sid,
 			proposalId: a.proposalId,
 			approved: true,
 			...(titleChanged ? { finalPath } : {}),

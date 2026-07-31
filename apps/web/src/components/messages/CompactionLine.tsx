@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { CompactionMsg } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export function CompactionLine({ msg }: { msg: CompactionMsg }) {
-	const [open, setOpen] = useState(false);
+export const CompactionLine = memo(function CompactionLine({ msg }: { msg: CompactionMsg }) { const [open, setOpen] = useState(false);
 	return (
 		<div className="border-l-2 border-warn">
 			<button
@@ -24,5 +23,4 @@ export function CompactionLine({ msg }: { msg: CompactionMsg }) {
 				</div>
 			) : null}
 		</div>
-	);
-}
+	); });

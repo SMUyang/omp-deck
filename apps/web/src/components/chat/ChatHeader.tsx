@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Brain, ChevronDown, Plus } from "lucide-react";
 import type { SessionUi } from "@/lib/types";
 import { api } from "@/lib/api";
+
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"] as const;
 import { selectActiveSession, useStore } from "@/lib/store";
 import { cn, shortPath } from "@/lib/utils";
 import { ContextIndicator } from "./ContextIndicator";
@@ -33,11 +35,14 @@ function Inner({ session }: { session: SessionUi }) {
 	const [draft, setDraft] = useState(session.sessionName ?? "");
 	const [renameError, setRenameError] = useState<string | undefined>(undefined);
 	const [switcherOpen, setSwitcherOpen] = useState(false);
+	const [thinkingOpen, setThinkingOpen] = useState(false);
 	const [modelOpen, setModelOpen] = useState(false);
 	const switcherRef = useRef<HTMLDivElement>(null);
+	const thinkingRef = useRef<HTMLDivElement>(null);
 
-	function cycleThinking(): void {
-		void api.cycleSessionThinkingLevel(session.sessionId);
+	function setThinkingLevel(level: string): void {
+		setThinkingOpen(false);
+		void api.setSessionThinkingLevel(session.sessionId, level);
 	}
 
 	useEffect(() => {
@@ -53,6 +58,16 @@ function Inner({ session }: { session: SessionUi }) {
 		document.addEventListener("mousedown", onDocClick);
 		return () => document.removeEventListener("mousedown", onDocClick);
 	}, [switcherOpen]);
+
+	useEffect(() => {
+		if (!thinkingOpen) return;
+		function onDocClick(e: MouseEvent): void {
+			if (!thinkingRef.current) return;
+			if (!thinkingRef.current.contains(e.target as Node)) setThinkingOpen(false);
+		}
+		document.addEventListener("mousedown", onDocClick);
+		return () => document.removeEventListener("mousedown", onDocClick);
+	}, [thinkingOpen]);
 
 	function commit(): void {
 		const trimmed = draft.trim();
@@ -160,15 +175,42 @@ function Inner({ session }: { session: SessionUi }) {
 			) : null}
 
 			{session.model ? (
-				<button
-					type="button"
-					onClick={cycleThinking}
-					title={`Thinking: ${session.thinkingLevel ?? "auto"} (click to cycle)`}
-					className="hidden h-6 items-center gap-1 rounded-md border border-line bg-paper-2/60 px-2 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-ink/30 hover:text-ink sm:flex"
-				>
-					<Brain className="h-3 w-3" />
-					<span>{(session.thinkingLevel ?? "auto").slice(0, 4)}</span>
-				</button>
+				<div className="relative" ref={thinkingRef}>
+					<button
+						type="button"
+						onClick={() => setThinkingOpen((v) => !v)}
+						title={`Thinking level: ${session.thinkingLevel ?? "auto"}`}
+						className="hidden h-6 items-center gap-1 rounded-md border border-line bg-paper-2/60 px-2 font-mono text-2xs uppercase tracking-meta text-ink-3 hover:border-ink/30 hover:text-ink sm:flex"
+					>
+						<Brain className="h-3 w-3" />
+						<span>{(session.thinkingLevel ?? "auto").slice(0, 4)}</span>
+						<ChevronDown className="h-3 w-3" />
+					</button>
+					{thinkingOpen ? (
+						<div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded-md border border-line bg-paper shadow-lg">
+							<div className="border-b border-line px-2 py-1 font-mono text-2xs uppercase tracking-meta text-ink-3">
+								Thinking level
+							</div>
+							{THINKING_LEVELS.map((level) => {
+								const current = session.thinkingLevel ?? "auto";
+								return (
+									<button
+										key={level}
+										type="button"
+										onClick={() => setThinkingLevel(level)}
+										className={cn(
+											"flex w-full items-center justify-between px-2 py-1 text-left font-mono text-2xs hover:bg-paper-3",
+											level === current ? "text-accent" : "text-ink-2",
+										)}
+									>
+										<span>{level}</span>
+										{level === current ? <span className="text-accent">✓</span> : null}
+									</button>
+								);
+							})}
+						</div>
+					) : null}
+				</div>
 			) : null}
 
 			{/* Context-window indicator — clickable popover with manual /compact. */}

@@ -1,7 +1,7 @@
 import type { TtsrMsg } from "@/lib/types";
+import { memo } from "react";
 
-export function TtsrLine({ msg }: { msg: TtsrMsg }) {
-	return (
+export const TtsrLine = memo(function TtsrLine({ msg }: { msg: TtsrMsg }) { return (
 		<div className="border-l-2 border-thinking pl-2 py-1">
 			<div className="font-mono text-2xs uppercase tracking-meta text-thinking">
 				ttsr · {msg.rules.length} rule{msg.rules.length === 1 ? "" : "s"} injected
@@ -15,5 +15,4 @@ export function TtsrLine({ msg }: { msg: TtsrMsg }) {
 				))}
 			</ul>
 		</div>
-	);
-}
+	); });

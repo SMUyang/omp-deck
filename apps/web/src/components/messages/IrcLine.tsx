@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { IrcMsg } from "@/lib/types";
 import { Markdown } from "@/lib/markdown";
@@ -11,8 +11,7 @@ const PREVIEW_LEN = 100;
  * outputs (often several KB), so the line stays collapsed by default: a
  * one-line sender + size + text preview. Click expands the full content.
  */
-export function IrcLine({ msg }: { msg: IrcMsg }) {
-	const [open, setOpen] = useState(false);
+export const IrcLine = memo(function IrcLine({ msg }: { msg: IrcMsg }) { const [open, setOpen] = useState(false);
 	const preview = firstLine(msg.content);
 	const sizeKb = msg.content.length > 512 ? ` · ${(msg.content.length / 1024).toFixed(1)} KB` : "";
 
@@ -38,8 +37,7 @@ export function IrcLine({ msg }: { msg: IrcMsg }) {
 				</div>
 			) : null}
 		</div>
-	);
-}
+	); });
 
 function firstLine(content: string): string {
 	for (const raw of content.split(/\r?\n/)) {

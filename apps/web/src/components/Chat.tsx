@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useStore, selectActiveSession } from "@/lib/store";
+import { useStore } from "@/lib/store";
 import { groupChatItems, type ChatRenderItem } from "@/lib/chat-items";
-import type { ChatMessage, ToolCallStream } from "@/lib/types";
+import type { ChatMessage, QueuedPrompt, ToolCallStream } from "@/lib/types";
 import { ChatHeader } from "./chat/ChatHeader";
 import { SessionPicker } from "./chat/SessionPicker";
 import { UserMessage } from "./messages/UserMessage";
@@ -12,6 +12,12 @@ import { TtsrLine } from "./messages/TtsrLine";
 import { IrcGroup } from "./messages/IrcGroup";
 import { QueuedMessage } from "./messages/QueuedMessage";
 import { PlanApproval } from "./messages/PlanApproval";
+
+// Stable refs for absent optional fields — avoids a fresh array/object per
+// selector call (which would defeat zustand's Object.is change detection).
+const EMPTY_MESSAGES: ChatMessage[] = [];
+const EMPTY_TOOL_CALLS: Record<string, ToolCallStream> = {};
+const EMPTY_QUEUED: QueuedPrompt[] = [];
 
 function renderMessage(m: ChatMessage, toolCalls: Record<string, ToolCallStream>) {
 	switch (m.role) {
@@ -31,13 +37,15 @@ function renderMessage(m: ChatMessage, toolCalls: Record<string, ToolCallStream>
 }
 
 export function Chat() {
-	const session = useStore(selectActiveSession);
+	// Narrow per-field selectors: only the streaming message (messages ref)
+	// changes per chunk, so memoized message components skip re-render.
+	const sessionId = useStore((s) => s.sessionsById[s.activeId ?? ""]?.sessionId);
+	const messages = useStore((s) => s.sessionsById[s.activeId ?? ""]?.messages ?? EMPTY_MESSAGES);
+	const toolCalls = useStore((s) => s.sessionsById[s.activeId ?? ""]?.toolCalls ?? EMPTY_TOOL_CALLS);
+	const queuedPrompts = useStore((s) => s.sessionsById[s.activeId ?? ""]?.queuedPrompts ?? EMPTY_QUEUED);
+	const pendingPlanApproval = useStore((s) => s.sessionsById[s.activeId ?? ""]?.pendingPlanApproval);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickyRef = useRef(true);
-
-	const messages = session?.messages ?? [];
-	const toolCalls = session?.toolCalls ?? {};
-	const queuedPrompts = session?.queuedPrompts ?? [];
 
 	// Collapse runs of consecutive subagent/IRC messages into a single
 	// expandable group so delegation chatter doesn't flood the transcript.
@@ -60,7 +68,7 @@ export function Chat() {
 
 	// No active session — show the picker as the main pane instead of a
 	// dead-end "go to sidebar" message.
-	if (!session) {
+	if (!sessionId) {
 		return <SessionPicker />;
 	}
 
@@ -93,8 +101,8 @@ export function Chat() {
 					{queuedPrompts.map((q) => (
 						<QueuedMessage key={q.id} msg={q} />
 					))}
-					{session.pendingPlanApproval ? (
-						<PlanApproval session={session} />
+					{pendingPlanApproval ? (
+						<PlanApproval />
 					) : null}
 				</div>
 			</div>

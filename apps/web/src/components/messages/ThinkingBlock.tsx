@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Markdown } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 
-export function ThinkingBlock({
+export const ThinkingBlock = memo(function ThinkingBlock({
 	text,
 	streaming,
 	redacted,
@@ -11,8 +11,7 @@ export function ThinkingBlock({
 	text: string;
 	streaming?: boolean;
 	redacted?: boolean;
-}) {
-	const [open, setOpen] = useState(Boolean(streaming));
+}) { const [open, setOpen] = useState(Boolean(streaming));
 	const lines = text.split(/\r?\n/).length;
 	return (
 		<div className="border-l-2 border-line-strong">
@@ -38,5 +37,4 @@ export function ThinkingBlock({
 				</div>
 			) : null}
 		</div>
-	);
-}
+	); });

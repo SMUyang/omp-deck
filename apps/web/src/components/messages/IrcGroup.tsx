@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { IrcMsg } from "@/lib/types";
 import { ircGroupSenders } from "@/lib/chat-items";
@@ -11,8 +11,7 @@ import { IrcLine } from "./IrcLine";
  * conversation: the header shows count + senders; expanding reveals the
  * individual (still individually collapsed) lines.
  */
-export function IrcGroup({ msgs }: { msgs: IrcMsg[] }) {
-	const [open, setOpen] = useState(false);
+export const IrcGroup = memo(function IrcGroup({ msgs }: { msgs: IrcMsg[] }) { const [open, setOpen] = useState(false);
 	const senders = ircGroupSenders(msgs);
 	const shown = senders.slice(0, 3).join(", ");
 	const more = senders.length > 3 ? ` +${senders.length - 3}` : "";
@@ -43,5 +42,4 @@ export function IrcGroup({ msgs }: { msgs: IrcMsg[] }) {
 				</div>
 			) : null}
 		</div>
-	);
-}
+	); });

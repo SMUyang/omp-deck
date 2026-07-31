@@ -49,6 +49,22 @@ export const settingsApi = {
 	getOmpConfig(): Promise<{ config: Record<string, unknown>; path: string }> {
 		return req<{ config: Record<string, unknown>; path: string }>("/settings/omp-config");
 	},
+	getOmpSchema(): Promise<{
+		tabs: Array<{
+			id: string;
+			label: string;
+			settings: Array<{
+				path: string;
+				label: string;
+				description?: string;
+				type: string;
+				values?: string[];
+				default?: unknown;
+			}>;
+		}>;
+	}> {
+		return req("/settings/omp-schema");
+	},
 	patchOmpConfig(updates: Record<string, unknown>): Promise<{ ok: boolean; config: Record<string, unknown>; path: string }> {
 		return req<{ ok: boolean; config: Record<string, unknown>; path: string }>("/settings/omp-config", {
 			method: "PATCH",
