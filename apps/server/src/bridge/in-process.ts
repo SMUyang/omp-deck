@@ -869,6 +869,20 @@ export class InProcessSessionHandle implements SessionHandle {
 		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
 	}
 
+	async cycleThinkingLevel(): Promise<void> {
+		// In-process mode: SDK doesn't expose a cycle primitive.
+		// Fall back to a simple cycle through common levels.
+		const LEVELS = ["auto", "low", "medium", "high"] as const;
+		const s = this.session as unknown as { thinkingLevel?: string; setThinkingLevel?: (l: unknown) => void };
+		if (typeof s.setThinkingLevel !== "function") {
+			throw new Error("session.setThinkingLevel is not available on this SDK build");
+		}
+		const current = (typeof s.thinkingLevel === "string" ? s.thinkingLevel : "auto") as string;
+		const idx = LEVELS.indexOf(current as (typeof LEVELS)[number]);
+		s.setThinkingLevel(LEVELS[(idx + 1) % LEVELS.length]);
+		this.emit({ type: "session_updated", snapshot: this.snapshot() } as unknown as AgentSessionEventJson);
+	}
+
 	async dispatchDeckSlashCommand(text: string): Promise<SlashDispatchResult> {
 		if (!text.startsWith("/")) return { kind: "fallthrough" };
 		let result: DeckSlashResult | "fallthrough";

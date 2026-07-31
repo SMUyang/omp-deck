@@ -36,12 +36,8 @@ function Inner({ session }: { session: SessionUi }) {
 	const [modelOpen, setModelOpen] = useState(false);
 	const switcherRef = useRef<HTMLDivElement>(null);
 
-	const THINKING_CYCLE = ["auto", "low", "medium", "high"] as const;
 	function cycleThinking(): void {
-		const current = session.thinkingLevel ?? "auto";
-		const idx = THINKING_CYCLE.indexOf(current as (typeof THINKING_CYCLE)[number]);
-		const next = THINKING_CYCLE[(idx + 1) % THINKING_CYCLE.length] ?? "auto";
-		void api.setSessionThinkingLevel(session.sessionId, next);
+		void api.cycleSessionThinkingLevel(session.sessionId);
 	}
 
 	useEffect(() => {

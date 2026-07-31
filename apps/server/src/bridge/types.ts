@@ -160,6 +160,8 @@ export interface SessionHandle {
 	setModel(ref: ModelRef): Promise<void>;
 	/** Set the agent session's thinking/reasoning effort level. */
 	setThinkingLevel(level: string): Promise<void>;
+	/** Cycle to the next valid thinking level for the current model. */
+	cycleThinkingLevel(): Promise<void>;
 	/**
 	 * Try to dispatch a leading slash command via the omp SDK's text-mode
 	 * dispatcher. Returns `"fallthrough"` when nothing matched — caller should

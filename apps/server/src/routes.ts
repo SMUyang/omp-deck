@@ -213,6 +213,19 @@ export function buildRouter(
 		}
 	});
 
+	app.post("/sessions/:id/cycle-thinking", async (c) => {
+		const id = c.req.param("id");
+		const handle = bridge.getSession(id);
+		if (!handle) return c.json({ error: "session not found or not active" }, 404);
+		try {
+			await handle.cycleThinkingLevel();
+			return c.json({ ok: true, sessionId: id });
+		} catch (err) {
+			log.error(`cycle thinking level failed`, err);
+			return c.json({ error: String((err as Error).message ?? err) }, 500);
+		}
+	});
+
 	app.get("/models", async (c) => {
 		const sessionId = c.req.query("sessionId");
 		try {

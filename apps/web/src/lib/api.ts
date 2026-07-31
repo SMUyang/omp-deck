@@ -100,6 +100,9 @@ export const api = {
 			body: JSON.stringify({ thinkingLevel: level }),
 		});
 	},
+	cycleSessionThinkingLevel(id: string): Promise<{ ok: true; sessionId: string }> {
+		return request(`/sessions/${encodeURIComponent(id)}/cycle-thinking`, { method: "POST" });
+	},
 	compactSession(id: string, focus?: string): Promise<{ ok: true }> {
 		const body = focus && focus.trim().length > 0 ? JSON.stringify({ focus: focus.trim() }) : "";
 		const init: RequestInit = { method: "POST" };

@@ -694,12 +694,28 @@ class RpcSessionHandle implements SessionHandle {
 	async setModel(ref: ModelRef): Promise<void> {
 		await this.#transport.send({ type: "set_model", provider: ref.provider, modelId: ref.id });
 		this.#state.model = { provider: ref.provider, id: ref.id };
+		// omp clamps thinkingLevel to the new model's supported range.
+		// Refresh so the UI shows the clamped value immediately.
+		try {
+			const state = await this.#transport.send<RpcStateData>({ type: "get_state" });
+			if (typeof state?.thinkingLevel === "string") {
+				this.#state.thinkingLevel = state.thinkingLevel;
+			}
+		} catch { /* best-effort — level updates on next state refresh */ }
 		this.#emitSessionUpdated();
 	}
 
 	async setThinkingLevel(level: string): Promise<void> {
 		await this.#transport.send({ type: "set_thinking_level", level });
 		this.#state.thinkingLevel = level;
+		this.#emitSessionUpdated();
+	}
+
+	async cycleThinkingLevel(): Promise<void> {
+		const result = await this.#transport.send<{ level?: string } | null>({ type: "cycle_thinking_level" });
+		if (result?.level) {
+			this.#state.thinkingLevel = result.level;
+		}
 		this.#emitSessionUpdated();
 	}
 
