@@ -55,6 +55,10 @@ export function Composer() {
 	const fileRef = useRef<HTMLInputElement>(null);
 	const imagesRef = useRef<PendingImage[]>([]);
 	imagesRef.current = images;
+	// Tracks IME composition beyond the synthetic event: some IMEs (macOS
+	// Pinyin etc.) report isComposing=false on the Enter keydown that
+	// commits a candidate — keyCode 229 and this ref catch the rest.
+	const composingRef = useRef(false);
 
 	// ─── Slash commands ─────────────────────────────────────────────────────
 	//
@@ -422,12 +426,11 @@ export function Composer() {
 	function handleKey(e: KeyboardEvent<HTMLTextAreaElement>): void {
 		// IME composition: when the user is typing Chinese/Japanese/Korean
 		// via a composition method, the Enter key commits the candidate
-		// (not the message). Fire-and-forget `isComposing` on the
-		// native event is the only reliable cross-browser signal — React
-		// forwards it via the synthetic event as well, but the native
-		// field is the one Pinyin/IME hooks respect. Bail out so we
-		// don't send the half-typed draft or trigger picker selection.
-		if (e.nativeEvent.isComposing) return;
+		// (not the message). isComposing on the native event plus keyCode
+		// 229 plus the ref tracked via compositionstart/end together cover
+		// every major IME — some report isComposing=false on the commit
+		// keydown. Bail out so we don't send the half-typed draft.
+		if (e.nativeEvent.isComposing || e.keyCode === 229 || composingRef.current) return;
 		// Plan-mode toggle (Shift+Tab). Mirrors the TUI's `app.plan.toggle`
 		// keybinding. Highest priority — fires regardless of picker state,
 		// composer content, or streaming state. Idempotent on the wire; server
@@ -681,6 +684,8 @@ export function Composer() {
 							setCaretPos(e.currentTarget.selectionStart ?? 0);
 						}}
 						onKeyDown={handleKey}
+						onCompositionStart={() => { composingRef.current = true; }}
+						onCompositionEnd={() => { composingRef.current = false; }}
 						onPaste={(e) => void handlePaste(e)}
 						className={cn(
 							"min-h-[34px] flex-1 resize-none border-0 bg-transparent px-1 py-1.5",
