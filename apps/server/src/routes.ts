@@ -12,6 +12,7 @@ import type { Config } from "./config.ts";
 import { logger } from "./log.ts";
 import { getBuildInfo, getUptimeSecs } from "./build-info.ts";
 import { getUpdateCheck } from "./update-check.ts";
+import { getGitUpdateStatus } from "./git-update-checker.ts";
 import { resolveRepoRoot, runUpdateSteps } from "./update-runner.ts";
 import type { AgentBridge } from "./bridge/types.ts";
 import { getDb } from "./db/index.ts";
@@ -101,6 +102,10 @@ export function buildRouter(
 			opts.restartServer();
 		}
 		return c.json(body, result.ok ? 200 : 500);
+	});
+
+	app.get("/git-update", (c) => {
+		return c.json(getGitUpdateStatus());
 	});
 
 	app.route("/", buildWorkspacesRouter({ config, db: getDb(), bridge }));

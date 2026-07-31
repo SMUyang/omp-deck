@@ -17,6 +17,7 @@ import { loadConfig } from "./config.ts";
 import { logger } from "./log.ts";
 import { resolveBunExecutable } from "./runtime-bun.ts";
 import { primeUpdateCheckOnBoot } from "./update-check.ts";
+import { startGitUpdateChecker } from "./git-update-checker.ts";
 import { buildRouter } from "./routes.ts";
 import { WsHub, type ConnectionData } from "./ws.ts";
 import { MarketplaceService } from "./marketplace-service.ts";
@@ -194,6 +195,10 @@ async function main(): Promise<void> {
 	// /api/version route returns a real answer on first call. Fire-and-
 	// forget; failures are logged and ignored.
 	primeUpdateCheckOnBoot();
+
+	// Background: periodic git fetch to detect new commits on origin/main.
+	// Auto-updates when OMP_DECK_AUTO_UPDATE=true.
+	startGitUpdateChecker(() => scheduleRestart(server));
 
 	let shuttingDown = false;
 	async function safeShutdown(reason: string): Promise<void> {

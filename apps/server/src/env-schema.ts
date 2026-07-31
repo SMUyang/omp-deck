@@ -580,6 +580,23 @@ export const ENV_SCHEMA: EnvSchemaEntry[] = [
 		hotApply: true,
 		description: "Per-request timeout in milliseconds for CPA collector fetches.",
 	},
+	{
+		key: "OMP_DECK_AUTO_UPDATE",
+		valueType: "boolean",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: false,
+		description: "When true, the deck automatically pulls, rebuilds, and restarts when new commits are detected on origin/main. Default: false (notify only).",
+	},
+	{
+		key: "OMP_DECK_UPDATE_INTERVAL_MS",
+		defaultValue: "1800000",
+		valueType: "int",
+		sensitive: false,
+		restartRequired: false,
+		hotApply: false,
+		description: "Interval in milliseconds between git update checks. Default: 30 minutes (1800000).",
+	},
 ];
 
 export const ENV_SCHEMA_BY_KEY = new Map(ENV_SCHEMA.map((entry) => [entry.key, entry]));
