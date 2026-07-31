@@ -18,7 +18,7 @@ import { logger } from "./log.ts";
 const log = logger("git-update");
 
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 min
-const FETCH_TIMEOUT_MS = 15_000;
+
 
 export interface GitUpdateStatus {
 	checking: boolean;
@@ -59,8 +59,8 @@ async function runGit(args: string[], cwd: string): Promise<string> {
 async function checkOnce(
 	repoRoot: string,
 	onUpdate?: () => void,
-): Promise<void> {
-	status.checking = true;
+) {
+	if (status.checking) return; // prevent concurrent checks
 	try {
 		// Fetch quietly — don't merge, just update remote refs
 		await runGit(["fetch", "origin", "main", "--quiet"], repoRoot);
@@ -75,8 +75,17 @@ async function checkOnce(
 		if (localSha !== remoteSha) {
 			status.updateAvailable = true;
 			log.info(`update available: ${localSha.slice(0, 8)} → ${remoteSha.slice(0, 8)}`);
-
 			if (process.env.OMP_DECK_AUTO_UPDATE === "true" && onUpdate) {
+				// Guard: don't auto-pull if the working tree has uncommitted changes
+				try {
+					const dirty = await runGit(["status", "--porcelain"], repoRoot);
+					if (dirty) {
+						log.warn("auto-update skipped — working tree has uncommitted changes");
+						status.lastError = "working tree dirty — commit or stash before auto-update";
+						return;
+					}
+				} catch { /* best-effort — let runUpdateSteps handle it */ }
+
 				log.info("auto-update enabled — pulling and rebuilding");
 				const result = await runUpdateSteps(repoRoot);
 				if (result.ok) {
