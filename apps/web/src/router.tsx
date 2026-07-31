@@ -1,16 +1,20 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { createBrowserRouter, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
 import { ChatView } from "./views/ChatView";
-import { TasksView } from "./views/TasksView";
-import { RoutinesView } from "./views/RoutinesView";
-import { RunDetailView } from "./views/RunDetailView";
-import { InboxView } from "./views/InboxView";
-import { MarketplaceView } from "./views/MarketplaceView";
-import { KbView } from "./views/KbView";
-import { MemoryView } from "./views/MemoryView";
-import { SkillsView } from "./views/SkillsView";
-import { IntegrationsView } from "./views/IntegrationsView";
 import { OnboardingView } from "./views/OnboardingView";
+
+// Lazy-loaded views — keeps the initial bundle to the chat shell only.
+// Tasks/Routines drag in @dnd-kit + @xyflow; Kb drags react-markdown +
+// highlight.js; each loads on first navigation to that route.
+const TasksView = lazy(() => import("./views/TasksView").then((m) => ({ default: m.TasksView })));
+const RoutinesView = lazy(() => import("./views/RoutinesView").then((m) => ({ default: m.RoutinesView })));
+const RunDetailView = lazy(() => import("./views/RunDetailView").then((m) => ({ default: m.RunDetailView })));
+const InboxView = lazy(() => import("./views/InboxView").then((m) => ({ default: m.InboxView })));
+const MarketplaceView = lazy(() => import("./views/MarketplaceView").then((m) => ({ default: m.MarketplaceView })));
+const KbView = lazy(() => import("./views/KbView").then((m) => ({ default: m.KbView })));
+const MemoryView = lazy(() => import("./views/MemoryView").then((m) => ({ default: m.MemoryView })));
+const SkillsView = lazy(() => import("./views/SkillsView").then((m) => ({ default: m.SkillsView })));
+const IntegrationsView = lazy(() => import("./views/IntegrationsView").then((m) => ({ default: m.IntegrationsView })));
 const TopologyView = lazy(() =>
 	import("./views/TopologyView").then((m) => ({ default: m.TopologyView })),
 );
@@ -49,6 +53,10 @@ function OnboardingGate() {
 }
 
 
+function RouteFallback() {
+	return <div className="flex h-64 items-center justify-center p-4 text-sm text-ink-3">Loading…</div>;
+}
+
 let _router: ReturnType<typeof createBrowserRouter> | undefined;
 
 function getRouter() {
@@ -57,24 +65,40 @@ function getRouter() {
 			element: <OnboardingGate />,
 			children: [
 				{ path: "/", element: <ChatView /> },
-				{ path: "/tasks", element: <TasksView /> },
-				{ path: "/routines", element: <RoutinesView /> },
-				{ path: "/routines/:id/runs/:runId", element: <RunDetailView /> },
-				{ path: "/inbox", element: <InboxView /> },
-				{ path: "/marketplace", element: <MarketplaceView /> },
-				{ path: "/skills", element: <SkillsView /> },
-				{ path: "/memory", element: <MemoryView /> },
-				{ path: "/topology", element: (
-					<Suspense fallback={<div className="flex h-64 items-center justify-center p-4 text-sm text-ink-3">Loading topology…</div>}>
-						<TopologyView />
-					</Suspense>
+				{ path: "/tasks", element: (
+					<Suspense fallback={<RouteFallback />}><TasksView /></Suspense>
 				) },
-				{ path: "/kb", element: <KbView /> },
-				{ path: "/integrations", element: <IntegrationsView /> },
+				{ path: "/routines", element: (
+					<Suspense fallback={<RouteFallback />}><RoutinesView /></Suspense>
+				) },
+				{ path: "/routines/:id/runs/:runId", element: (
+					<Suspense fallback={<RouteFallback />}><RunDetailView /></Suspense>
+				) },
+				{ path: "/inbox", element: (
+					<Suspense fallback={<RouteFallback />}><InboxView /></Suspense>
+				) },
+				{ path: "/marketplace", element: (
+					<Suspense fallback={<RouteFallback />}><MarketplaceView /></Suspense>
+				) },
+				{ path: "/skills", element: (
+					<Suspense fallback={<RouteFallback />}><SkillsView /></Suspense>
+				) },
+				{ path: "/memory", element: (
+					<Suspense fallback={<RouteFallback />}><MemoryView /></Suspense>
+				) },
+				{ path: "/topology", element: (
+					<Suspense fallback={<RouteFallback />}><TopologyView /></Suspense>
+				) },
+				{ path: "/kb", element: (
+					<Suspense fallback={<RouteFallback />}><KbView /></Suspense>
+				) },
+				{ path: "/integrations", element: (
+					<Suspense fallback={<RouteFallback />}><IntegrationsView /></Suspense>
+				) },
 				{
 					path: "/settings",
 					element: (
-						<Suspense fallback={<div className="p-4 text-sm text-ink-3">Loading…</div>}>
+						<Suspense fallback={<RouteFallback />}>
 							<SettingsView />
 						</Suspense>
 					),
