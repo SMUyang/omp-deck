@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { ModelInfo } from "@omp-deck/protocol";
 
+import { recommendModelRoles } from "./model-role-recommender.ts";
+
 export interface ModelRolesSnapshot {
 	roles: Record<string, string>;
 	models: ModelInfo[];
@@ -16,6 +18,8 @@ export interface ModelRolesRouterDeps {
 		patch(updates: ModelRolesPatchRequest): Promise<ModelRolesSnapshot>;
 		put(roles: Record<string, string>): Promise<ModelRolesSnapshot>;
 	};
+	/** Effective model catalog for auto-configuration. */
+	listModels?: () => Promise<ModelInfo[]>;
 	/** Called after a successful PATCH/PUT so the backend can hot-reload
 	 *  model-role changes (e.g. restart the omp subprocess in RPC mode). */
 	onRolesChanged?: () => Promise<void>;
@@ -30,6 +34,25 @@ export function buildModelRolesRouter(deps: ModelRolesRouterDeps): Hono {
 	app.get("/settings/model-roles", async (c) => {
 		if (!deps.ompSettings) return c.json({ error: "model roles are unavailable for this backend" }, 501);
 		return c.json(await deps.ompSettings.get());
+	});
+
+	/**
+	 * POST /settings/model-roles/auto-configure
+	 *
+	 * Scans the effective model pool and returns a recommended role mapping
+	 * WITHOUT writing it. The caller previews and applies via PUT. Keeps
+	 * vision/designer/commit untouched.
+	 */
+	app.post("/settings/model-roles/auto-configure", async (c) => {
+		if (!deps.listModels) return c.json({ error: "model pool unavailable" }, 501);
+		try {
+			const models = await deps.listModels();
+			const recommendation = recommendModelRoles(models);
+			const existing = (await deps.ompSettings?.get())?.roles ?? {};
+			return c.json({ ...recommendation, existing });
+		} catch (err) {
+			return modelRoleErrorResponse(c, err);
+		}
 	});
 
 	app.patch("/settings/model-roles", async (c) => {

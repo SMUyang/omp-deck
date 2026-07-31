@@ -2429,6 +2429,14 @@ function ModelRolesSection() {
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | undefined>();
+	// Auto-configure preview state
+	const [autoPreview, setAutoPreview] = useState<{
+		recommended: Record<string, string>;
+		matched: Array<{ role: string; selector: string; reason: string }>;
+		preserved: string[];
+		existing: Record<string, string>;
+	} | null>(null);
+	const [autoLoading, setAutoLoading] = useState(false);
 
 	async function refresh(): Promise<void> {
 		try {
@@ -2488,6 +2496,37 @@ function ModelRolesSection() {
 		setNewModel("");
 	}
 
+	async function autoConfigure(): Promise<void> {
+		setAutoLoading(true);
+		setError(undefined);
+		try {
+			const preview = await settingsApi.autoConfigureModelRoles();
+			setAutoPreview(preview);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setAutoLoading(false);
+		}
+	}
+
+	async function applyAutoConfigure(): Promise<void> {
+		if (!autoPreview) return;
+		setSaving(true);
+		setError(undefined);
+		try {
+			// Merge recommendations over existing roles, preserving unmentioned ones.
+			const next = { ...autoPreview.existing, ...autoPreview.recommended };
+			const result = await settingsApi.patchModelRoles(next);
+			setData(result);
+			setDraft({ ...result.roles });
+			setAutoPreview(null);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setSaving(false);
+		}
+	}
+
 	return (
 		<div className="mx-auto max-w-5xl space-y-4">
 			<div>
@@ -2498,6 +2537,58 @@ function ModelRolesSection() {
 			</div>
 			{error ? <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">{error}</div> : null}
 			{loading ? <div className="text-sm text-ink-3">Loading...</div> : null}
+			{/* Auto-configure: scan the model pool and propose role bindings */}
+			<div className="rounded-md border border-line bg-paper p-3">
+				<div className="flex items-center justify-between gap-2">
+					<div>
+						<div className="meta">Auto-configure roles</div>
+						<div className="mt-0.5 text-2xs text-ink-3">
+							Scan the effective model pool and propose a role mapping (default/reviewer/plan/task/smol/explore). Preview first, then apply.
+						</div>
+					</div>
+					<button
+						type="button"
+						className="btn-secondary h-7 shrink-0 text-2xs"
+						onClick={() => void autoConfigure()}
+						disabled={autoLoading}
+					>
+						{autoLoading ? "Scanning…" : "Scan model pool"}
+					</button>
+				</div>
+				{autoPreview ? (
+					<div className="mt-3 border-t border-line pt-3">
+						{autoPreview.matched.length === 0 ? (
+							<div className="text-2xs text-ink-3">No matching models found in the pool — nothing to propose.</div>
+						) : (
+							<div className="space-y-1">
+								{autoPreview.matched.map((m) => (
+									<div key={m.role} className="flex items-center justify-between gap-2 font-mono text-2xs">
+										<span className="text-ink-2">{m.role}</span>
+										<span className="truncate text-ink" title={m.reason}>{m.selector}</span>
+									</div>
+								))}
+							</div>
+						)}
+						<div className="mt-3 flex items-center gap-2">
+							<button
+								type="button"
+								className="btn-primary h-7 px-3 text-2xs"
+								onClick={() => void applyAutoConfigure()}
+								disabled={saving || autoPreview.matched.length === 0}
+							>
+								{saving ? "Applying…" : "Apply recommendations"}
+							</button>
+							<button
+								type="button"
+								className="btn-secondary h-7 px-3 text-2xs"
+								onClick={() => setAutoPreview(null)}
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				) : null}
+			</div>
 			<div className="overflow-hidden rounded-md border border-line bg-paper">
 				<div className="border-b border-line px-3 py-2">
 					<div className="meta">Configured roles</div>

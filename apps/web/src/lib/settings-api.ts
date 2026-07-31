@@ -37,6 +37,14 @@ export const settingsApi = {
 	listModelRoles(): Promise<ModelRolesResponse> {
 		return req<ModelRolesResponse>("/settings/model-roles");
 	},
+	autoConfigureModelRoles(): Promise<{
+		recommended: Record<string, string>;
+		matched: Array<{ role: string; selector: string; reason: string }>;
+		preserved: string[];
+		existing: Record<string, string>;
+	}> {
+		return req("/settings/model-roles/auto-configure", { method: "POST" });
+	},
 	patchModelRoles(updates: ModelRolesPatchRequest["roles"]): Promise<ModelRolesResponse> {
 		return req<ModelRolesResponse>("/settings/model-roles", {
 			method: "PATCH",
