@@ -97,6 +97,12 @@ export function createAutoRebuildTopology(deps: { sessionId: string; getSessionF
 }
 
 export function createExtractorPool(): TopologyExtractorModelClient | null {
+	const mode = (process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE ?? "regex").toLowerCase();
+	if (mode !== "fast_model") {
+		// Deterministic regex extraction only — no model pool. Matches the
+		// env-schema contract ("regex (default, deterministic)").
+		return null;
+	}
 	const slots: TopologyExtractorPoolSlot[] = [];
 	const chunkSize = Number.parseInt(process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE ?? "5", 10) || 5;
 

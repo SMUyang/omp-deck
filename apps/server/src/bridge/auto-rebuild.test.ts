@@ -136,6 +136,7 @@ describe("createExtractorPool", () => {
 		const origBatchSize = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE;
 		const origModel = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL;
 		try {
+			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = "fast_model";
 			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY = "test-key";
 			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_BATCH_SIZE = "5";
 
@@ -205,6 +206,7 @@ describe("createExtractorPool", () => {
 		const origMaxTokens = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS;
 		const origModel = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODEL;
 		try {
+			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = "fast_model";
 			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_API_KEY = "test-key";
 			process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MAX_TOKENS = "1234";
 
