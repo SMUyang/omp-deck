@@ -37,6 +37,21 @@ const WINDOWS: readonly WindowSpec[] = [
 	{ key: "d7", path: "/usage/7d" },
 ] as const;
 
+// ── Response cache ──
+// GET /status/cpa-usage fans out to four collector calls per request. Cache
+// successful responses for a short TTL, and keep the last good value around so
+// a transient refetch failure can be answered from it (stale-if-error) instead
+// of surfacing an error to the panel.
+const CPA_USAGE_TTL_MS = 15_000;
+const CPA_USAGE_STALE_MS = 300_000;
+
+interface CpaUsageCacheEntry {
+	value: CpaUsageResponse;
+	at: number;
+}
+
+const cpaUsageCache = new Map<string, CpaUsageCacheEntry>();
+
 // ── Runtime guards (untrusted JSON → typed values) ──
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -157,6 +172,53 @@ function sanitizeErrorMessage(err: unknown, path: string, password: string): str
 	return `${path}: ${message}`;
 }
 
+// ── Per-endpoint fetchers (fire all concurrently from the builder) ──
+
+interface HealthResult {
+	health?: CpaUsageHealth;
+	error?: string;
+}
+
+interface WindowResult {
+	window?: CpaUsageWindow;
+	error?: string;
+}
+
+async function fetchHealth(
+	config: CpaUsageClientConfig,
+	fetcher: CpaUsageFetcher,
+): Promise<HealthResult> {
+	try {
+		const resp = await fetcher(joinUrl(config.baseUrl, "/health"), buildInit(config));
+		if (!resp.ok) {
+			return { error: `collector /health returned HTTP ${resp.status}` };
+		}
+		const json: unknown = await resp.json().catch(() => null);
+		return { health: normalizeHealth(json) };
+	} catch (err) {
+		return { error: sanitizeErrorMessage(err, "/health", config.password) };
+	}
+}
+
+async function fetchWindow(
+	config: CpaUsageClientConfig,
+	spec: WindowSpec,
+	fetcher: CpaUsageFetcher,
+): Promise<WindowResult> {
+	try {
+		const resp = await fetcher(joinUrl(config.baseUrl, spec.path), buildInit(config));
+		if (!resp.ok) {
+			return { error: `${spec.path} HTTP ${resp.status}` };
+		}
+		const json: unknown = await resp.json().catch(() => null);
+		const window = normalizeWindow(json);
+		if (window) return { window };
+		return { error: `${spec.path} malformed` };
+	} catch (err) {
+		return { error: sanitizeErrorMessage(err, spec.path, config.password) };
+	}
+}
+
 // ── Core response builder ──
 
 export async function buildCpaUsageResponse(
@@ -169,50 +231,33 @@ export async function buildCpaUsageResponse(
 		return { available: false, generatedAt, error: NOT_CONFIGURED };
 	}
 
-	const password = config.password;
+	// ── Health + windows, in parallel ──
+	// Each request carries its own timeout signal, so failures stay isolated
+	// per endpoint.
+	const [healthResult, ...windowResults] = await Promise.all([
+		fetchHealth(config, fetcher),
+		...WINDOWS.map((spec) => fetchWindow(config, spec, fetcher)),
+	]);
 
-	// ── Health ──
-	let health: CpaUsageHealth | undefined;
-	let healthError: string | undefined;
-	try {
-		const resp = await fetcher(joinUrl(config.baseUrl, "/health"), buildInit(config));
-		if (!resp.ok) {
-			healthError = `collector /health returned HTTP ${resp.status}`;
-		} else {
-			const json: unknown = await resp.json().catch(() => null);
-			health = normalizeHealth(json);
-		}
-	} catch (err) {
-		healthError = sanitizeErrorMessage(err, "/health", password);
-	}
-
-	// ── Windows ──
 	const windows: NonNullable<CpaUsageResponse["windows"]> = {};
 	const windowErrors: string[] = [];
 
-	for (const spec of WINDOWS) {
-		try {
-			const resp = await fetcher(joinUrl(config.baseUrl, spec.path), buildInit(config));
-			if (!resp.ok) {
-				windowErrors.push(`${spec.path} HTTP ${resp.status}`);
-				continue;
-			}
-			const json: unknown = await resp.json().catch(() => null);
-			const window = normalizeWindow(json);
-			if (window) {
-				windows[spec.key] = window;
-			} else {
-				windowErrors.push(`${spec.path} malformed`);
-			}
-		} catch (err) {
-			windowErrors.push(sanitizeErrorMessage(err, spec.path, password));
+	for (let i = 0; i < WINDOWS.length; i++) {
+		const spec = WINDOWS[i];
+		const result = windowResults[i];
+		if (!spec || !result) continue;
+		if (result.window) {
+			windows[spec.key] = result.window;
+		} else if (result.error) {
+			windowErrors.push(result.error);
 		}
 	}
 
+	const health = healthResult.health;
 	const hasHealth = health !== undefined;
 	const hasWindows =
 		windows.h1 !== undefined || windows.h24 !== undefined || windows.d7 !== undefined;
-	const errors = [healthError, ...windowErrors].filter((e): e is string => e !== undefined);
+	const errors = [healthResult.error, ...windowErrors].filter((e): e is string => e !== undefined);
 
 	// Collector was configured but every call failed.
 	if (!hasHealth && !hasWindows) {
@@ -248,11 +293,41 @@ export function resolveCpaUsageConfig(): CpaUsageClientConfig | undefined {
 
 // ── Router ──
 
+function hasCpaUsageData(body: CpaUsageResponse): boolean {
+	return body.health !== undefined || body.windows !== undefined;
+}
+
+async function getCpaUsageCached(
+	config: CpaUsageClientConfig | undefined,
+): Promise<CpaUsageResponse> {
+	if (!config) {
+		// Deterministic and makes no external calls — nothing to cache.
+		return buildCpaUsageResponse(undefined, fetch);
+	}
+	const now = Date.now();
+	const key = JSON.stringify(config);
+	const entry = cpaUsageCache.get(key);
+	if (entry && now - entry.at <= CPA_USAGE_TTL_MS) {
+		return entry.value;
+	}
+	const body = await buildCpaUsageResponse(config, fetch);
+	if (hasCpaUsageData(body)) {
+		cpaUsageCache.set(key, { value: body, at: now });
+		return body;
+	}
+	// Every collector call failed: serve the last good value while it is
+	// still fresh enough.
+	if (entry && now - entry.at <= CPA_USAGE_STALE_MS) {
+		return entry.value;
+	}
+	return body;
+}
+
 export function buildCpaUsageRouter(_config: Config): Hono {
 	const app = new Hono();
 	app.get("/status/cpa-usage", async (c) => {
 		const clientConfig = resolveCpaUsageConfig();
-		const body = await buildCpaUsageResponse(clientConfig, fetch);
+		const body = await getCpaUsageCached(clientConfig);
 		return c.json(body);
 	});
 	return app;

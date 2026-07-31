@@ -58,10 +58,21 @@ let cpaUsageCache: CpaUsageResponse | undefined;
 let cpaUsageRequest: Promise<CpaUsageResponse> | undefined;
 
 function loadProviderUsage(): Promise<ProviderUsageResponse> {
-	providerUsageRequest ??= api.getProviderUsage().then((res) => {
-		providerUsageCache = res;
-		return res;
-	});
+	providerUsageRequest ??= api
+		.getProviderUsage()
+		.then((res) => {
+			providerUsageCache = res;
+			return res;
+		})
+		.catch((err) => {
+			// Propagate the failure to the caller; the slot is cleared in
+			// finally so a later mount re-fetches instead of reusing a
+			// permanently rejected promise.
+			throw err;
+		})
+		.finally(() => {
+			providerUsageRequest = undefined;
+		});
 	return providerUsageRequest;
 }
 
@@ -74,13 +85,14 @@ function loadCpaUsage(): Promise<CpaUsageResponse> {
 		})
 		.catch((err): CpaUsageResponse => {
 			const message = err instanceof Error ? err.message : String(err);
-			const fallback: CpaUsageResponse = {
+			return {
 				available: false,
 				generatedAt: Date.now(),
 				error: message,
 			};
-			cpaUsageCache = fallback;
-			return fallback;
+		})
+		.finally(() => {
+			cpaUsageRequest = undefined;
 		});
 	return cpaUsageRequest;
 }

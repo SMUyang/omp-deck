@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, Play, RefreshCcw, X } from "lucide-react";
-import type { Routine, RoutineRun, RoutineStepRun, RoutineStepStatus } from "@omp-deck/protocol";
+import type { Routine, RoutineRun, RoutineStepRun, RoutineStepStatus, ServerFrame } from "@omp-deck/protocol";
 
+import { mergeStepEvent } from "@/components/routines/canvas/use-run-overlay";
 import { Layout } from "@/components/Layout";
 import { routinesApi } from "@/lib/routines-api";
+import { useStore } from "@/lib/store";
 import { cn, formatDurationMs } from "@/lib/utils";
 
 /**
  * /routines/:id/runs/:runId — detailed view of a single routine run.
  *
- * Polls every 1.5s while the run is in flight; switches to no-poll once
- * `endedAt` is populated. WS-based live updates would be cheaper but the
- * polling path is robust and ships today.
+ * Fetch-on-mount plus WS-driven live updates: the server broadcasts
+ * `routine_step_event` / `routine_run_finished` / `routine_run_started`
+ * frames on the shared firehose (owned by the zustand store's singleton
+ * `WsClient`). Step events are merged in place for instant progress; start
+ * and finish frames trigger a refetch so fresh run records land. No polling.
  */
 export function RunDetailView() {
 	const { id, runId } = useParams<{ id: string; runId: string }>();
@@ -56,13 +60,37 @@ export function RunDetailView() {
 		void refresh();
 	}, [refresh]);
 
-	// Live updates: poll while the run hasn't ended.
+	// Live updates: subscribe to the WS firehose and react to frames for this
+	// run. The store owns the singleton `WsClient`, which survives unmount,
+	// so we only tear down this listener — never the client itself.
+	const ws = useStore((s) => s.ws);
 	useEffect(() => {
-		if (!run) return;
-		if (run.endedAt) return;
-		const handle = setInterval(() => void refresh(), 1500);
-		return () => clearInterval(handle);
-	}, [run, refresh]);
+		if (!ws || !id || !runId) return;
+		return ws.subscribe((frame: ServerFrame) => {
+			switch (frame.type) {
+				case "routine_run_started": {
+					// A just-started (e.g. deep-linked) run may have no records
+					// yet; refetch so the run + steps hydrate once available.
+					if (frame.runId !== runId) return;
+					void refresh();
+					return;
+				}
+				case "routine_step_event": {
+					if (frame.runId !== runId) return;
+					setSteps((prev) => mergeStepEvent(prev, frame));
+					return;
+				}
+				case "routine_run_finished": {
+					if (frame.runId !== runId) return;
+					// Final refetch so terminal fields land cleanly.
+					void refresh();
+					return;
+				}
+				default:
+					return;
+			}
+		});
+	}, [ws, id, runId, refresh]);
 
 	if (!id || !runId) return <div className="p-6 text-ink-3">Missing id/runId.</div>;
 

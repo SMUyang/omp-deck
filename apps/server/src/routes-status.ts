@@ -7,6 +7,21 @@ import { fetchProviderUsageJson, type ProviderUsageJson } from "./session-status
 
 const log = logger("routes:status");
 
+// ── Response cache ──
+// GET /status/provider-usage spawns an `omp usage --json` subprocess per
+// request. Cache successful responses for a short TTL, and keep the last good
+// value around so a transient refetch failure can be answered from it
+// (stale-if-error) instead of surfacing an error to the panel.
+const PROVIDER_USAGE_TTL_MS = 15_000;
+const PROVIDER_USAGE_STALE_MS = 300_000;
+
+interface ProviderUsageCacheEntry {
+	value: ProviderUsageResponse;
+	at: number;
+}
+
+const providerUsageCache = new Map<string, ProviderUsageCacheEntry>();
+
 type ProviderUsageFetcher = (ompBin: string) => Promise<ProviderUsageJson>;
 
 interface RawUsageReport {
@@ -97,10 +112,29 @@ export async function buildProviderUsageResponse(
 	}
 }
 
+async function getProviderUsageCached(ompBin: string): Promise<ProviderUsageResponse> {
+	const now = Date.now();
+	const entry = providerUsageCache.get(ompBin);
+	if (entry && now - entry.at <= PROVIDER_USAGE_TTL_MS) {
+		return entry.value;
+	}
+	const body = await buildProviderUsageResponse(ompBin);
+	if (!body.error) {
+		providerUsageCache.set(ompBin, { value: body, at: now });
+		return body;
+	}
+	// Refetch failed: serve the last good value while it is still fresh enough.
+	if (entry && now - entry.at <= PROVIDER_USAGE_STALE_MS) {
+		log.warn("provider usage fetch failed; serving last good cached response", body.error);
+		return entry.value;
+	}
+	return body;
+}
+
 export function buildStatusRouter(config: Config): Hono {
 	const app = new Hono();
 	app.get("/status/provider-usage", async (c) => {
-		const body = await buildProviderUsageResponse(config.ompBin);
+		const body = await getProviderUsageCached(config.ompBin);
 		return c.json(body);
 	});
 	return app;
