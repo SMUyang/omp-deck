@@ -13,6 +13,7 @@ import type {
 import { Layout } from "@/components/Layout";
 import { SessionContextStatusChip } from "@/components/session/SessionContextStatusChip";
 import { TopologyGraph } from "@/components/session/TopologyGraph";
+import { topologyNodeDetails } from "@/components/session/TopologyGraph.layout";
 import { ContextPackPanel } from "@/components/session/ContextPackPanel";
 import { ContextEvidenceTimeline } from "@/components/topology/ContextEvidenceTimeline";
 import { ContextSavingsCard } from "@/components/topology/ContextSavingsCard";
@@ -340,6 +341,7 @@ function NodeInspector({
 		);
 	}
 
+	const details = topologyNodeDetails(node);
 	return (
 		<div className="rounded-md border border-line p-2">
 			<h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-3">
@@ -347,32 +349,30 @@ function NodeInspector({
 			</h4>
 			<div className="mt-2 space-y-1.5 text-xs">
 				<div className="flex items-start gap-1.5">
-					<span className="shrink-0 text-ink-3">Title:</span>
+					<span className="shrink-0 text-ink-3">{t("topologyWorkspace.details.title")}:</span>
 					<span className="font-medium text-ink">{node.title}</span>
 				</div>
 				<div className="flex items-start gap-1.5">
-					<span className="shrink-0 text-ink-3">Kind:</span>
+					<span className="shrink-0 text-ink-3">{t("topologyWorkspace.details.kind")}:</span>
 					<span className="text-ink">{node.kind}</span>
 				</div>
-				{node.sourceTurnIndex != null && (
-					<div className="flex items-start gap-1.5">
-						<span className="shrink-0 text-ink-3">Turn:</span>
-						<span className="text-ink">{node.sourceTurnIndex}</span>
-					</div>
-				)}
-				{node.importance > 0 && (
-					<div className="flex items-start gap-1.5">
-						<span className="shrink-0 text-ink-3">Importance:</span>
-						<span className="text-ink">
-							{Math.round(node.importance * 100)}%
+				{details.map((detail) => (
+					<div key={detail.key} className="flex items-start gap-1.5">
+						<span className="shrink-0 text-ink-3">{t(detail.labelKey)}:</span>
+						<span className="break-all text-ink">
+							{detail.valueKey
+								? t(detail.valueKey, { defaultValue: String(detail.value) })
+								: detail.key === "importance"
+									? `${Math.round(Number(detail.value) * 100)}%`
+									: String(detail.value)}
 						</span>
 					</div>
-				)}
-				{node.compressedBody && (
+				))}
+				{node.body && (
 					<div className="border-t border-line/60 pt-1.5">
-						<div className="mb-0.5 text-ink-3">Body:</div>
+						<div className="mb-0.5 text-ink-3">{t("topologyWorkspace.details.body")}:</div>
 						<div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-ink-2">
-							{node.compressedBody}
+							{node.body}
 						</div>
 					</div>
 				)}

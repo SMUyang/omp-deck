@@ -10,52 +10,29 @@
  *     `<session_topology_subgraph>`.
  *   - **Importance = radius.** Node radius scales with `importance`
  *     (square root, 8→18px), so heavy-hitter facts visually pop.
- *   - **Layered layout.** Nodes are bucketed by their kind into vertical
- *     lanes (goal/decision/issue/resolution/evidence …). Inside a lane,
- *     y is allocated evenly. Edges curve between lanes; the control
- *     points keep them visually separable from straight diagonals when
- *     many edges cross the canvas.
- *   - **Edge semantics.** Stroke-dasharray by relation — solid for
- *     "constructive" relations, dashed for "blocking/contradiction",
- *     dotted for "summary/supersedes". Weight controls stroke-width.
+ *   - **Conversational hierarchy.** V2 main nodes use user/assistant
+ *     population lanes. Assistant children form compact grids beneath their
+ *     parent; legacy nodes retain their kind-based lane layout.
+ *   - **Edge semantics.** Relation controls color and dash. The conversational
+ *     `answers` relation is a solid, high-contrast primary connector.
  *   - **Hover/select.** Hover surfaces a tooltip; click toggles
  *     selection. Selecting a node also lights its 1-hop neighbors.
  */
 
 import { useCallback, useMemo, useState } from "react";
-import type { SessionContextEdge, SessionContextGraphResponse, SessionContextNode } from "@omp-deck/protocol";
+import { useTranslation } from "react-i18next";
+import type { SessionContextGraphResponse, SessionContextNode } from "@omp-deck/protocol";
 import { cn } from "@/lib/utils";
 import { getNodeKindTone } from "@/lib/node-kind-tones";
+import {
+	computeTopologyNodeLayout,
+	topologyEdgeStyle,
+	topologyNodeDetails,
+} from "./TopologyGraph.layout";
 
 const MIN_RADIUS = 8;
 const MAX_RADIUS = 18;
 
-const LANE_ORDER = [
-	"goal",
-	"user_intent",
-	"decision",
-	"constraint",
-	"action",
-	"resolution",
-	"issue",
-	"evidence",
-	"artifact",
-	"todo_state",
-	"handoff_summary",
-] as const;
-
-const EDGE_STROKE: Record<string, { dash: string; color: string }> = {
-	caused_by:        { dash: "0",        color: "stroke-accent/40" },
-	fixed_by:         { dash: "0",        color: "stroke-success/50" },
-	verified_by:      { dash: "0",        color: "stroke-success/40" },
-	depends_on:       { dash: "0",        color: "stroke-ink-3/45" },
-	continues:        { dash: "0",        color: "stroke-accent-soft/50" },
-	references_file:  { dash: "0",        color: "stroke-ink-3/30" },
-	blocks:           { dash: "4 3",      color: "stroke-danger/55" },
-	contradicts:      { dash: "4 3",      color: "stroke-danger/55" },
-	supersedes:       { dash: "1 3",      color: "stroke-thinking/55" },
-	summarizes:       { dash: "1 3",      color: "stroke-thinking/55" },
-};
 
 function MiniKindSummary({ graph, focusIds }: { graph: SessionContextGraphResponse; focusIds: Set<string> }) {
 	const counts = new Map<string, { total: number; focus: number }>();
@@ -114,6 +91,7 @@ export function TopologyGraph({
 	variant = "full",
 	focusOnly = false,
 }: TopologyGraphProps) {
+	const { t } = useTranslation();
 	const [hoveredId, setHoveredId] = useState<string | null>(null);
 	const focusSet = useMemo<Set<string>>(() => new Set(focusIds ?? []), [focusIds]);
 
@@ -132,10 +110,13 @@ export function TopologyGraph({
 		return { ...graph, nodes, edges };
 	}, [graph, focusSet, focusOnly]);
 
+	const canvas = variant === "mini"
+		? { width: 480, height: 220 }
+		: { width: 800, height: 520 };
 	const layout = useMemo(() => {
 		if (!visibleGraph) return null;
-		return layoutLanes(visibleGraph.nodes, visibleGraph.edges, { mini: variant === "mini" });
-	}, [visibleGraph, variant]);
+		return computeTopologyNodeLayout(visibleGraph.nodes, visibleGraph.edges, canvas.width, canvas.height);
+	}, [canvas.height, canvas.width, visibleGraph]);
 
 	const handleSelect = useCallback(
 		(nodeId: string | null) => {
@@ -184,9 +165,8 @@ export function TopologyGraph({
 
 	const selectedNode = selectedNodeId ? visibleGraph.nodes.find((n) => n.id === selectedNodeId) ?? null : null;
 // (focusCount computed above for the mini-degradation branch.)
-	const layoutHeight = layout ? layout.height : 220;
-	const height = variant === "mini" ? 220 : layoutHeight;
-	const width = layout?.width ?? 800;
+	const height = layout?.height ?? canvas.height;
+	const width = layout?.width ?? canvas.width;
 
 	return (
 		<div className={cn("space-y-2", className)}>
@@ -208,23 +188,39 @@ export function TopologyGraph({
 				viewBox={`0 0 ${width} ${height}`}
 				role="img"
 				aria-label="Session context topology graph"
-				className={cn(
-					"w-full overflow-hidden rounded-md border border-line bg-paper",
-					variant === "mini" ? "h-[220px]" : `h-[${height}px]`,
-				)}
+				className="w-full overflow-hidden rounded-md border border-line bg-paper"
+				style={{ height: variant === "mini" ? 220 : Math.min(720, Math.max(320, height)) }}
 			>
 				{/* Lane separators */}
 				{layout?.lanes.slice(0, -1).map((lane) => (
 					<line
 						key={`sep-${lane.kind}`}
-						x1={lane.x + lane.width / 2 + 32}
+						x1={lane.x + lane.width / 2}
 						y1={28}
-						x2={lane.x + lane.width / 2 + 32}
+						x2={lane.x + lane.width / 2}
 						y2={height - 24}
 						className="stroke-line/60"
 						strokeDasharray="2 6"
 					/>
 				))}
+
+				{/* Local ownership connectors are visual hierarchy only, not API edges. */}
+				{visibleGraph.nodes.map((node) => {
+					if (node.nodeRole !== "child" || !node.parentNodeId) return null;
+					const parent = layout?.positions.get(node.parentNodeId);
+					const child = layout?.positions.get(node.id);
+					if (!parent || !child) return null;
+					return (
+						<path
+							key={`owner-${node.id}`}
+							d={`M ${parent.x} ${parent.y} L ${child.x} ${child.y}`}
+							fill="none"
+							className="stroke-ink-3/25"
+							strokeWidth={0.8}
+							strokeDasharray="2 3"
+						/>
+					);
+				})}
 
 				{/* Edges */}
 				{visibleGraph.edges.map((edge, i) => {
@@ -233,18 +229,18 @@ export function TopologyGraph({
 					if (!a || !b) return null;
 					const dimmed = active && !(active === edge.sourceNodeId || active === edge.targetNodeId);
 					const focusEdge = focusSet.has(edge.sourceNodeId) && focusSet.has(edge.targetNodeId);
-					const stroke = EDGE_STROKE[edge.relation] ?? { dash: "0", color: "stroke-ink-3/30" };
+					const stroke = topologyEdgeStyle(edge.relation);
 					return (
 						<g
 							key={`${edge.id ?? `${edge.sourceNodeId}:${edge.targetNodeId}:${i}`}`}
 							opacity={dimmed ? 0.18 : 1}
 						>
-							<title>{`${edge.relation}${focusEdge ? " · in focus" : ""}`}</title>
+							<title>{`${t(`topologyWorkspace.values.edgeRelation.${edge.relation}`, { defaultValue: edge.relation })}${focusEdge ? " · in focus" : ""}`}</title>
 							<path
 								d={quadraticPath(a, b)}
 								fill="none"
 								className={cn(stroke.color, focusEdge && "opacity-100")}
-								strokeWidth={0.8 + Math.min(2.4, edge.weight * 2.4)}
+								strokeWidth={stroke.width + Math.min(2.4, edge.weight * 2.4)}
 								strokeDasharray={stroke.dash}
 							/>
 						</g>
@@ -279,7 +275,7 @@ export function TopologyGraph({
 							className="cursor-pointer outline-none"
 							aria-label={`${node.kind}: ${node.title}${isFocus ? " · in focus" : ""}`}
 						>
-							<title>{`${node.kind} · importance ${node.importance.toFixed(2)}\n${node.title}\n${isFocus ? "(will be sent to the model)" : ""}`}</title>
+							<title>{`${node.kind}${node.population ? ` · ${node.population} ${node.nodeRole ?? ""}` : ""} · importance ${node.importance.toFixed(2)}\n${node.title}\n${isFocus ? "(will be sent to the model)" : ""}`}</title>
 							{/* Focus halo: drawn behind the disc so the fill color stays intact. */}
 							{isFocus ? (
 								<circle cx={p.x} cy={p.y} r={r + 5} className="fill-accent-soft/40" />
@@ -319,66 +315,6 @@ export function TopologyGraph({
 	);
 }
 
-// ─── Layout ────────────────────────────────────────────────────────────────
-
-interface LaneLayout {
-	kind: string;
-	x: number;
-	width: number;
-}
-
-interface LayoutResult {
-	positions: Map<string, { x: number; y: number }>;
-	lanes: LaneLayout[];
-	width: number;
-	height: number;
-}
-
-function layoutLanes(
-	nodes: ReadonlyArray<SessionContextNode>,
-	edges: ReadonlyArray<SessionContextEdge>,
-	opts: { mini: boolean },
-): LayoutResult {
-	const top = opts.mini ? 22 : 56;
-	const bottom = opts.mini ? 22 : 36;
-	const rowHeight = opts.mini ? 32 : 56;
-	const laneWidth = opts.mini ? 130 : 160;
-	const padding = 24;
-
-	const byLane = new Map<string, SessionContextNode[]>();
-	for (const node of nodes) {
-		const arr = byLane.get(node.kind) ?? [];
-		arr.push(node);
-		byLane.set(node.kind, arr);
-	}
-	for (const arr of byLane.values()) {
-		arr.sort((a, b) => b.importance - a.importance || a.id.localeCompare(b.id));
-	}
-
-	const laneKinds = LANE_ORDER.filter((k) => byLane.has(k));
-	for (const k of byLane.keys()) {
-		if (!laneKinds.includes(k as (typeof LANE_ORDER)[number])) laneKinds.push(k as (typeof LANE_ORDER)[number]);
-	}
-
-	const width = Math.max(opts.mini ? 480 : 700, padding * 2 + laneKinds.length * laneWidth);
-	const usableHeight = Math.max(rowHeight, Math.max(...Array.from(byLane.values(), (arr) => arr.length)) * rowHeight);
-	const height = top + bottom + usableHeight;
-
-	const positions = new Map<string, { x: number; y: number }>();
-	const lanes: LaneLayout[] = [];
-	laneKinds.forEach((kind, i) => {
-		const arr = byLane.get(kind) ?? [];
-		const x = padding + i * laneWidth + laneWidth / 2;
-		lanes.push({ kind, x, width: laneWidth });
-		const laneStartY = top + (usableHeight - arr.length * rowHeight) / 2;
-		arr.forEach((node, j) => {
-			const y = laneStartY + (j + 0.5) * rowHeight;
-			positions.set(node.id, { x, y });
-		});
-	});
-
-	return { positions, lanes, width: Math.max(width, padding * 2 + lanes.length * laneWidth), height };
-}
 
 function radiusFor(importance: number): number {
 	const clamped = Math.max(0, Math.min(1, importance));
@@ -431,6 +367,7 @@ function Legend() {
 
 function Detail({ node, focus }: { node: SessionContextNode; focus: boolean }) {
 	const tone = getNodeKindTone(node.kind);
+	const { t } = useTranslation();
 	return (
 		<div
 			className={cn(
@@ -449,9 +386,14 @@ function Detail({ node, focus }: { node: SessionContextNode; focus: boolean }) {
 				) : null}
 			</div>
 			{node.compressedBody ? <p className="mt-1 text-ink-3">{node.compressedBody}</p> : null}
-			<div className="mt-1 flex items-center gap-3 text-ink-4">
-				<span>importance {node.importance.toFixed(2)}</span>
-				{node.sourceTurnIndex != null ? <span>turn {node.sourceTurnIndex + 1}</span> : null}
+			<div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-ink-4">
+				{topologyNodeDetails(node).map((detail) => (
+					<span key={detail.key}>
+						{t(detail.labelKey)} {detail.valueKey
+							? t(detail.valueKey, { defaultValue: String(detail.value) })
+							: String(detail.value)}
+					</span>
+				))}
 			</div>
 		</div>
 	);
