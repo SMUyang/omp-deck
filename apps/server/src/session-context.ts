@@ -15,6 +15,8 @@ import {
 	upsertSessionContextCheckpoint,
 } from "./db/session-context.ts";
 import { redactSensitiveText } from "./redaction.ts";
+import { normalizeSessionJsonl } from "./session-context-events.ts";
+import { buildConversationTopology } from "./session-context-pairs.ts";
 
 import { getTopologyRerankConfig } from "./config-topology-rerank.ts";
 import { retrieveTopology, tokenize, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
@@ -391,7 +393,8 @@ export async function rebuildSessionContextFromFile(input: {
 	const file = Bun.file(input.sessionFile);
 	if (!(await file.exists())) throw new Error("session file not found");
 	const [content, stat] = await Promise.all([file.text(), file.stat()]);
-	const extracted = extractSessionContextFromJsonl({ sessionId: input.sessionId, content });
+	const normalized = normalizeSessionJsonl({ content });
+	const extracted = buildConversationTopology({ sessionId: input.sessionId, events: normalized.activeEvents });
 
 	let nodes = extracted.nodes;
 	if (input.extractorClient && input.extractorModelRole && nodes.length > 0) {
@@ -412,6 +415,7 @@ export async function rebuildSessionContextFromFile(input: {
 		nodeCount: nodes.length,
 		edgeCount: edges.length,
 		rebuiltAt,
+		extractionSchemaVersion: 2,
 	});
 	return {
 		sessionId: input.sessionId,

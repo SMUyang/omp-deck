@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { closeDb, openDb } from "./db/index.ts";
-import { getSessionContextGraph, getNodeEmbeddings, saveNodeEmbeddings } from "./db/session-context.ts";
+import { closeDb, getDb, openDb } from "./db/index.ts";
+import { getSessionContextGraph, getNodeEmbeddings, getSessionContextStatus, saveNodeEmbeddings } from "./db/session-context.ts";
 import { extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext } from "./session-context.ts";
 import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
 import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
@@ -20,7 +20,7 @@ const jsonl = [
 	JSON.stringify({ type: "message", id: "tool1", timestamp: "2026-07-02T00:00:04.000Z", message: { role: "tool", content: [{ type: "text", text: "bun test apps/server/src/session-context.test.ts\n10 pass 0 fail" }] } }),
 ].join("\n");
 
-describe("session context extraction", () => {
+describe("legacy session context extraction compatibility", () => {
 	test("extracts user correction as superseding intent", () => {
 		const result = extractSessionContextFromJsonl({ sessionId: "s1", content: jsonl });
 
@@ -314,82 +314,88 @@ function tempDir(): string {
 	return dir;
 }
 
-test("rebuilds context store from a session file", async () => {
+test("v2 rebuild normalizes active JSONL into pairs children answers and checkpoint schema 2 without proximity edges", async () => {
 	const dir = tempDir();
 	openDb({ path: path.join(dir, "deck.db") });
 	const sessionFile = path.join(dir, "s1.jsonl");
-	fs.writeFileSync(sessionFile, jsonl);
+	const content = [
+		JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-31T10:00:00.000Z", message: { role: "user", content: [{ type: "text", text: "Run the topology test." }], timestamp: Date.parse("2026-07-31T10:00:00.000Z") } }),
+		JSON.stringify({ type: "message", id: "a-tools", parentId: "u1", timestamp: "2026-07-31T10:00:01.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "test-1", name: "bash", arguments: { command: "bun test apps/server/src/session-context-pairs.test.ts" } }], stopReason: "toolUse", timestamp: Date.parse("2026-07-31T10:00:01.000Z") } }),
+		JSON.stringify({ type: "message", id: "r1", parentId: "a-tools", timestamp: "2026-07-31T10:00:02.000Z", message: { role: "toolResult", toolCallId: "test-1", toolName: "bash", content: [{ type: "text", text: "21 pass\n0 fail" }], details: { exitCode: 0 }, isError: false, timestamp: Date.parse("2026-07-31T10:00:02.000Z") } }),
+		JSON.stringify({ type: "message", id: "a1", parentId: "r1", timestamp: "2026-07-31T10:00:03.000Z", message: { role: "assistant", content: [{ type: "text", text: "The topology test passes." }], stopReason: "stop", timestamp: Date.parse("2026-07-31T10:00:03.000Z") } }),
+	].join("\n");
+	fs.writeFileSync(sessionFile, content);
 
 	const rebuilt = await rebuildSessionContextFromFile({ sessionId: "s1", sessionFile });
-
-	expect(rebuilt.nodeCount).toBeGreaterThan(0);
-	expect(rebuilt.sourcePath).toBe(sessionFile);
 	const graph = getSessionContextGraph("s1", 50);
-	expect(graph.nodes.length).toBe(rebuilt.nodeCount);
+	const status = getSessionContextStatus("s1");
+
+	expect(rebuilt).toMatchObject({ nodeCount: 3, edgeCount: 1, sourcePath: sessionFile });
+	expect(graph.nodes).toEqual(expect.arrayContaining([
+		expect.objectContaining({ id: "s1:entry:u1:message", population: "user", nodeRole: "main", pairId: "s1:pair:u1" }),
+		expect.objectContaining({ id: "s1:entry:a1:message", population: "assistant", nodeRole: "main", pairId: "s1:pair:u1" }),
+		expect.objectContaining({ id: "s1:pair:u1:tool:test-1", childType: "test", parentNodeId: "s1:entry:a1:message" }),
+	]));
+	expect(graph.edges.map((edge) => edge.relation)).toEqual(["answers"]);
+	expect(status.extractionSchemaVersion).toBe(2);
 });
 
-const jsonlSkip = [
-	JSON.stringify({ type: "session", version: 3, id: "s-skip", cwd: "/repo", timestamp: "2026-07-09T00:00:00.000Z" }),
-	JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-09T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Add regression test for topology rebuild" }] } }),
-	JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-09T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "Actually, we must validate FK constraints instead" }] } }),
-	JSON.stringify({ type: "message", id: "tool1", timestamp: "2026-07-09T00:00:03.000Z", message: { role: "tool", content: [{ type: "text", text: "bun test apps/server/src/session-context.test.ts\n10 pass" }] } }),
-].join("\n");
-
-function makeSkipFakeClient(skipId: string): TopologyExtractorModelClient {
-	return {
-		async extractNodes(input) {
-			const parsed = JSON.parse(input.prompt) as Array<{ id: string; kind: string; title: string; body: string; role: string }>;
-			return {
-				nodes: parsed.map((n) => ({
-					id: n.id,
-					kind: n.id === skipId ? "skip" : n.kind,
-					title: n.title,
-					body: n.body,
-				})),
-			};
-		},
-	};
-}
-
-test("rebuild prunes edges and artifacts referencing LLM-skipped nodes without FK violation", async () => {
+test("v2 rebuild optional refinement cannot prune deterministic nodes edges or artifacts", async () => {
 	const dir = tempDir();
 	openDb({ path: path.join(dir, "deck.db") });
-	const sessionFile = path.join(dir, "s-skip.jsonl");
-	fs.writeFileSync(sessionFile, jsonlSkip);
+	const sessionFile = path.join(dir, "s-refine.jsonl");
+	fs.writeFileSync(sessionFile, [
+		JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-31T10:00:00.000Z", message: { role: "user", content: [{ type: "text", text: "Modify result.ts" }] } }),
+		JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-07-31T10:00:01.000Z", message: { role: "assistant", content: [{ type: "text", text: "Updated result.ts" }], stopReason: "stop" } }),
+	].join("\n"));
+	const client: TopologyExtractorModelClient = {
+		async extractNodes({ prompt }) {
+			const nodes = JSON.parse(prompt) as Array<{ id: string }>;
+			return { nodes: nodes.map((node) => ({ id: node.id, operationDetail: "answer_change", refinedPurpose: "Clarify the deterministic answer" })) };
+		},
+	};
 
-	// The regex extractor produces node IDs via makeNode:
-	//   ${sessionId}:${kind}:${turnIndex}:${messageId}
-	// u1 = goal at turn 1   → s-skip:goal:1:u1
-	// u2 = user_intent turn 2 → s-skip:user_intent:2:u2
-	const skippedGoalId = "s-skip:goal:1:u1";
-	const fakeClient = makeSkipFakeClient(skippedGoalId);
+	await rebuildSessionContextFromFile({ sessionId: "s-refine", sessionFile, extractorClient: client, extractorModelRole: "topology_extractor" });
+	const graph = getSessionContextGraph("s-refine", 50);
+	expect(graph.nodes).toHaveLength(2);
+	expect(graph.edges.map((edge) => edge.relation)).toEqual(["answers"]);
+	expect(graph.nodes.every((node) => node.refinement?.promptVersion === "conversation-purpose-v1")).toBe(true);
+});
 
-	const rebuilt = await rebuildSessionContextFromFile({
-		sessionId: "s-skip",
-		sessionFile,
-		extractorClient: fakeClient,
-		extractorModelRole: "topology_extractor",
-	});
+test("existing v1 graph rows remain readable and are not rewritten without an explicit rebuild", () => {
+	const dir = tempDir();
+	openDb({ path: path.join(dir, "deck.db") });
+	const db = getDb();
+	db.prepare(`INSERT INTO session_context_nodes (
+		id, session_id, kind, title, body, compressed_body, importance, created_at, metadata_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+		"legacy-goal", "s-v1", "goal", "legacy goal", "legacy body", "legacy body", 0.7, "2026-07-01T00:00:00.000Z", "{}",
+	);
+	db.prepare(`INSERT INTO session_context_nodes (
+		id, session_id, kind, title, body, compressed_body, importance, created_at, metadata_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+		"legacy-evidence", "s-v1", "evidence", "legacy evidence", "legacy evidence body", "legacy evidence body", 0.8, "2026-07-01T00:00:01.000Z", "{}",
+	);
+	db.prepare(`INSERT INTO session_context_edges (
+		id, session_id, source_node_id, target_node_id, relation, weight, metadata_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+		"legacy-verified", "s-v1", "legacy-goal", "legacy-evidence", "verified_by", 0.9, "{}",
+	);
+	db.prepare(`INSERT INTO session_context_checkpoints (
+		session_id, source_path, source_mtime_ms, source_size_bytes, node_count, edge_count, extraction_schema_version, rebuilt_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+		"s-v1", "/legacy/session.jsonl", 1, 2, 2, 1, 1, "2026-07-01T00:00:02.000Z",
+	);
 
-	// The skipped goal node is pruned. Surviving nodes: user_intent + evidence = 2.
-	expect(rebuilt.nodeCount).toBe(2);
-	expect(rebuilt.edgeCount).toBe(0);
+	const before = getSessionContextGraph("s-v1", 50);
+	const status = getSessionContextStatus("s-v1");
+	const rawVersion = db.query<{ extraction_schema_version: number }, [string]>("SELECT extraction_schema_version FROM session_context_checkpoints WHERE session_id = ?").get("s-v1");
 
-	const graph = getSessionContextGraph("s-skip", 50);
-	expect(graph.nodes.length).toBe(2);
-
-	// No edge must reference the skipped node.
-	expect(graph.edges).toHaveLength(0);
-	for (const edge of graph.edges) {
-		expect(edge.sourceNodeId).not.toBe(skippedGoalId);
-		expect(edge.targetNodeId).not.toBe(skippedGoalId);
-	}
-
-	// Artifacts on surviving nodes remain; none reference the skipped node.
-	expect(graph.artifacts.length).toBeGreaterThan(0);
-	for (const artifact of graph.artifacts) {
-		expect(artifact.nodeId).not.toBe(skippedGoalId);
-	}
+	expect(before.nodes.map((node) => node.id)).toEqual(["legacy-evidence", "legacy-goal"]);
+	expect(before.edges).toEqual([expect.objectContaining({ id: "legacy-verified", relation: "verified_by" })]);
+	expect(before.nodes.every((node) => node.population === undefined && node.nodeRole === undefined)).toBe(true);
+	expect(status.extractionSchemaVersion).toBe(1);
+	expect(rawVersion?.extraction_schema_version).toBe(1);
 });
 
 describe("context replacement", () => {
@@ -601,8 +607,8 @@ describe("context replacement", () => {
 			const sessionFile = path.join(dir, "s_rerank.jsonl");
 			fs.writeFileSync(sessionFile, [
 				JSON.stringify({ type: "session", version: 3, id: "s_rerank", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-				JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank plan" }] } }),
-				JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "please keep this deliberately unrelated external API patch validation node" }] } }),
+				JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank plan" }] } }),
+				JSON.stringify({ type: "message", id: "u2", parentId: "u1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "please keep this deliberately unrelated external API patch validation node" }] } }),
 			].join("\n"));
 			await rebuildSessionContextFromFile({ sessionId: "s_rerank", sessionFile });
 			const graph = getSessionContextGraph("s_rerank", 200);
@@ -653,8 +659,8 @@ describe("context replacement", () => {
 		const sessionFile = path.join(dir, "s_embed_flip.jsonl");
 		fs.writeFileSync(sessionFile, [
 			JSON.stringify({ type: "session", version: 3, id: "s_embed_flip", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "alpha component setup" }] } }),
-			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "beta service config" }] } }),
+			JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "alpha component setup" }] } }),
+			JSON.stringify({ type: "message", id: "u2", parentId: "u1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "beta service config" }] } }),
 		].join("\n"));
 		await rebuildSessionContextFromFile({ sessionId: "s_embed_flip", sessionFile });
 
@@ -744,9 +750,9 @@ describe("context replacement", () => {
 		const sessionFile = path.join(dir, "s_cosine.jsonl");
 		fs.writeFileSync(sessionFile, [
 			JSON.stringify({ type: "session", version: 3, id: "s_cosine", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-			JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "GC bias detail path test" }] } }),
-			JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "sample selection ok" }] } }),
-			JSON.stringify({ type: "message", id: "u3", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "figure y axis label wrong" }] } }),
+			JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "GC bias detail path test" }] } }),
+			JSON.stringify({ type: "message", id: "u2", parentId: "u1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "sample selection ok" }] } }),
+			JSON.stringify({ type: "message", id: "u3", parentId: "u2", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "figure y axis label wrong" }] } }),
 		].join("\n"));
 		await rebuildSessionContextFromFile({ sessionId: "s_cosine", sessionFile });
 		const graph = getSessionContextGraph("s_cosine", 200);

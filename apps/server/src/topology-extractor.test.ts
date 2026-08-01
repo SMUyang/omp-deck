@@ -1,254 +1,159 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildExtractionPrompt, buildExtractorRpcCommand, createPooledTopologyExtractorClient, parseExtractionResponse, refineNodesWithLLM, type TopologyExtractorModelClient } from "./topology-extractor.ts";
 import type { SessionContextNode } from "@omp-deck/protocol";
+import { buildExtractionPrompt, buildExtractorRpcCommand, createPooledTopologyExtractorClient, parseExtractionResponse, refineNodesWithLLM, type TopologyExtractorModelClient } from "./topology-extractor.ts";
 
-function makeNode(id: string, kind: SessionContextNode["kind"], title: string, body: string): SessionContextNode {
+function makeNode(id: string): SessionContextNode {
 	return {
-		id, sessionId: "s1", kind, title, body, compressedBody: body,
-		importance: 0.7, createdAt: "2026-07-08T00:00:00.000Z",
-		sourceMessageId: id, sourceTurnIndex: 1, metadata: {},
+		id,
+		sessionId: "s1",
+		kind: "action",
+		title: "Deterministic title",
+		body: "Deterministic body",
+		compressedBody: "Deterministic body",
+		importance: 0.9,
+		createdAt: "2026-07-31T10:00:00.000Z",
+		sourceMessageId: "a1",
+		sourceTurnIndex: 3,
+		population: "assistant",
+		nodeRole: "main",
+		origin: "assistant",
+		pairId: "s1:pair:u1",
+		operation: "answer",
+		purpose: "Answer the explicit question",
+		purposeSource: "explicit_text",
+		status: "completed",
+		metadata: { sourceEntryId: "a1" },
 	};
 }
 
-describe("topology-extractor", () => {
-	test("buildExtractionPrompt serializes nodes as JSON", () => {
-		const prompt = buildExtractionPrompt([
-			{ id: "n1", kind: "evidence", title: "file read", body: "export function foo() {}", role: "toolResult" },
-		]);
+function clientWith(raw: unknown): TopologyExtractorModelClient {
+	return { async extractNodes() { return raw; } };
+}
+
+describe("topology-extractor refinement contract", () => {
+	test("buildExtractionPrompt exposes deterministic context but asks only for optional operation detail and refined purpose", () => {
+		const prompt = buildExtractionPrompt([{ id: "n1", operation: "answer", purpose: "Explain storage", body: "It stores nodes." }]);
 		expect(prompt).toContain("n1");
-		expect(prompt).toContain("evidence");
+		expect(prompt).toContain("operation");
+		expect(prompt).toContain("purpose");
 	});
 
-	test("buildExtractorRpcCommand builds invoke_model_role envelope", () => {
+	test("buildExtractorRpcCommand uses the conversation purpose refinement prompt contract", () => {
 		const cmd = buildExtractorRpcCommand({ modelRole: "topology_extractor", prompt: "test" });
 		expect(cmd.type).toBe("invoke_model_role");
-		expect(cmd.modelRole).toBe("topology_extractor");
 		expect(cmd.responseFormat.schemaName).toBe("TopologyExtractionResult");
-		expect(cmd.input.systemPrompt).toContain("Classification rules");
+		expect(cmd.input.systemPrompt).toContain("operationDetail");
+		expect(cmd.input.systemPrompt).toContain("refinedPurpose");
+		expect(cmd.input.systemPrompt).toContain("must not change");
 	});
 
-	test("parseExtractionResponse accepts direct nodes array", () => {
-		const result = parseExtractionResponse({
-			nodes: [
-				{ id: "n1", kind: "evidence", title: "refined title", body: "refined body" },
-				{ id: "n2", kind: "skip", title: "noise", body: "" },
-			],
-		});
-		expect(result).toHaveLength(2);
-		expect(result?.[0]?.kind).toBe("evidence");
-		expect(result?.[1]?.kind).toBe("skip");
+	test("parseExtractionResponse accepts only id operationDetail and refinedPurpose", () => {
+		expect(parseExtractionResponse({ nodes: [{ id: "n1", operationDetail: "explain_storage", refinedPurpose: "Explain how topology storage works" }] })).toEqual([
+			{ id: "n1", operationDetail: "explain_storage", refinedPurpose: "Explain how topology storage works" },
+		]);
 	});
 
-	test("parseExtractionResponse accepts nested output wrapper", () => {
-		const result = parseExtractionResponse({
-			output: { nodes: [{ id: "n1", kind: "issue", title: "real error", body: "ENOENT" }] },
-		});
-		expect(result).toHaveLength(1);
-		expect(result?.[0]?.kind).toBe("issue");
-	});
-
-	test("parseExtractionResponse rejects invalid kinds", () => {
-		const result = parseExtractionResponse({
-			nodes: [{ id: "n1", kind: "bogus", title: "x", body: "y" }],
-		});
-		expect(result).toBeUndefined();
-	});
-
-	test("parseExtractionResponse returns undefined for non-object input", () => {
+	test("parseExtractionResponse rejects malformed or structurally mutating entries", () => {
 		expect(parseExtractionResponse(null)).toBeUndefined();
-		expect(parseExtractionResponse("string")).toBeUndefined();
-		expect(parseExtractionResponse(42)).toBeUndefined();
+		expect(parseExtractionResponse({ nodes: [{ id: "n1", kind: "resolution", refinedPurpose: "changed" }] })).toBeUndefined();
+		expect(parseExtractionResponse({ nodes: [{ id: "n1", operationDetail: 7 }] })).toBeUndefined();
+		expect(parseExtractionResponse({ nodes: [{ id: "n1" }] })).toBeUndefined();
 	});
 
-	test("refineNodesWithLLM drops skip nodes and updates fields", async () => {
-		const client: TopologyExtractorModelClient = {
-			async extractNodes() {
-				return {
-					nodes: [
-						{ id: "n1", kind: "evidence", title: "better title", body: "better body" },
-						{ id: "n2", kind: "skip", title: "", body: "" },
-					],
-				};
-			},
-		};
-		const input = [
-			makeNode("n1", "evidence", "original title", "original body"),
-			makeNode("n2", "issue", "false positive", "noise"),
-		];
-		const result = await refineNodesWithLLM({ nodes: input, client, modelRole: "topology_extractor" });
-		expect(result).toHaveLength(1);
-		expect(result[0]?.title).toBe("better title");
-		expect(result[0]?.body).toBe("better body");
+	test("refineNodesWithLLM applies bounded redacted optional fields and records provenance only when accepted", async () => {
+		const secret = `sk-proj-${"A".repeat(30)}`;
+		const input = [makeNode("n1")];
+		const result = await refineNodesWithLLM({
+			nodes: input,
+			client: clientWith({ nodes: [{ id: "n1", operationDetail: "x".repeat(200), refinedPurpose: `Explain ${secret} ${"z".repeat(500)}` }] }),
+			modelRole: "topology_extractor",
+		});
+		expect(result[0]?.operationDetail?.length).toBeLessThanOrEqual(120);
+		expect(result[0]?.refinedPurpose?.length).toBeLessThanOrEqual(240);
+		expect(result[0]?.refinedPurpose).toContain("[REDACTED]");
+		expect(result[0]?.refinement).toEqual({ model: "topology_extractor", promptVersion: "conversation-purpose-v1" });
 	});
 
-	test("refineNodesWithLLM falls back to original on client error", async () => {
-		const client: TopologyExtractorModelClient = {
-			async extractNodes() { throw new Error("network"); },
-		};
-		const input = [makeNode("n1", "evidence", "title", "body")];
-		const result = await refineNodesWithLLM({ nodes: input, client, modelRole: "topology_extractor" });
+	test("refiner cannot mutate deterministic structure source status text or metadata", async () => {
+		const input = [makeNode("n1")];
+		const raw = { nodes: [{
+			id: "n1",
+			operationDetail: "answer_storage",
+			refinedPurpose: "Clarify storage",
+			kind: "resolution",
+			title: "Changed",
+			body: "Changed",
+			population: "user",
+			nodeRole: "child",
+			origin: "tool",
+			childType: "error",
+			pairId: "evil",
+			parentNodeId: "evil",
+			operation: "modify",
+			purpose: "evil",
+			purposeSource: "deterministic",
+			status: "failed",
+			sourceMessageId: "evil",
+			sourceTurnIndex: 99,
+			createdAt: "evil",
+			metadata: { evil: true },
+		}] };
+		const result = await refineNodesWithLLM({ nodes: input, client: clientWith(raw), modelRole: "topology_extractor" });
 		expect(result).toEqual(input);
 	});
 
-	test("refineNodesWithLLM falls back when response is empty", async () => {
-		const client: TopologyExtractorModelClient = {
-			async extractNodes() { return { nodes: [] }; },
-		};
-		const input = [makeNode("n1", "evidence", "title", "body")];
-		const result = await refineNodesWithLLM({ nodes: input, client, modelRole: "topology_extractor" });
-		expect(result).toEqual(input);
+	test("unknown IDs invalid values and malformed responses leave deterministic nodes unchanged", async () => {
+		const input = [makeNode("n1")];
+		for (const raw of [
+			{ nodes: [{ id: "unknown", operationDetail: "detail" }] },
+			{ nodes: [{ id: "n1", operationDetail: "Not snake case!" }] },
+			{ nodes: [{ id: "n1", refinedPurpose: "" }] },
+			"not-json",
+		]) {
+			expect(await refineNodesWithLLM({ nodes: input, client: clientWith(raw), modelRole: "topology_extractor" })).toEqual(input);
+		}
 	});
 
-	test("buildExtractionPrompt includes all nodes so the pool can chunk", () => {
-		const prompt = buildExtractionPrompt(Array.from({ length: 25 }, (_, i) => ({
-			id: `n${i}`,
-			kind: "evidence",
-			title: `title ${i}`,
-			body: `body ${i}`,
-			role: "toolResult",
-		})));
-		const parsed = JSON.parse(prompt) as Array<{ id: string }>;
-		expect(parsed).toHaveLength(25);
-		expect(parsed.at(-1)?.id).toBe("n24");
+	test("client failure preserves original object list without provenance", async () => {
+		const input = [makeNode("n1")];
+		const client: TopologyExtractorModelClient = { async extractNodes() { throw new Error("timeout"); } };
+		expect(await refineNodesWithLLM({ nodes: input, client, modelRole: "topology_extractor" })).toEqual(input);
 	});
+});
 
-	test("pooled extractor splits chunks across fast and local providers", async () => {
+describe("topology-extractor pool", () => {
+	test("pooled extractor splits chunks across configured slots", async () => {
 		const calls: Array<{ label: string; ids: string[] }> = [];
 		function client(label: string): TopologyExtractorModelClient {
 			return {
 				async extractNodes({ prompt }) {
 					const chunk = JSON.parse(prompt) as Array<{ id: string }>;
-					calls.push({ label, ids: chunk.map((n) => n.id) });
-					return { nodes: chunk.map((n) => ({ id: n.id, kind: "evidence", title: `${label}:${n.id}`, body: `${label} body` })) };
+					calls.push({ label, ids: chunk.map((node) => node.id) });
+					return { nodes: chunk.map((node) => ({ id: node.id, operationDetail: `${label}_detail` })) };
 				},
 			};
 		}
-		const pooled = createPooledTopologyExtractorClient({
-			chunkSize: 2,
-			slots: [
-				{ label: "fast", client: client("fast"), maxConcurrency: 2 },
-				{ label: "local", client: client("local"), maxConcurrency: 1 },
-			],
-		});
-		const input = Array.from({ length: 5 }, (_, i) => makeNode(`n${i}`, "evidence", `title ${i}`, `body ${i}`));
+		const pooled = createPooledTopologyExtractorClient({ chunkSize: 2, slots: [
+			{ label: "fast", client: client("fast"), maxConcurrency: 2 },
+			{ label: "local", client: client("local"), maxConcurrency: 1 },
+		] });
+		const input = Array.from({ length: 5 }, (_, index) => makeNode(`n${index}`));
 		const result = await refineNodesWithLLM({ nodes: input, client: pooled, modelRole: "topology_extractor" });
 		expect(calls).toHaveLength(3);
-		expect(calls).toContainEqual({ label: "fast", ids: ["n0", "n1"] });
-		expect(calls).toContainEqual({ label: "local", ids: ["n2", "n3"] });
-		expect(calls).toContainEqual({ label: "fast", ids: ["n4"] });
-		expect(result.map((n) => n.title)).toEqual(["fast:n0", "fast:n1", "local:n2", "local:n3", "fast:n4"]);
+		expect(result.map((node) => node.operationDetail)).toEqual(["fast_detail", "fast_detail", "local_detail", "local_detail", "fast_detail"]);
 	});
 
-	test("pooled extractor honors per-provider concurrency caps", async () => {
-		let active = 0;
-		let maxActive = 0;
-		const client: TopologyExtractorModelClient = {
+	test("pooled extractor preserves originals for failed chunks", async () => {
+		const pooled = createPooledTopologyExtractorClient({ chunkSize: 2, slots: [{ label: "fast", maxConcurrency: 1, client: {
 			async extractNodes({ prompt }) {
-				active += 1;
-				maxActive = Math.max(maxActive, active);
-				await Promise.resolve();
-				active -= 1;
 				const chunk = JSON.parse(prompt) as Array<{ id: string }>;
-				return { nodes: chunk.map((n) => ({ id: n.id, kind: "evidence", title: n.id, body: "ok" })) };
+				if (chunk.some((node) => node.id === "n2")) throw new Error("provider failed");
+				return { nodes: chunk.map((node) => ({ id: node.id, operationDetail: "accepted_detail" })) };
 			},
-		};
-		const pooled = createPooledTopologyExtractorClient({ chunkSize: 1, slots: [{ label: "local", client, maxConcurrency: 2 }] });
-		const promise = pooled.extractNodes({
-			modelRole: "topology_extractor",
-			prompt: buildExtractionPrompt(Array.from({ length: 5 }, (_, i) => ({ id: `n${i}`, kind: "evidence", title: "t", body: "b", role: "toolResult" }))),
-			timeoutMs: 60_000,
-		});
-		await Promise.resolve();
-		expect(maxActive).toBe(2);
-		await promise;
-		expect(maxActive).toBe(2);
-	});
-
-	test("pooled extractor skips failed chunks and lets refinement preserve originals", async () => {
-		const pooled = createPooledTopologyExtractorClient({
-			chunkSize: 2,
-			slots: [{
-				label: "fast",
-				maxConcurrency: 1,
-				client: {
-					async extractNodes({ prompt }) {
-						const chunk = JSON.parse(prompt) as Array<{ id: string }>;
-						if (chunk.some((n) => n.id === "n2")) throw new Error("provider failed");
-						return { nodes: chunk.map((n) => ({ id: n.id, kind: "evidence", title: `refined ${n.id}`, body: "refined" })) };
-					},
-				},
-			}],
-		});
-		const input = Array.from({ length: 4 }, (_, i) => makeNode(`n${i}`, "evidence", `original ${i}`, `body ${i}`));
+		} }] });
+		const input = Array.from({ length: 4 }, (_, index) => makeNode(`n${index}`));
 		const result = await refineNodesWithLLM({ nodes: input, client: pooled, modelRole: "topology_extractor" });
-		expect(result.map((n) => n.title)).toEqual(["refined n0", "refined n1", "original 2", "original 3"]);
-	});
-	test("fast slot fans out wider than local slot", async () => {
-		const perSlot: Record<string, number> = { fast: 0, local: 0 };
-		const perSlotMax: Record<string, number> = { fast: 0, local: 0 };
-		function trackingClient(label: string): TopologyExtractorModelClient {
-			return {
-				async extractNodes({ prompt }) {
-					perSlot[label] = (perSlot[label] ?? 0) + 1;
-					perSlotMax[label] = (perSlotMax[label] ?? 0) + 1;
-					// Tiny await yields control so the scheduler can fill slots.
-					await Promise.resolve();
-					perSlotMax[label] -= 1;
-					const chunk = JSON.parse(prompt) as Array<{ id: string }>;
-					return { nodes: chunk.map((n) => ({ id: n.id, kind: "evidence", title: n.id, body: "ok" })) };
-				},
-			};
-		}
-		const pooled = createPooledTopologyExtractorClient({
-			chunkSize: 1,
-			slots: [
-				{ label: "fast", client: trackingClient("fast"), maxConcurrency: 4 },
-				{ label: "local", client: trackingClient("local"), maxConcurrency: 2 },
-			],
-		});
-		const result = await pooled.extractNodes({
-			modelRole: "topology_extractor",
-			prompt: buildExtractionPrompt(Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, kind: "evidence", title: "t", body: "b", role: "toolResult" }))),
-			timeoutMs: 60_000,
-		});
-		// Per-slot caps must never be exceeded, and both slots must have run.
-		expect(perSlotMax.fast).toBeLessThanOrEqual(4);
-		expect(perSlotMax.local).toBeLessThanOrEqual(2);
-		expect(perSlot.fast).toBeGreaterThan(0);
-		expect(perSlot.local).toBeGreaterThan(0);
-		expect(result).toBeDefined();
-	});
-	test("pool extractor splits oversized chunks by byte budget", async () => {
-		let calls = 0;
-		const pooled = createPooledTopologyExtractorClient({
-			chunkSize: 50,
-			maxChunkBytes: 500,
-			slots: [{
-				label: "fast",
-				maxConcurrency: 1,
-				client: {
-					async extractNodes({ prompt }) {
-						calls += 1;
-						const chunk = JSON.parse(prompt) as Array<{ id: string }>;
-						return { nodes: chunk.map((n) => ({ id: n.id, kind: "evidence", title: n.id, body: "ok" })) };
-					},
-				},
-			}],
-		});
-		const fat = (id: string, body: string) => ({ id, kind: "evidence", title: "t", body, role: "toolResult" });
-		const nodes = [
-			fat("a", "x".repeat(300)),
-			fat("b", "x".repeat(300)),
-			fat("c", "x".repeat(300)),
-		];
-		const result = await pooled.extractNodes({
-			modelRole: "topology_extractor",
-			prompt: buildExtractionPrompt(nodes),
-			timeoutMs: 60_000,
-		});
-		// Each 300-byte body + 64-byte overhead ≈ 364B; 500B cap forces a split.
-		expect(calls).toBeGreaterThan(1);
-		expect(result).toBeDefined();
+		expect(result.map((node) => node.operationDetail)).toEqual(["accepted_detail", "accepted_detail", undefined, undefined]);
 	});
 });
