@@ -1,16 +1,12 @@
 import { createHash } from "node:crypto";
 import type { ContextReplacementStatus, ContextUsage } from "@omp-deck/protocol";
-// 'awaiting_usage' is deck-internal: focus was sent to the LLM but the post-
-// replace usage drop never arrived within RPC_USAGE_UPDATE_TIMEOUT_MS. The
-// bridge / a poll loop can still backfill `after` via completePendingFromUsage.
-type AwaitingUsageStatus = "awaiting_usage";
 import { ContextEvidenceTracker } from "./context-evidence-tracker.ts";
 import { logger } from "./log.ts";
 const log = logger("context-savings");
 
 export interface ReplacementRecord {
 	sessionId: string;
-	status: ContextReplacementStatus | AwaitingUsageStatus;
+	status: ContextReplacementStatus;
 	before: { tokens: number; percent: number };
 	focus?: string;
 	after?: { tokens: number; percent: number };
@@ -187,7 +183,7 @@ export class ContextSavingsTracker {
 	markAwaitingUsage(sessionId: string, pending: PendingRpc): void {
 		if (this.#pendingRpc.get(sessionId) !== pending) return;
 		if (pending.evidenceEventId && this.evidence) {
-			this.evidence.updateStatus(pending.evidenceEventId, "awaiting_usage" as AwaitingUsageStatus, {
+			this.evidence.updateStatus(pending.evidenceEventId, "awaiting_usage", {
 				errorMessage: `awaiting post-replace usage update (>${RPC_USAGE_UPDATE_TIMEOUT_MS}ms)`,
 			});
 		}
@@ -235,7 +231,7 @@ export class ContextSavingsTracker {
 		if (pending.evidenceEventId) {
 			const idx = this.#records.findIndex((r) => r.evidenceEventId === pending.evidenceEventId);
 			const rec = idx >= 0 ? this.#records[idx] : undefined;
-			if (rec) rec.status = "awaiting_usage" as AwaitingUsageStatus;
+			if (rec) rec.status = "awaiting_usage";
 		}
 	}
 

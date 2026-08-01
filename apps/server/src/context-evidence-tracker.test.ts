@@ -515,7 +515,7 @@ describe("ContextEvidenceTracker", () => {
 			expect(stats.total).toBe(2);
 		});
 
-		test("completed counts only provider_payload_observed events", () => {
+		test("completed counts both terminal success statuses", () => {
 			const tracker = new ContextEvidenceTracker();
 			tracker.recordReplacement({
 				sessionId: "st2", status: "constructed", mechanism: "context_hook",
@@ -527,7 +527,7 @@ describe("ContextEvidenceTracker", () => {
 				focusHash: "h-d", focusPreview: "D", focusEstimatedTokens: 1,
 			});
 			tracker.recordReplacement({
-				sessionId: "st2", status: "provider_payload_observed", mechanism: "context_hook",
+				sessionId: "st2", status: "usage_drop_observed", mechanism: "context_hook",
 				beforeTokens: 5000, afterTokens: 3000,
 				focusHash: "h-e", focusPreview: "E", focusEstimatedTokens: 1,
 			});
@@ -535,6 +535,7 @@ describe("ContextEvidenceTracker", () => {
 			const stats = tracker.getStats();
 			expect(stats.total).toBe(3);
 			expect(stats.completed).toBe(2);
+			expect(stats.bySession[0]?.completed).toBe(2);
 		});
 
 		test("totalSaved sums only non-null savedTokens", () => {

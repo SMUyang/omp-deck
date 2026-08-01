@@ -2,9 +2,9 @@
 // Windows so the eval-py kernel doesn't pop a console window. See the file's
 // own docblock for the full rationale and shape.
 import "./silence-python.ts";
-import { loadManagedEnvIntoProcess } from "./env-store.ts";
-
-loadManagedEnvIntoProcess();
+// MUST precede any import that can reach session-context.ts: managed env must
+// load before its import-time compact threshold constant is evaluated.
+import "./bootstrap-env.ts";
 
 import type { Server, ServerWebSocket } from "bun";
 import * as path from "node:path";

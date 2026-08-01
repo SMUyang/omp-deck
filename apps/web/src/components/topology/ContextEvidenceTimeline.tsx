@@ -39,6 +39,7 @@ export const STATUS_ORDER: ContextReplacementStatus[] = [
 	"handler_returned",
 	"compact_requested",
 	"compact_completed",
+	"awaiting_usage",
 	"usage_drop_observed",
 	"provider_payload_observed",
 	"failed",
@@ -60,6 +61,7 @@ export function getStatusColor(status: ContextReplacementStatus): { bg: string; 
 			return { bg: "bg-danger/10 border-danger/30", text: "text-danger" };
 		case "compact_completed":
 			return { bg: "bg-accent/10 border-accent/30", text: "text-accent" };
+		case "awaiting_usage":
 		case "usage_drop_observed":
 			return { bg: "bg-thinking/10 border-thinking/30", text: "text-thinking" };
 		case "compact_requested":
@@ -129,6 +131,8 @@ function getStatusIcon(status: ContextReplacementStatus): ReactNode {
 		case "compact_requested":
 		case "compact_completed":
 			return <ArrowRightLeft className="h-3 w-3" />;
+		case "awaiting_usage":
+			return <Clock className="h-3 w-3" />;
 		case "usage_drop_observed":
 			return <Zap className="h-3 w-3" />;
 		case "handler_returned":

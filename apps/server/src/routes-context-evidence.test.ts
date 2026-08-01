@@ -123,7 +123,7 @@ class StubContextEvidenceTracker {
 
 	getStats(): ContextEvidenceStats {
 		const all = [...this.#events.values()];
-		const completed = all.filter((e) => e.status === "provider_payload_observed").length;
+		const completed = all.filter((e) => e.status === "provider_payload_observed" || e.status === "usage_drop_observed").length;
 		const totalSaved = all.reduce((sum, e) => sum + (e.savedTokens ?? 0), 0);
 		return {
 			total: all.length,
@@ -696,17 +696,17 @@ describe("GET /stats/context-evidence", () => {
 			beforeTokens: 10000, afterTokens: 7000,
 		});
 		tracker.recordReplacement({
-			sessionId: "s1", status: "constructed", mechanism: "auto_compact",
+			sessionId: "s1", status: "usage_drop_observed", mechanism: "auto_compact",
 			focusHash: "h2", focusPreview: "e2",
-			beforeTokens: 5000, afterTokens: 5000,
+			beforeTokens: 5000, afterTokens: 4000,
 		});
 
 		const res = await app.request("/stats/context-evidence");
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as ContextEvidenceStats;
 		expect(body.total).toBe(2);
-		expect(body.completed).toBe(1); // only provider_payload_observed
-		expect(body.totalSaved).toBe(3000); // 3000 + 0
+		expect(body.completed).toBe(2);
+		expect(body.totalSaved).toBe(4000);
 		expect(body.recent).toHaveLength(2);
 	});
 

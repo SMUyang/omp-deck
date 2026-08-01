@@ -51,7 +51,7 @@ function ensureTable(dbPath: string): void {
 			session_id          TEXT NOT NULL,
 			status              TEXT NOT NULL CHECK (status IN (
 				'constructed', 'handler_returned', 'compact_requested',
-				'compact_completed', 'usage_drop_observed',
+				'compact_completed', 'awaiting_usage', 'usage_drop_observed',
 				'provider_payload_observed', 'failed', 'timed_out'
 			)),
 			mechanism           TEXT NOT NULL CHECK (mechanism IN ('context_hook', 'auto_compact')),
@@ -71,8 +71,8 @@ function ensureTable(dbPath: string): void {
 			updated_at           TEXT NOT NULL
 		);
 	`);
-	// Suppress migration tracking so the real migration 008 isn't skipped later.
-	db.exec(`DELETE FROM schema_migrations WHERE name = '008-context-evidence.sql'`);
+	// Keep the manual compatibility table eligible for both context-evidence migrations.
+	db.exec(`DELETE FROM schema_migrations WHERE name IN ('008-context-evidence.sql', '009-context-evidence-awaiting-usage.sql')`);
 }
 
 function insertEvent(dbPath: string, overrides: Partial<{
@@ -143,8 +143,8 @@ describe("GET /stats/context-savings", () => {
 		const dbPath = openTempDeckDb();
 		ensureTable(dbPath);
 
-		// Insert 3 events with staggered timestamps: 2 completed, 1 in-progress.
-		insertEvent(dbPath, { sessionId: "s1", status: "provider_payload_observed", savedTokens: 1000 }, 0);
+		// Both terminal success statuses count as completed; in-progress does not.
+		insertEvent(dbPath, { sessionId: "s1", status: "usage_drop_observed", savedTokens: 1000 }, 0);
 		insertEvent(dbPath, { sessionId: "s2", status: "provider_payload_observed", savedTokens: 2000 }, 1);
 		insertEvent(dbPath, { sessionId: "s1", status: "compact_completed", savedTokens: null }, 2);
 

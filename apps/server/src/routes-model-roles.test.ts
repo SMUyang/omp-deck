@@ -94,6 +94,35 @@ describe("model roles routes", () => {
 		});
 	});
 
+	describe("POST /settings/model-roles/auto-configure", () => {
+		test("preserves an already-prefixed model ID through the route recommendation", async () => {
+			const model: ModelInfo = {
+				provider: "zai",
+				id: "zai/glm-5.2",
+				label: "GLM 5.2",
+				isAvailable: true,
+			};
+			const app = new Hono();
+			app.route("/", buildModelRolesRouter({
+				ompSettings: createFakeOmpSettings({ default: "existing/model" }, [model]),
+				listModels: async () => [model],
+			}));
+
+			const res = await app.request("/settings/model-roles/auto-configure", { method: "POST" });
+			const body = (await res.json()) as {
+				recommended: Record<string, string>;
+				matched: Array<{ selector: string }>;
+				existing: Record<string, string>;
+			};
+
+			expect(res.status).toBe(200);
+			expect(Object.values(body.recommended)).toContain("zai/glm-5.2");
+			expect(Object.values(body.recommended)).not.toContain("zai/zai/glm-5.2");
+			expect(body.matched.map((entry) => entry.selector)).toContain("zai/glm-5.2");
+			expect(body.existing).toEqual({ default: "existing/model" });
+		});
+	});
+
 	describe("backend capability gate", () => {
 		test("returns 501 when the active bridge cannot edit OMP model roles", async () => {
 			const app = new Hono();

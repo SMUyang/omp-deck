@@ -46,12 +46,13 @@ function makeEvent(overrides: Partial<ContextReplacementEvent> = {}): ContextRep
 describe("getStatusLabel", () => {
 	const t = (k: string) => k;
 
-	test("returns distinct label for each of the eight lifecycle statuses", () => {
+	test("returns distinct label for each lifecycle status", () => {
 		const statuses: ContextReplacementStatus[] = [
 			"constructed",
 			"handler_returned",
 			"compact_requested",
 			"compact_completed",
+			"awaiting_usage",
 			"usage_drop_observed",
 			"provider_payload_observed",
 			"failed",
@@ -59,7 +60,7 @@ describe("getStatusLabel", () => {
 		];
 		const labels = statuses.map((s) => getStatusLabel(s, t));
 		// Every label is distinct
-		expect(new Set(labels).size).toBe(8);
+		expect(new Set(labels).size).toBe(9);
 		// Every label is non-empty
 		for (const l of labels) expect(l.length).toBeGreaterThan(0);
 	});
@@ -104,10 +105,14 @@ describe("getStatusColor", () => {
 		expect(color.bg).toContain("thinking");
 	});
 
+	test("awaiting_usage maps to thinking color while waiting for late usage", () => {
+		expect(getStatusColor("awaiting_usage").bg).toContain("thinking");
+	});
+
 	test("every status has both bg and text colors defined", () => {
 		const statuses: ContextReplacementStatus[] = [
 			"constructed", "handler_returned", "compact_requested",
-			"compact_completed", "usage_drop_observed",
+			"compact_completed", "awaiting_usage", "usage_drop_observed",
 			"provider_payload_observed", "failed", "timed_out",
 		];
 		for (const s of statuses) {
@@ -206,6 +211,7 @@ describe("isProviderConfirmed", () => {
 
 	test("usage_drop_observed → false (observed but not provider-confirmed)", () => {
 		expect(isProviderConfirmed(makeEvent({ status: "usage_drop_observed" }))).toBe(false);
+		expect(isProviderConfirmed(makeEvent({ status: "awaiting_usage" }))).toBe(false);
 	});
 
 	test("constructed, handler_returned, compact_requested → false", () => {
@@ -223,10 +229,10 @@ describe("isProviderConfirmed", () => {
 // ── STATUS_ORDER ─────────────────────────────────────────────────────────────
 
 describe("STATUS_ORDER", () => {
-	test("contains all eight statuses", () => {
-		expect(STATUS_ORDER.length).toBe(8);
+	test("contains all nine statuses", () => {
+		expect(STATUS_ORDER.length).toBe(9);
 		const set = new Set(STATUS_ORDER);
-		expect(set.size).toBe(8);
+		expect(set.size).toBe(9);
 	});
 
 	test("terminal states (failed, timed_out, provider_payload_observed) come after building states", () => {

@@ -239,7 +239,7 @@ export class ContextEvidenceTracker {
 
 		const completed = (
 			db.query<{ n: number }, []>(
-				"SELECT COUNT(*) as n FROM context_replacement_events WHERE status = 'provider_payload_observed'",
+				"SELECT COUNT(*) as n FROM context_replacement_events WHERE status IN ('provider_payload_observed', 'usage_drop_observed')",
 			).get() ?? { n: 0 }
 		).n;
 
@@ -263,7 +263,7 @@ export class ContextEvidenceTracker {
 			.query<ContextEvidenceSessionAggregate, []>(
 				`SELECT session_id AS "sessionId",
 				        COUNT(*) AS count,
-				        COALESCE(SUM(CASE WHEN status = 'provider_payload_observed' THEN 1 ELSE 0 END), 0) AS completed,
+				        COALESCE(SUM(CASE WHEN status IN ('provider_payload_observed', 'usage_drop_observed') THEN 1 ELSE 0 END), 0) AS completed,
 				        COALESCE(SUM(saved_tokens), 0) AS "savedTokens",
 				        MAX(created_at) AS "lastAt"
 				 FROM context_replacement_events

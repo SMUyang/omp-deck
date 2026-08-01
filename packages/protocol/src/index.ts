@@ -2219,14 +2219,15 @@ export interface SessionContextGraphResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Lifecycle status of a single context replacement event. Every event
- *  transitions through a linear chain; a status is NEVER back-propagated
- *  (e.g. `compact_completed` is never promoted to `provider_payload_observed`
- *  without the provider actually reporting the post-replacement usage). */
+ *  transitions through a linear chain. `awaiting_usage` means compaction was
+ *  sent but the post-replacement usage snapshot has not arrived yet; a later
+ *  usage update can advance it to `usage_drop_observed`. */
 export type ContextReplacementStatus =
 	| "constructed"
 	| "handler_returned"
 	| "compact_requested"
 	| "compact_completed"
+	| "awaiting_usage"
 	| "usage_drop_observed"
 	| "provider_payload_observed"
 	| "failed"
@@ -2293,6 +2294,7 @@ export interface ContextReplacementEvent {
 export interface ContextEvidenceSessionAggregate {
 	sessionId: string;
 	count: number;
+	/** Count of terminal successful replacements (`provider_payload_observed` or `usage_drop_observed`). */
 	completed: number;
 	savedTokens: number;
 	lastAt: string | null;
@@ -2308,7 +2310,7 @@ export interface ContextEvidenceMechanismAggregate {
 /** Aggregate statistics for the context-evidence timeline. */
 export interface ContextEvidenceStats {
 	total: number;
-	/** Count where `status = "provider_payload_observed"`. */
+	/** Count where status is `provider_payload_observed` or `usage_drop_observed`. */
 	completed: number;
 	/** Sum of `savedTokens` across all events (null-safe: COALESCE to 0). */
 	totalSaved: number;
