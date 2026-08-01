@@ -208,6 +208,7 @@ describe("normalizeSessionJsonl roles and message envelopes", () => {
 				arguments: { path: "a.ts" },
 				intent: "inspect source",
 				sourceEntryId: "assistant-tools",
+				sourceLine: 1,
 				lifecycleMetadata: {},
 			},
 			{
@@ -215,6 +216,7 @@ describe("normalizeSessionJsonl roles and message envelopes", () => {
 				name: "bash",
 				arguments: { command: "bun test" },
 				sourceEntryId: "assistant-tools",
+				sourceLine: 1,
 				lifecycleMetadata: {},
 			},
 		]);
@@ -303,6 +305,7 @@ describe("normalizeSessionJsonl tool lifecycle", () => {
 			isError: false,
 			prunedAt: t2,
 			sourceEntryId: "result-entry",
+			sourceLine: 1,
 			lifecycleEndedAt: t1,
 			metadata: { messageRole: "toolResult", lifecycle: { durationMs: 900, transport: "local" } },
 		});
@@ -326,7 +329,7 @@ describe("normalizeSessionJsonl tool lifecycle", () => {
 			role: "tool",
 			toolResult: {
 				toolCallId: "legacy-call", toolName: "grep", text: "match", details: { count: 1 }, isError: true,
-				sourceEntryId: "legacy-tool", metadata: { messageRole: "tool", legacyRole: true, orphan: true },
+				sourceEntryId: "legacy-tool", sourceLine: 1, metadata: { messageRole: "tool", legacyRole: true, orphan: true },
 			},
 		});
 		expect(second.activeEvents[0]!.toolResult).toEqual(first.activeEvents[0]!.toolResult);

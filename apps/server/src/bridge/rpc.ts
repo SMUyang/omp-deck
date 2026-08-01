@@ -156,6 +156,47 @@ export function shouldSkipRpcAutoCompact(inFlightUntil: number, now = Date.now()
 	return inFlightUntil > now;
 }
 
+function sanitizeRpcCompactionResult(value: unknown): { summary?: string; shortSummary?: string } | undefined {
+	if (!isRecord(value)) return undefined;
+	const summary = typeof value.summary === "string" ? value.summary : undefined;
+	const shortSummary = typeof value.shortSummary === "string" ? value.shortSummary : undefined;
+	if (summary === undefined && shortSummary === undefined) return undefined;
+	return { ...(summary === undefined ? {} : { summary }), ...(shortSummary === undefined ? {} : { shortSummary }) };
+}
+
+export async function runRpcAutoCompactWithLifecycle(input: {
+	send: () => Promise<unknown>;
+	emit: (event: AgentSessionEventJson) => void;
+	releaseGuard?: () => void;
+	refresh: () => Promise<unknown>;
+}): Promise<void> {
+	input.emit({ type: "auto_compaction_start", reason: "threshold", action: "context-full" } as AgentSessionEventJson);
+	try {
+		const response = await input.send();
+		input.emit({
+			type: "auto_compaction_end",
+			action: "context-full",
+			result: sanitizeRpcCompactionResult(response),
+			aborted: false,
+			willRetry: false,
+		} as AgentSessionEventJson);
+		const refreshed = await input.refresh();
+		if (refreshed === false) throw new Error("post-compact state refresh failed");
+		input.releaseGuard?.();
+	} catch (error) {
+		const errorMessage = String(error instanceof Error ? error.message : error).slice(0, 240);
+		input.emit({
+			type: "auto_compaction_end",
+			action: "context-full",
+			result: undefined,
+			aborted: false,
+			willRetry: false,
+			errorMessage,
+		} as AgentSessionEventJson);
+		throw error;
+	}
+}
+
 // ─── Conversion ───────────────────────────────────────────────────────
 
 function rpcModelToInfo(model: RpcModel, current?: ModelRef): ModelInfo {
@@ -505,8 +546,12 @@ class RpcSessionHandle implements SessionHandle {
 		this.#emit(event as unknown as AgentSessionEventJson);
 
 		if (type === "turn_end" || type === "agent_end" || type === "compaction_complete") {
-			if (type === "compaction_complete") this.#autoCompactInFlightUntil = 0;
-			void this.#refreshStateFromRpc();
+			const refresh = this.#refreshStateFromRpc();
+			if (type === "compaction_complete") {
+				void refresh.then((refreshed) => {
+					if (refreshed) this.#autoCompactInFlightUntil = 0;
+				});
+			}
 			if (type === "turn_end" || type === "agent_end") {
 				this.#autoRebuild.maybeTrigger();
 			}
@@ -524,7 +569,7 @@ class RpcSessionHandle implements SessionHandle {
 		}
 	}
 
-	async #refreshStateFromRpc(): Promise<void> {
+	async #refreshStateFromRpc(): Promise<boolean> {
 		try {
 			const rawState = await this.#transport.send<unknown>({ type: "get_state" });
 			const previous = this.#state;
@@ -542,8 +587,10 @@ class RpcSessionHandle implements SessionHandle {
 				this.#maybeRecordRpcSavings(state.contextUsage);
 				this.#emit({ type: "context_usage", contextUsage: state.contextUsage } as unknown as AgentSessionEventJson);
 			}
+			return true;
 		} catch (err) {
 			log.warn("get_state refresh failed", err);
+			return false;
 		}
 	}
 
@@ -642,7 +689,12 @@ class RpcSessionHandle implements SessionHandle {
 			log.info(`context replacement triggered for ${this.sessionId} (${usage.percent ?? 0}% / ${usage.tokens ?? 0} tokens)`);
 			this.#autoCompactInFlightUntil = rpcAutoCompactCooldownUntil();
 			const autoCompact = buildRpcAutoCompactRequest(focus);
-			await this.#transport.send(autoCompact.command, autoCompact.opts);
+			await runRpcAutoCompactWithLifecycle({
+				send: () => this.#transport.send(autoCompact.command, autoCompact.opts),
+				emit: (event) => this.#emit(event),
+				refresh: () => this.#refreshStateFromRpc(),
+				releaseGuard: () => { this.#autoCompactInFlightUntil = 0; },
+			});
 			log.info(`context replacement compact sent for ${this.sessionId} — savings will appear on next context usage update`);
 		} catch (err) {
 			if (recorded) contextSavingsTracker.recordFailed(this.sessionId, err);

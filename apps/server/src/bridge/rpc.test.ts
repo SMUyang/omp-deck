@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildCreateTransportOptions, buildResumeTransportOptions, buildRpcAutoCompactSendOptions, buildRpcCompactCommand, deriveAutoSessionName, deriveAutoSessionNameFromMessages, resumeCwdFromState, rpcAutoCompactCooldownUntil, shouldSkipRpcAutoCompact, sessionSummaryFromJsonl } from "./rpc.ts";
+import { buildCreateTransportOptions, buildResumeTransportOptions, buildRpcAutoCompactSendOptions, buildRpcCompactCommand, deriveAutoSessionName, deriveAutoSessionNameFromMessages, resumeCwdFromState, rpcAutoCompactCooldownUntil, runRpcAutoCompactWithLifecycle, shouldSkipRpcAutoCompact, sessionSummaryFromJsonl } from "./rpc.ts";
 
 const SESSION_FILE = "/Users/example/.omp/agent/sessions/-repo/session.jsonl";
 
@@ -21,6 +21,92 @@ describe("RPC auto compact guard", () => {
 		const until = rpcAutoCompactCooldownUntil(now);
 		expect(shouldSkipRpcAutoCompact(until, now + 1)).toBe(true);
 		expect(shouldSkipRpcAutoCompact(until, until)).toBe(false);
+	});
+});
+
+describe("RPC direct auto-compact lifecycle", () => {
+	test("emits a canonical start before send and an allowlisted end after success", async () => {
+		let resolveSend!: (value: unknown) => void;
+		const sendResult = new Promise<unknown>((resolve) => { resolveSend = resolve; });
+		const events: Array<Record<string, unknown>> = [];
+		let refreshCount = 0;
+
+		const pending = runRpcAutoCompactWithLifecycle({
+			send: () => sendResult,
+			emit: (event) => events.push(event),
+			refresh: async () => { refreshCount += 1; },
+		});
+		expect(events).toEqual([{ type: "auto_compaction_start", reason: "threshold", action: "context-full" }]);
+		resolveSend({
+			summary: "full summary",
+			shortSummary: "short summary",
+			firstKeptEntryId: "entry-1",
+			details: { private: "drop" },
+			preserveData: { private: "drop" },
+		});
+		await pending;
+
+		expect(events).toEqual([
+			{ type: "auto_compaction_start", reason: "threshold", action: "context-full" },
+			{
+				type: "auto_compaction_end",
+				action: "context-full",
+				result: { summary: "full summary", shortSummary: "short summary" },
+				aborted: false,
+				willRetry: false,
+			},
+		]);
+		expect(refreshCount).toBe(1);
+	});
+
+	test("does not release the compact guard until the post-compact refresh completes", async () => {
+		let resolveRefresh!: () => void;
+		const refreshResult = new Promise<void>((resolve) => { resolveRefresh = resolve; });
+		let guardHeld = true;
+
+		const pending = runRpcAutoCompactWithLifecycle({
+			send: async () => ({ shortSummary: "done" }),
+			emit: () => {},
+			refresh: () => refreshResult,
+			releaseGuard: () => { guardHeld = false; },
+		});
+		await Promise.resolve();
+		resolveRefresh();
+		await pending;
+		expect(guardHeld).toBe(false);
+	});
+
+	test("retains the compact guard when the post-compact refresh fails", async () => {
+		let guardHeld = true;
+
+		await expect(runRpcAutoCompactWithLifecycle({
+			send: async () => ({ shortSummary: "done" }),
+			emit: () => {},
+			refresh: async () => false,
+			releaseGuard: () => { guardHeld = false; },
+		})).rejects.toThrow("post-compact state refresh failed");
+		expect(guardHeld).toBe(true);
+	});
+
+	test("emits a balanced bounded error end and rethrows a failed compact", async () => {
+		const events: Array<Record<string, unknown>> = [];
+		const error = new Error(`compact failed ${"x".repeat(400)}`);
+
+		await expect(runRpcAutoCompactWithLifecycle({
+			send: async () => { throw error; },
+			emit: (event) => events.push(event),
+			refresh: async () => {},
+		})).rejects.toBe(error);
+
+		expect(events[0]).toEqual({ type: "auto_compaction_start", reason: "threshold", action: "context-full" });
+		expect(events[1]).toMatchObject({
+			type: "auto_compaction_end",
+			action: "context-full",
+			result: undefined,
+			aborted: false,
+			willRetry: false,
+		});
+		expect(String(events[1]?.errorMessage).length).toBeLessThanOrEqual(240);
 	});
 });
 

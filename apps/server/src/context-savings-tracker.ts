@@ -129,6 +129,7 @@ export class ContextSavingsTracker {
 			this.evidence.updateStatus(record.evidenceEventId, status, {
 				afterTokens: after?.tokens ?? null,
 				afterPercent: after?.percent ?? null,
+				errorMessage: null,
 			});
 		}
 		const saved = record.after ? Math.max(0, record.before.tokens - record.after.tokens) : null;
@@ -160,7 +161,7 @@ export class ContextSavingsTracker {
 		const elapsed = now - pending.triggeredAt;
 		if (elapsed > RPC_USAGE_UPDATE_TIMEOUT_MS) {
 			this.#recordTimedOut(sessionId, pending);
-			return undefined;
+			return this.completePendingFromUsage(sessionId, usage, now);
 		}
 		if (tokenDrop < 50 && percentDrop < 5) return undefined;
 

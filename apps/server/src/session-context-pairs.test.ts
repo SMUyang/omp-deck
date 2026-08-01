@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { ExtractedSessionContext } from "./session-context.ts";
 import type { NormalizedSessionEvent, NormalizedToolCall, NormalizedToolResult } from "./session-context-events.ts";
+import { normalizeSessionJsonl } from "./session-context-events.ts";
 import { buildConversationTopology } from "./session-context-pairs.ts";
 
 const baseTime = Date.parse("2026-07-31T10:00:00.000Z");
@@ -28,7 +29,7 @@ function event(
 }
 
 function call(id: string, name: string, arguments_: Record<string, unknown>, overrides: Partial<NormalizedToolCall> = {}): NormalizedToolCall {
-	return { id, name, arguments: arguments_, sourceEntryId: "a-tools", lifecycleMetadata: {}, ...overrides };
+	return { id, name, arguments: arguments_, sourceEntryId: "a-tools", sourceLine: 1, lifecycleMetadata: {}, ...overrides };
 }
 
 function result(toolCallId: string, text: string, overrides: Partial<NormalizedToolResult> = {}): NormalizedSessionEvent {
@@ -37,6 +38,7 @@ function result(toolCallId: string, text: string, overrides: Partial<NormalizedT
 		text,
 		isError: false,
 		sourceEntryId: `result-${toolCallId}`,
+		sourceLine: 1,
 		metadata: { messageRole: "toolResult" },
 		...overrides,
 	};
@@ -265,6 +267,21 @@ describe("buildConversationTopology assistant children", () => {
 			events: [event("u1", "user", "Read it."), event("a-tools", "assistant", "", { stopReason: "toolUse", toolCalls: [call("read-1", "read", { path: "errors.ts" })] }), result("read-1", "export class ErrorBoundary {}", { toolName: "read" }), event("a1", "assistant", "Read it.", { stopReason: "stop" })],
 		});
 		expect(children(topology)[0]).toMatchObject({ childType: "tool_evidence", operation: "observe", status: "completed" });
+	});
+
+	test("normalized tool children preserve the exact tool-result source line", () => {
+		const content = [
+			{ type: "message", id: "u1", parentId: null, timestamp: "2026-07-31T10:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Read the fixture." }], timestamp: baseTime + 1_000 } },
+			{ type: "message", id: "a-tools", parentId: "u1", timestamp: "2026-07-31T10:00:02.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "read-1", name: "read", arguments: { path: "synthetic/fixture.txt" } }], stopReason: "toolUse", timestamp: baseTime + 2_000 } },
+			{ type: "message", id: "result-entry", parentId: "a-tools", timestamp: "2026-07-31T10:00:03.000Z", message: { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [{ type: "text", text: "Synthetic fixture evidence." }], isError: false, timestamp: baseTime + 3_000 } },
+			{ type: "message", id: "a1", parentId: "result-entry", timestamp: "2026-07-31T10:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "The fixture was read." }], stopReason: "stop", timestamp: baseTime + 4_000 } },
+		].map((record) => JSON.stringify(record)).join("\n");
+		const normalized = normalizeSessionJsonl({ content });
+		const topology = buildConversationTopology({ sessionId: "s1", events: normalized.activeEvents });
+
+		expect(normalized.diagnostics).toEqual([]);
+		expect(children(topology)).toHaveLength(1);
+		expect(children(topology)[0]).toMatchObject({ sourceMessageId: "result-entry", sourceTurnIndex: 3 });
 	});
 
 	test("structured isError nonzero exit or failed lifecycle creates an error child without failure prose", () => {

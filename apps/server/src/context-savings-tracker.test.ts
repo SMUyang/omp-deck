@@ -288,6 +288,38 @@ describe("ContextSavingsTracker evidence persistence", () => {
 		});
 	});
 
+	test("production RPC updates complete an awaiting_usage record after the timeout window", () => {
+		const evidence = new ContextEvidenceTracker();
+		const { scheduler, runAll } = createManualScheduler();
+		const tracker = new ContextSavingsTracker(evidence, scheduler);
+		const record = tracker.recordTriggered(
+			"s-late-rpc-update",
+			{ tokens: 8_000, contextWindow: 10_000, percent: 80 },
+			"focus",
+		);
+		runAll();
+		expect(tracker.hasPending("s-late-rpc-update")).toBe(true);
+		expect(evidence.getSessionEvidence("s-late-rpc-update")[0]?.status as string | undefined).toBe("awaiting_usage");
+
+		const completed = tracker.maybeCompleteFromRpcUpdate(
+			"s-late-rpc-update",
+			{ tokens: 3_000, contextWindow: 10_000, percent: 30 },
+			record.triggeredAt + 30_001,
+		);
+
+		expect(completed).toBeDefined();
+		expect(completed?.after).toEqual({ tokens: 3_000, percent: 30 });
+		expect(tracker.hasPending("s-late-rpc-update")).toBe(false);
+		expect(evidence.getSessionEvidence("s-late-rpc-update")[0]).toMatchObject({
+			status: "usage_drop_observed",
+			afterTokens: 3_000,
+			afterPercent: 30,
+			savedTokens: 5_000,
+			savedPercent: 62.5,
+			errorMessage: null,
+		});
+	});
+
 	test("completePendingFromUsage stays in awaiting_usage when drop is below threshold", () => {
 		const evidence = new ContextEvidenceTracker();
 		const { scheduler, runAll } = createManualScheduler();

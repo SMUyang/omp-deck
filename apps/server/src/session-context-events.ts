@@ -6,6 +6,7 @@ export interface NormalizedToolCall {
 	arguments: Record<string, unknown>;
 	intent?: string;
 	sourceEntryId: string;
+	sourceLine: number;
 	lifecycleStartedAt?: string;
 	lifecycleMetadata: Record<string, unknown>;
 }
@@ -18,6 +19,7 @@ export interface NormalizedToolResult {
 	isError: boolean;
 	prunedAt?: string;
 	sourceEntryId: string;
+	sourceLine: number;
 	lifecycleEndedAt?: string;
 	metadata: Record<string, unknown>;
 }
@@ -153,7 +155,7 @@ function textFromContent(content: unknown): string {
 	return text;
 }
 
-function normalizeToolCalls(content: unknown, sourceEntryId: string): NormalizedToolCall[] {
+function normalizeToolCalls(content: unknown, sourceEntryId: string, sourceLine: number): NormalizedToolCall[] {
 	if (!Array.isArray(content)) return [];
 	const toolCalls: NormalizedToolCall[] = [];
 	for (const block of content) {
@@ -166,6 +168,7 @@ function normalizeToolCalls(content: unknown, sourceEntryId: string): Normalized
 			name,
 			arguments: recordOrEmpty(block.arguments),
 			sourceEntryId,
+			sourceLine,
 			lifecycleMetadata: {},
 		};
 		const intent = nonEmptyString(block.intent);
@@ -180,7 +183,7 @@ function optionalCanonicalMilliseconds(value: unknown): string | undefined {
 	return milliseconds === undefined ? undefined : new Date(milliseconds).toISOString();
 }
 
-function normalizeToolResult(message: Record<string, unknown>, sourceEntryId: string, legacyRole: boolean): NormalizedToolResult | undefined {
+function normalizeToolResult(message: Record<string, unknown>, sourceEntryId: string, sourceLine: number, legacyRole: boolean): NormalizedToolResult | undefined {
 	const toolCallId = nonEmptyString(message.toolCallId);
 	if (!toolCallId) return undefined;
 	const metadata: Record<string, unknown> = { messageRole: legacyRole ? "tool" : "toolResult" };
@@ -193,6 +196,7 @@ function normalizeToolResult(message: Record<string, unknown>, sourceEntryId: st
 		text: textFromContent(message.content),
 		isError: message.isError === true,
 		sourceEntryId,
+		sourceLine,
 		metadata,
 	};
 	const toolName = nonEmptyString(message.toolName);
@@ -235,7 +239,7 @@ function normalizeMessageEntry(entry: ParsedEntry, diagnostics: Array<{ line: nu
 		role,
 		synthetic,
 		text: textFromContent(message.content),
-		toolCalls: role === "assistant" ? normalizeToolCalls(message.content, entry.entryId) : [],
+		toolCalls: role === "assistant" ? normalizeToolCalls(message.content, entry.entryId, entry.line) : [],
 		metadata,
 	};
 	if (entry.parentId) event.parentId = entry.parentId;
@@ -245,7 +249,7 @@ function normalizeMessageEntry(entry: ParsedEntry, diagnostics: Array<{ line: nu
 		const stopReason = nonEmptyString(message.stopReason);
 		if (stopReason) event.stopReason = stopReason;
 	}
-	if (role === "tool") event.toolResult = normalizeToolResult(message, entry.entryId, messageRole === "tool");
+	if (role === "tool") event.toolResult = normalizeToolResult(message, entry.entryId, entry.line, messageRole === "tool");
 	return event;
 }
 
