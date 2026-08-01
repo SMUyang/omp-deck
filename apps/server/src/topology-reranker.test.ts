@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionContextEdge, SessionContextGraphResponse, SessionContextNode } from "@omp-deck/protocol";
+import type { SessionContextArtifact, SessionContextEdge, SessionContextGraphResponse, SessionContextNode } from "@omp-deck/protocol";
 
+import type { PairRetrievalResult } from "./session-pair-retrieval.ts";
 import type { RetrievedTopology } from "./session-topology-retrieval.ts";
 import {
 	applyRerankPatch,
@@ -11,6 +12,7 @@ import {
 	validateRerankPatch,
 	type TopologyRerankModelClient,
 } from "./topology-reranker.ts";
+import { applyPairRerankPatch, buildTopologyPairRerankRequest, parsePairRerankPatch, validatePairRerankPatch } from "./topology-reranker.ts";
 
 function node(id: string, title = id): SessionContextNode {
 	return {
@@ -66,6 +68,60 @@ const graph: SessionContextGraphResponse = {
 	truncated: false,
 };
 
+const pairGraph: SessionContextGraphResponse = {
+	sessionId: "s1",
+	nodes: [
+		{ ...node("u1"), population: "user", nodeRole: "main", pairId: "p1", operation: "request", purpose: "keep background service", metadata: { confidence: 0.9 } },
+		{ ...node("a1"), population: "assistant", nodeRole: "main", pairId: "p1", operation: "answer", purpose: "start detached", metadata: { score: 1 } },
+		{ ...node("c1"), population: "assistant", nodeRole: "child", pairId: "p1", parentNodeId: "a1", childType: "test", operation: "verify", purpose: "run tests", metadata: { rank: 1 } },
+		{ ...node("u2"), population: "user", nodeRole: "main", pairId: "p2", operation: "request", purpose: "other" },
+		{ ...node("a2"), population: "assistant", nodeRole: "main", pairId: "p2", operation: "answer", purpose: "other" },
+	],
+	edges: [edge("p1-answer", "u1", "a1"), edge("p1-child", "a1", "c1"), edge("p2-answer", "u2", "a2")],
+	artifacts: [{ id: "art", sessionId: "s1", nodeId: "c1", kind: "test", ref: "bun test", label: "test", metadata: {} } satisfies SessionContextArtifact],
+	totalNodes: 5,
+	truncated: false,
+};
+
+const pairLocal: PairRetrievalResult = {
+	selectedPairIds: ["p1"], selectedNodeIds: ["u1", "a1", "c1"], selectedChildIds: ["c1"], selectedEdgeIds: ["p1-answer", "p1-child"], artifacts: [{ kind: "test", ref: "bun test", nodeId: "c1", label: "test" }],
+	eligibleCounts: { userMain: 2, assistantMain: 2, children: 1 }, candidateCounts: { userMain: 2, assistantMain: 2, children: 1 }, omitted: { pairs: 1, children: 0, reason: "budget" },
+	ranking: [{ unitId: "p1", score: 0.9, nodeIds: ["u1", "a1"] }, { unitId: "p2", score: 0.8, nodeIds: ["u2", "a2"] }],
+};
+
+describe("conversation pair rerank contract", () => {
+	test("RED: request uses broader pair candidates and recursively excludes ranking priors", () => {
+		const request = buildTopologyPairRerankRequest({ query: "background", graph: pairGraph, local: pairLocal, pairLimit: 1, nodeLimit: 3, childLimit: 1 });
+		expect(request.task).toBe("query_pair_rerank");
+		expect(request.candidatePairs.map((candidate) => candidate.pairId)).toEqual(["p1", "p2"]);
+		const keys: string[] = [];
+		const visit = (value: unknown): void => { if (!value || typeof value !== "object") return; if (Array.isArray(value)) { for (const item of value) visit(item); return; } for (const [key, child] of Object.entries(value)) { keys.push(key); visit(child); } };
+		visit(request);
+		for (const forbidden of ["importance", "weight", "score", "scores", "rank", "confidence", "relevance", "cosine", "bm25", "reason", "candidateDiagnostics", "threshold", "timestamp", "metadata", "sourceMessageId", "sourceTurnIndex"]) expect(keys).not.toContain(forbidden);
+	});
+
+	test("RED: parser normalizes duplicates and rejects malformed or extra-key patches", () => {
+		expect(parsePairRerankPatch({ keepPairIds: ["p1", "p1"], keepChildIds: ["c1", "c1"], demotePairIds: [] })).toEqual({ keepPairIds: ["p1"], keepChildIds: ["c1"], demotePairIds: [] });
+		expect(parsePairRerankPatch({ keepPairIds: ["p1"], keepChildIds: [], demotePairIds: [], extra: true })).toBeUndefined();
+		expect(parsePairRerankPatch({ keepPairIds: "p1", keepChildIds: [], demotePairIds: [] })).toBeUndefined();
+	});
+
+	test("RED: validation rejects unknown IDs oversized arrays and demoting forced child closure", () => {
+		expect(validatePairRerankPatch({ patch: { keepPairIds: ["missing"], keepChildIds: [], demotePairIds: [] }, graph: pairGraph, local: pairLocal, pairLimit: 2, nodeLimit: 5, childLimit: 1 })).toBeUndefined();
+		expect(validatePairRerankPatch({ patch: { keepPairIds: ["p1", "p2", "p1"], keepChildIds: [], demotePairIds: [] }, graph: pairGraph, local: pairLocal, pairLimit: 1, nodeLimit: 5, childLimit: 1 })).toBeUndefined();
+		expect(validatePairRerankPatch({ patch: { keepPairIds: [], keepChildIds: ["c1"], demotePairIds: ["p1"] }, graph: pairGraph, local: pairLocal, pairLimit: 2, nodeLimit: 5, childLimit: 1 })).toBeUndefined();
+	});
+
+	test("RED: child-only keep closes upward and drops atomically when the closure cannot fit", () => {
+		const patch = { keepPairIds: [], keepChildIds: ["c1"], demotePairIds: [] };
+		const kept = applyPairRerankPatch({ local: pairLocal, graph: pairGraph, patch, pairLimit: 1, nodeLimit: 3, childLimit: 1, edgeLimit: 10, artifactLimit: 10 });
+		expect(kept.selectedNodeIds).toEqual(["u1", "a1", "c1"]);
+		expect(kept.selectedEdgeIds).toEqual(expect.arrayContaining(["p1-answer", "p1-child"]));
+		expect(kept.artifacts.map((item) => item.ref)).toEqual(["bun test"]);
+		const dropped = applyPairRerankPatch({ local: pairLocal, graph: pairGraph, patch, pairLimit: 1, nodeLimit: 2, childLimit: 1, edgeLimit: 10, artifactLimit: 10 });
+		expect(dropped.selectedNodeIds).toEqual([]);
+	});
+});
 describe("shouldExternalRerank", () => {
 	test("requires enabled config and context threshold", () => {
 		expect(shouldExternalRerank({ enabled: false, contextPercent: 99, candidateNodeCount: 99, localTopScore: 0, minContextPercent: 12, minCandidateNodes: 16, localConfidenceBelow: 0.72 })).toBe(false);

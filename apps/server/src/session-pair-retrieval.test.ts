@@ -76,8 +76,8 @@ function answers(pairId: string, userId: string, assistantId: string): SessionCo
 	return {
 		id: `${pairId}:answers`,
 		sessionId: "s1",
-		sourceNodeId: userId,
-		targetNodeId: assistantId,
+		sourceNodeId: assistantId,
+		targetNodeId: userId,
 		relation: "answers",
 		weight: 1,
 		metadata: { pairId },
@@ -143,6 +143,19 @@ describe("retrieveConversationPairs complete graph retrieval", () => {
 		expect(result?.eligibleCounts.userMain).toBe(1);
 		expect(result?.selectedPairIds).toContain(early.pairId);
 		expect(result?.selectedNodeIds).toEqual(expect.arrayContaining([early.user.id, early.assistant.id]));
+	});
+
+	test("recognizes production assistant-to-user answers edges for partner closure and relation ranking", () => {
+		const matched = pair(1, "unrelated", { assistant: { purpose: "actualedge", pairId: undefined } });
+		const unmatched = pair(2, "unrelated", { assistant: { purpose: "actualedge", pairId: undefined } });
+		const result = retrieveConversationPairs(
+			{ ...INPUT, query: "actualedge", outputNodeLimit: 2 },
+			graph([matched.user, matched.assistant, unmatched.user, unmatched.assistant], [matched.edge]),
+		);
+		expect(matched.edge.sourceNodeId).toBe(matched.assistant.id);
+		expect(matched.edge.targetNodeId).toBe(matched.user.id);
+		expect(result?.selectedPairIds[0]).toBe(matched.pairId);
+		expect(result?.selectedNodeIds).toEqual([matched.user.id, matched.assistant.id]);
 	});
 
 	test("maintains independent qualifying floors for both main populations", () => {
@@ -307,5 +320,21 @@ describe("retrieveConversationPairs integrity and ownership", () => {
 		const result = retrieveConversationPairs({ ...INPUT, query: "rareexact", candidateMainLimit: 8, outputNodeLimit: 2 }, graph([...noisy, exact.user, exact.assistant], [exact.edge]));
 		expect(result?.selectedNodeIds).toEqual([exact.user.id, exact.assistant.id]);
 		expect(result?.ranking[0]?.score).toBeFinite();
+	});
+
+	test("RED: exact lexical purpose survives adversarial semantic scores", () => {
+		const exact = pair(1, "rareexact");
+		const adversarial = pair(2, "unrelated");
+		const semanticScores = new Map([[exact.user.id, 0], [exact.assistant.id, 0], [adversarial.user.id, 1], [adversarial.assistant.id, 1]]);
+		const result = retrieveConversationPairs({ ...INPUT, query: "rareexact", candidateMainLimit: 2, outputNodeLimit: 2, semanticScores }, graph([exact.user, exact.assistant, adversarial.user, adversarial.assistant], [exact.edge, adversarial.edge]));
+		expect(result?.selectedPairIds).toEqual([exact.pairId]);
+	});
+
+	test("RED: semantic-only paraphrase promotes the matching pair", () => {
+		const matching = pair(1, "keep the daemon alive after the shell exits");
+		const unrelated = pair(2, "change the chart colors");
+		const semanticScores = new Map([[matching.user.id, 0.95], [matching.assistant.id, 0.9], [unrelated.user.id, 0.1], [unrelated.assistant.id, 0.1]]);
+		const result = retrieveConversationPairs({ ...INPUT, query: "persist background service", candidateMainLimit: 2, outputNodeLimit: 2, semanticScores }, graph([matching.user, matching.assistant, unrelated.user, unrelated.assistant], [matching.edge, unrelated.edge]));
+		expect(result?.selectedPairIds).toEqual([matching.pairId]);
 	});
 });

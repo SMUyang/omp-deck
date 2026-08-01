@@ -5,7 +5,7 @@ import * as path from "node:path";
 
 import { closeDb, getDb, openDb } from "./db/index.ts";
 import { getCompleteSessionContextGraph, getSessionContextGraph, getNodeEmbeddings, getSessionContextStatus, replaceSessionContext, saveNodeEmbeddings, upsertSessionContextCheckpoint } from "./db/session-context.ts";
-import { extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext } from "./session-context.ts";
+import { buildTopologyEmbeddingDocument, extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext, TOPOLOGY_EMBEDDING_RECIPE_VERSION } from "./session-context.ts";
 import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
 import type { SessionContextEdge, SessionContextGraphResponse, SessionContextNode, SessionContextPackResponse } from "@omp-deck/protocol";
 import type { EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
@@ -298,6 +298,23 @@ describe("renderSessionContextPack budget coherence", () => {
 		expect(pack.omitted.nodeCount).toBe(extracted.nodes.length - selectedCount);
 		expect(pack.omitted.nodeCount).toBeGreaterThanOrEqual(0);
 		if (pack.omitted.nodeCount > 0) expect(pack.omitted.reason).toBe("budget");
+	});
+});
+
+describe("conversation-v2 embedding recipe", () => {
+	test("RED: emits the exact labeled user main document", () => {
+		const node: SessionContextNode = {
+			id: "u1", sessionId: "s1", kind: "goal", title: "Keep start mode alive", body: "start mode must remain alive in the background", compressedBody: "start mode must remain alive in the background", importance: 0.7, createdAt: "", population: "user", nodeRole: "main", origin: "user", pairId: "pair-1", operation: "request", operationDetail: "fix_background_start", purpose: "让 start 模式保持后台运行", purposeSource: "explicit_text", metadata: {},
+		};
+		expect(TOPOLOGY_EMBEDDING_RECIPE_VERSION).toBe("conversation-v2");
+		expect(buildTopologyEmbeddingDocument(node)).toBe("population=user; role=main; operation=request; detail=fix_background_start; purpose=让 start 模式保持后台运行; title=Keep start mode alive; body=start mode must remain alive in the background");
+	});
+
+	test("RED: labels child ownership and retains deterministic purpose fallback", () => {
+		const node: SessionContextNode = {
+			id: "c1", sessionId: "s1", kind: "evidence", title: "Targeted verification", body: "bun test passes", compressedBody: "bun test passes", importance: 0.7, createdAt: "", population: "assistant", nodeRole: "child", origin: "tool", childType: "test", pairId: "pair-1", parentNodeId: "a1", operation: "verify", operationDetail: "run_targeted_tests", purpose: "run the exact regression test", refinedPurpose: "prove the background start fix", purposeSource: "structured_intent", metadata: {},
+		};
+		expect(buildTopologyEmbeddingDocument(node)).toBe("population=assistant; role=child; childType=test; pair=pair-1; operation=verify; detail=run_targeted_tests; purpose=prove the background start fix; purposeFallback=run the exact regression test; title=Targeted verification; body=bun test passes");
 	});
 });
 
@@ -617,6 +634,8 @@ describe("context replacement", () => {
 
 	test("v2 stored focus searches the complete graph while v1 remains bounded to the legacy top 500", async () => {
 		const v2Dir = tempDir();
+		const savedDataDir = process.env.OMP_DECK_DATA_DIR;
+		process.env.OMP_DECK_DATA_DIR = v2Dir;
 		openDb({ path: path.join(v2Dir, "deck.db") });
 		const pairId = "s_v2:pair:early";
 		const user: SessionContextNode = {
@@ -637,6 +656,8 @@ describe("context replacement", () => {
 		expect(getSessionContextGraph("s_v2", 500).nodes.some((node) => node.id === user.id)).toBe(false);
 		expect(getCompleteSessionContextGraph("s_v2").nodes.some((node) => node.id === user.id)).toBe(true);
 		const v2Focus = await getStoredQueryTopologyFocus({ sessionId: "s_v2", query: "earlyexact" });
+		if (savedDataDir === undefined) delete process.env.OMP_DECK_DATA_DIR;
+		else process.env.OMP_DECK_DATA_DIR = savedDataDir;
 		const v2Payload = JSON.parse(v2Focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1] ?? "null");
 		expect(v2Payload.nodes.map((node: { id: string }) => node.id)).toEqual(expect.arrayContaining([user.id, assistant.id]));
 		expect(JSON.stringify(v2Payload)).not.toContain("ranking");
@@ -854,7 +875,7 @@ describe("context replacement", () => {
 			expect(selectedTitles[0]).toContain("GC bias");
 			expect(selectedTitles[1]).toContain("sample");
 
-			const stored = getNodeEmbeddings("s_cosine");
+			const stored = getNodeEmbeddings("s_cosine", "test-model");
 			expect(stored.size).toBe(graph.nodes.length);
 		} finally {
 			globalThis.fetch = originalFetch;

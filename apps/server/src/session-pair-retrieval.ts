@@ -14,6 +14,7 @@ export interface PairRetrievalInput {
 	outputArtifactLimit: number;
 	maxChildrenPerAssistant?: number;
 	maxChildrenPerType?: number;
+	semanticScores?: ReadonlyMap<string, number>;
 }
 
 export interface PairRetrievalResult {
@@ -153,6 +154,7 @@ function scoreDocuments(
 	nodes: SessionContextNode[],
 	queryTokens: string[],
 	weights: Record<SearchField, number>,
+	semanticScores?: ReadonlyMap<string, number>,
 ): SearchableNode[] {
 	const documents = nodes.map((node) => ({ node, fieldTokens: searchableFields(node) }));
 	const idf = buildIdf(queryTokens, documents);
@@ -166,7 +168,11 @@ function scoreDocuments(
 			weighted += fieldWeight * fieldMatchScore(queryTokens, document.fieldTokens[field], idf[field]);
 		}
 		const lexicalScore = activeWeight > 0 ? clamp01(weighted / activeWeight) : 0;
-		const score = clamp01(0.96 * lexicalScore + 0.03 * clamp01(document.node.importance) + 0.01 * clamp01(KIND_PRIOR[document.node.kind] ?? 0.5));
+		const semanticScore = clamp01(semanticScores?.get(document.node.id));
+		const purposeTokens = new Set([...document.fieldTokens.purposePrimary, ...document.fieldTokens.purposeFallback]);
+		const exactPurposeRecall = queryTokens.length > 0 && queryTokens.every((token) => purposeTokens.has(token));
+		const retrievalScore = exactPurposeRecall ? 1 : lexicalScore > 0 ? Math.max(lexicalScore, 0.85 * lexicalScore + 0.15 * semanticScore) : semanticScore;
+		const score = clamp01(0.96 * retrievalScore + 0.03 * clamp01(document.node.importance) + 0.01 * clamp01(KIND_PRIOR[document.node.kind] ?? 0.5));
 		return { ...document, lexicalScore, score };
 	});
 }
@@ -278,8 +284,8 @@ export function retrieveConversationPairs(
 	if (eligibleMainNodes.length === 0 && childNodes.length === 0) return undefined;
 
 	const queryTokens = [...new Set(tokenize(input.query))];
-	const scoredMain = scoreDocuments(eligibleMainNodes, queryTokens, MAIN_FIELD_WEIGHTS);
-	const scoredChildren = scoreDocuments(childNodes, queryTokens, CHILD_FIELD_WEIGHTS);
+	const scoredMain = scoreDocuments(eligibleMainNodes, queryTokens, MAIN_FIELD_WEIGHTS, input.semanticScores);
+	const scoredChildren = scoreDocuments(childNodes, queryTokens, CHILD_FIELD_WEIGHTS, input.semanticScores);
 	const mainById = new Map(scoredMain.map((item) => [item.node.id, item]));
 	const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
 	const childrenByParent = new Map<string, SearchableNode[]>();
@@ -293,20 +299,28 @@ export function retrieveConversationPairs(
 
 	const partnerById = new Map<string, string>();
 	const answerEdgePairIds = new Set<string>();
+	const pairIdByMainNodeId = new Map<string, string>();
 	for (const edge of graph.edges) {
 		if (edge.relation !== "answers") continue;
 		const source = nodeById.get(edge.sourceNodeId);
 		const target = nodeById.get(edge.targetNodeId);
-		if (mainPopulation(source) !== "user" || mainPopulation(target) !== "assistant") continue;
-		partnerById.set(source!.id, target!.id);
-		partnerById.set(target!.id, source!.id);
-		const pairId = source!.pairId ?? target!.pairId;
+		const user = mainPopulation(source) === "user" ? source : mainPopulation(target) === "user" ? target : undefined;
+		const assistant = mainPopulation(source) === "assistant" ? source : mainPopulation(target) === "assistant" ? target : undefined;
+		if (!user || !assistant) continue;
+		partnerById.set(user.id, assistant.id);
+		partnerById.set(assistant.id, user.id);
+		const metadataPairId = typeof edge.metadata?.pairId === "string" ? edge.metadata.pairId : undefined;
+		const pairId = user.pairId ?? assistant.pairId ?? metadataPairId;
+		if (pairId) {
+			pairIdByMainNodeId.set(user.id, pairId);
+			pairIdByMainNodeId.set(assistant.id, pairId);
+		}
 		if (pairId) answerEdgePairIds.add(pairId);
 	}
 
 	const unitsByPairId = new Map<string, PairUnit>();
 	for (const item of scoredMain) {
-		const pairId = item.node.pairId;
+		const pairId = item.node.pairId ?? pairIdByMainNodeId.get(item.node.id);
 		if (!pairId) continue;
 		let unit = unitsByPairId.get(pairId);
 		if (!unit) {
@@ -318,12 +332,13 @@ export function retrieveConversationPairs(
 	}
 	for (const unit of unitsByPairId.values()) unit.score = pairScore(unit);
 
-	const qualifyingUser = scoredMain.filter((item) => item.node.population === "user" && item.lexicalScore > 0).sort(stableNodeCompare);
-	const qualifyingAssistant = scoredMain.filter((item) => item.node.population === "assistant" && item.lexicalScore > 0).sort(stableNodeCompare);
+	const qualifyingUser = scoredMain.filter((item) => item.node.population === "user" && (item.lexicalScore > 0 || (input.semanticScores?.has(item.node.id) ?? false))).sort(stableNodeCompare);
+	const qualifyingAssistant = scoredMain.filter((item) => item.node.population === "assistant" && (item.lexicalScore > 0 || (input.semanticScores?.has(item.node.id) ?? false))).sort(stableNodeCompare);
 	const mainCandidates = selectMainCandidates(qualifyingUser, qualifyingAssistant, input.candidateMainLimit);
 	const candidateMainIds = new Set(mainCandidates.map((item) => item.node.id));
 	for (const item of mainCandidates) {
-		const unit = item.node.pairId ? unitsByPairId.get(item.node.pairId) : undefined;
+		const pairId = item.node.pairId ?? pairIdByMainNodeId.get(item.node.id);
+		const unit = pairId ? unitsByPairId.get(pairId) : undefined;
 		const partnerId = partnerById.get(item.node.id)
 			?? (item.node.population === "user" ? unit?.assistant?.node.id : unit?.user?.node.id);
 		if (partnerId) candidateMainIds.add(partnerId);

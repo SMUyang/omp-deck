@@ -1,6 +1,8 @@
-import type { SessionContextGraphResponse } from "@omp-deck/protocol";
+import type { SessionContextGraphResponse, SessionContextNode } from "@omp-deck/protocol";
 
+import type { PairRetrievalResult } from "./session-pair-retrieval.ts";
 import type { RetrievedTopology } from "./session-topology-retrieval.ts";
+import { redactSensitiveText } from "./redaction.ts";
 
 export interface TopologyRerankRequest {
 	task: "query_rerank";
@@ -18,7 +20,110 @@ export interface RerankPatch {
 }
 
 export interface TopologyRerankModelClient {
-	rerankTopology(input: { modelRole: string; request: TopologyRerankRequest; timeoutMs: number }): Promise<unknown>;
+	rerankTopology(input: { modelRole: string; request: TopologyRerankRequest | TopologyPairRerankRequest; timeoutMs: number }): Promise<unknown>;
+}
+
+export interface TopologyRerankPairCandidate {
+	pairId: string;
+	user?: { id: string; operation?: string; purpose?: string | null; title: string; body: string };
+	assistant?: { id: string; operation?: string; purpose?: string | null; title: string; body: string };
+	children: Array<{ id: string; childType?: string; operation?: string; purpose?: string | null; body: string }>;
+}
+
+export interface TopologyPairRerankRequest {
+	task: "query_pair_rerank";
+	query: string;
+	candidatePairs: TopologyRerankPairCandidate[];
+	budget: { pairLimit: number; nodeLimit: number; childLimit: number };
+}
+
+export interface PairRerankPatch {
+	keepPairIds: string[];
+	keepChildIds: string[];
+	demotePairIds: string[];
+	reason?: string;
+}
+
+function boundedExternalText(value: string | null | undefined, limit: number): string | undefined {
+	const normalized = redactSensitiveText(value ?? "").replace(/\s+/g, " ").trim();
+	return normalized ? [...normalized].slice(0, limit).join("") : undefined;
+}
+
+function externalMain(node: SessionContextNode | undefined): TopologyRerankPairCandidate["user"] | undefined {
+	if (!node) return undefined;
+	const operation = boundedExternalText(node.operation, 64);
+	const purpose = boundedExternalText(node.refinedPurpose ?? node.purpose, 256);
+	return { id: node.id, ...(operation ? { operation } : {}), ...(node.purpose === null ? { purpose: null } : purpose ? { purpose } : {}), title: boundedExternalText(node.title, 256) ?? "", body: boundedExternalText(node.compressedBody || node.body, 512) ?? "" };
+}
+
+export function buildTopologyPairRerankRequest(input: { query: string; graph: SessionContextGraphResponse; local: PairRetrievalResult; pairLimit: number; nodeLimit: number; childLimit: number }): TopologyPairRerankRequest {
+	const candidatePairs = input.local.ranking.map(({ unitId: pairId }): TopologyRerankPairCandidate => {
+		const pairNodes = input.graph.nodes.filter((node) => node.pairId === pairId);
+		const user = externalMain(pairNodes.find((node) => node.nodeRole === "main" && node.population === "user"));
+		const assistantNode = pairNodes.find((node) => node.nodeRole === "main" && node.population === "assistant");
+		const assistant = externalMain(assistantNode);
+		const children = pairNodes.filter((node) => node.nodeRole === "child" && (!assistantNode || node.parentNodeId === assistantNode.id)).map((node) => {
+			const childType = boundedExternalText(node.childType, 64);
+			const operation = boundedExternalText(node.operation, 64);
+			const purpose = boundedExternalText(node.refinedPurpose ?? node.purpose, 256);
+			return { id: node.id, ...(childType ? { childType } : {}), ...(operation ? { operation } : {}), ...(node.purpose === null ? { purpose: null } : purpose ? { purpose } : {}), body: boundedExternalText(node.compressedBody || node.body, 512) ?? "" };
+		});
+		return { pairId, ...(user ? { user } : {}), ...(assistant ? { assistant } : {}), children };
+	});
+	return { task: "query_pair_rerank", query: boundedExternalText(input.query, 512) ?? "", candidatePairs, budget: { pairLimit: input.pairLimit, nodeLimit: input.nodeLimit, childLimit: input.childLimit } };
+}
+
+export function parsePairRerankPatch(raw: unknown): PairRerankPatch | undefined {
+	if (!isRecord(raw)) return undefined;
+	const allowed = new Set(["keepPairIds", "keepChildIds", "demotePairIds", "reason"]);
+	if (Object.keys(raw).some((key) => !allowed.has(key))) return undefined;
+	const keepPairIds = stringArray(raw.keepPairIds ?? []);
+	const keepChildIds = stringArray(raw.keepChildIds ?? []);
+	const demotePairIds = stringArray(raw.demotePairIds ?? []);
+	if (!keepPairIds || !keepChildIds || !demotePairIds || (raw.reason !== undefined && typeof raw.reason !== "string")) return undefined;
+	const reason = typeof raw.reason === "string" ? raw.reason.slice(0, 500) : undefined;
+	return reason === undefined ? { keepPairIds, keepChildIds, demotePairIds } : { keepPairIds, keepChildIds, demotePairIds, reason };
+}
+
+export function validatePairRerankPatch(input: { patch: PairRerankPatch; graph: SessionContextGraphResponse; local: PairRetrievalResult; pairLimit: number; nodeLimit: number; childLimit: number }): PairRerankPatch | undefined {
+	if (input.patch.keepPairIds.length > input.pairLimit || input.patch.keepChildIds.length > input.childLimit) return undefined;
+	const pairIds = new Set(input.local.ranking.map((item) => item.unitId));
+	const childOwner = new Map(input.graph.nodes.filter((node) => node.nodeRole === "child" && node.pairId).map((node) => [node.id, node.pairId!]));
+	for (const id of [...input.patch.keepPairIds, ...input.patch.demotePairIds]) if (!pairIds.has(id)) return undefined;
+	for (const id of input.patch.keepChildIds) { const pairId = childOwner.get(id); if (!pairId || !pairIds.has(pairId) || input.patch.demotePairIds.includes(pairId)) return undefined; }
+	const keep = new Set(input.patch.keepPairIds);
+	const demotePairIds = input.patch.demotePairIds.filter((id) => !keep.has(id));
+	return input.patch.reason === undefined ? { keepPairIds: input.patch.keepPairIds, keepChildIds: input.patch.keepChildIds, demotePairIds } : { keepPairIds: input.patch.keepPairIds, keepChildIds: input.patch.keepChildIds, demotePairIds, reason: input.patch.reason };
+}
+
+export function applyPairRerankPatch(input: { local: PairRetrievalResult; graph: SessionContextGraphResponse; patch: PairRerankPatch; pairLimit: number; nodeLimit: number; childLimit: number; edgeLimit: number; artifactLimit: number }): PairRetrievalResult {
+	const nodesByPair = new Map<string, SessionContextNode[]>();
+	for (const node of input.graph.nodes) { if (!node.pairId) continue; const current = nodesByPair.get(node.pairId); if (current) current.push(node); else nodesByPair.set(node.pairId, [node]); }
+	const childById = new Map(input.graph.nodes.filter((node) => node.nodeRole === "child").map((node) => [node.id, node]));
+	const forcedChildrenByPair = new Map<string, string[]>();
+	for (const childId of input.patch.keepChildIds) { const pairId = childById.get(childId)?.pairId; if (!pairId) continue; const current = forcedChildrenByPair.get(pairId); if (current) current.push(childId); else forcedChildrenByPair.set(pairId, [childId]); }
+	const forcedPairIds = [...input.patch.keepPairIds];
+	for (const pairId of forcedChildrenByPair.keys()) if (!forcedPairIds.includes(pairId)) forcedPairIds.push(pairId);
+	const demoted = new Set(input.patch.demotePairIds);
+	const order = [...forcedPairIds];
+	for (const pairId of input.local.selectedPairIds) if (!order.includes(pairId) && !demoted.has(pairId)) order.push(pairId);
+	const selectedPairIds: string[] = [];
+	const selectedMainIds: string[] = [];
+	const selectedChildIds: string[] = [];
+	for (const pairId of order) {
+		if (selectedPairIds.length >= input.pairLimit) break;
+		const pairNodes = nodesByPair.get(pairId) ?? [];
+		const mains = [pairNodes.find((node) => node.nodeRole === "main" && node.population === "user")?.id, pairNodes.find((node) => node.nodeRole === "main" && node.population === "assistant")?.id].filter((id): id is string => Boolean(id));
+		const forcedChildren = forcedChildrenByPair.get(pairId) ?? [];
+		if (mains.length === 0 || selectedChildIds.length + forcedChildren.length > input.childLimit || selectedMainIds.length + selectedChildIds.length + mains.length + forcedChildren.length > input.nodeLimit) continue;
+		selectedPairIds.push(pairId); selectedMainIds.push(...mains); selectedChildIds.push(...forcedChildren);
+	}
+	for (const childId of input.local.selectedChildIds) { if (selectedChildIds.includes(childId) || selectedChildIds.length >= input.childLimit || selectedMainIds.length + selectedChildIds.length >= input.nodeLimit) continue; const child = childById.get(childId); if (child?.pairId && selectedPairIds.includes(child.pairId)) selectedChildIds.push(childId); }
+	const selectedNodeIds = [...selectedMainIds, ...selectedChildIds];
+	const selectedSet = new Set(selectedNodeIds);
+	const selectedEdgeIds = input.graph.edges.filter((edge) => selectedSet.has(edge.sourceNodeId) && selectedSet.has(edge.targetNodeId)).slice(0, input.edgeLimit).map((edge) => edge.id);
+	const artifacts = input.graph.artifacts.filter((artifact) => !artifact.nodeId || selectedSet.has(artifact.nodeId)).slice(0, input.artifactLimit).map((artifact) => ({ kind: artifact.kind, ref: artifact.ref, ...(artifact.nodeId ? { nodeId: artifact.nodeId } : {}), label: artifact.label }));
+	return { ...input.local, selectedPairIds, selectedNodeIds, selectedChildIds, selectedEdgeIds, artifacts };
 }
 
 export function shouldExternalRerank(input: {

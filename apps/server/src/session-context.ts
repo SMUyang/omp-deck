@@ -23,21 +23,49 @@ import { getTopologyRerankConfig } from "./config-topology-rerank.ts";
 import { retrieveTopology, tokenize, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
 import { retrieveConversationPairs, type PairRetrievalResult } from "./session-pair-retrieval.ts";
 import {
+	applyPairRerankPatch,
+	applyRerankPatch,
+	buildTopologyPairRerankRequest,
+	buildTopologyRerankRequest,
+	parsePairRerankPatch,
 	rerankTopologyWithExternalApi,
 	shouldExternalRerank,
-	buildTopologyRerankRequest,
-	applyRerankPatch,
+	validatePairRerankPatch,
 	validateRerankPatch,
 	type RerankPatch,
 	type TopologyRerankModelClient,
 } from "./topology-reranker.ts";
 import { rerankTopologyWithHttp } from "./topology-rerank-http-client.ts";
-import { rerankTopologyWithSiliconflow } from "./topology-rerank-siliconflow-adapter.ts";
+import { rerankTopologyPairsWithSiliconflow, rerankTopologyWithSiliconflow } from "./topology-rerank-siliconflow-adapter.ts";
 import { readManagedEnvFile } from "./env-store.ts";
 import { embedTexts, cosineSimilarity, type EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
 import { getNodeEmbeddings, saveNodeEmbeddings } from "./db/session-context.ts";
 import { refineNodesWithLLM, type TopologyExtractorModelClient } from "./topology-extractor.ts";
 
+export const TOPOLOGY_EMBEDDING_RECIPE_VERSION = "conversation-v2";
+
+function embeddingField(value: string | null | undefined): string | undefined {
+	const normalized = value?.replace(/\s+/g, " ").trim();
+	return normalized ? [...normalized].slice(0, 512).join("") : undefined;
+}
+
+export function buildTopologyEmbeddingDocument(node: SessionContextNode): string {
+	const refinedPurpose = embeddingField(node.refinedPurpose);
+	const deterministicPurpose = embeddingField(node.purpose);
+	const fields: Array<[string, string | undefined]> = [
+		["population", embeddingField(node.population)],
+		["role", embeddingField(node.nodeRole)],
+		["childType", embeddingField(node.childType)],
+		["pair", node.nodeRole === "child" ? embeddingField(node.pairId) : undefined],
+		["operation", embeddingField(node.operation)],
+		["detail", embeddingField(node.operationDetail)],
+		["purpose", refinedPurpose ?? deterministicPurpose],
+		["purposeFallback", refinedPurpose ? deterministicPurpose : undefined],
+		["title", embeddingField(node.title)],
+		["body", embeddingField(node.compressedBody || node.body)],
+	];
+	return fields.filter((field): field is [string, string] => Boolean(field[1])).map(([label, value]) => `${label}=${value}`).join("; ");
+}
 export interface ExtractInput {
 	sessionId: string;
 	content: string;
@@ -650,30 +678,21 @@ const DEFAULT_EMBEDDING_TIMEOUT_MS = 30_000;
 function getEmbeddingConfig(): EmbeddingConfig | undefined {
 	const file = readManagedEnvFile();
 	const enabled = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED;
-	if (!enabled || !["1", "true", "yes"].includes((enabled ?? "").trim().toLowerCase())) return undefined;
-	const baseUrl = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL")
-		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL
-		?? "";
+	if (!enabled || !["1", "true", "yes"].includes(enabled.trim().toLowerCase())) return undefined;
+	const baseUrl = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_BASE_URL ?? "";
 	if (!baseUrl) return undefined;
-	const apiKey = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY")
-		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY
-		?? getHttpRerankApiKey();
-	const model = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_MODEL")
-		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_MODEL
-		?? DEFAULT_EMBEDDING_MODEL;
-	const endpointPath = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH")
-		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH
-		?? DEFAULT_EMBEDDING_ENDPOINT;
-	const timeoutMsStr = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS")
-		?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS;
-	const timeoutMs = timeoutMsStr ? Math.max(1, Number(timeoutMsStr) || DEFAULT_EMBEDDING_TIMEOUT_MS) : DEFAULT_EMBEDDING_TIMEOUT_MS;
+	const apiKey = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_API_KEY ?? getHttpRerankApiKey();
+	const model = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_MODEL") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
+	const endpointPath = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH ?? DEFAULT_EMBEDDING_ENDPOINT;
+	const timeoutMsText = file.values.get("OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS") ?? process.env.OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS;
+	const timeoutMs = timeoutMsText ? Math.max(1, Number(timeoutMsText) || DEFAULT_EMBEDDING_TIMEOUT_MS) : DEFAULT_EMBEDDING_TIMEOUT_MS;
 	return { baseUrl, endpointPath, apiKey, model, timeoutMs };
 }
 
 function expandNeighborsLocal(seeds: Set<string>, graph: SessionContextGraphResponse, hops: 1 | 2): Set<string> {
 	const result = new Set(seeds);
 	let frontier = new Set(seeds);
-	for (let i = 0; i < hops; i++) {
+	for (let hop = 0; hop < hops; hop += 1) {
 		const next = new Set<string>();
 		for (const nodeId of frontier) {
 			for (const edge of graph.edges) {
@@ -691,89 +710,61 @@ async function getOrEmbedNodeEmbeddings(
 	sessionId: string,
 	nodes: SessionContextNode[],
 	config: EmbeddingConfig,
-): Promise<number[][] | undefined> {
-	const stored = getNodeEmbeddings(sessionId);
-	const missing = nodes.filter((n) => !stored.has(n.id));
-	if (missing.length > 0) {
-		const texts = missing.map((n) => `${n.kind}: ${n.title} — ${n.compressedBody || n.body}`.slice(0, 512));
-		const embeddings = await embedTexts(config, texts);
-		if (!embeddings) return undefined;
-		if (embeddings.length !== missing.length) return undefined;
-		const safeEntries: Array<{ nodeId: string; embedding: number[] }> = [];
-		for (let i = 0; i < missing.length; i++) {
-			const node = missing[i];
-			const vec = embeddings[i];
-			if (!vec || !node) return undefined;
-			safeEntries.push({ nodeId: node.id, embedding: vec });
-			stored.set(node.id, vec);
+	modelIdentity = config.model,
+	documentBuilder: (node: SessionContextNode) => string = (node) => `${node.kind}: ${node.title} — ${node.compressedBody || node.body}`.slice(0, 512),
+): Promise<Map<string, Float32Array> | undefined> {
+	const stored = getNodeEmbeddings(sessionId, modelIdentity);
+	const missing = nodes.filter((node) => !stored.has(node.id));
+	for (let start = 0; start < missing.length; start += 128) {
+		const batch = missing.slice(start, start + 128);
+		const embeddings = await embedTexts(config, batch.map(documentBuilder));
+		if (!embeddings || embeddings.length !== batch.length) return undefined;
+		const entries: Array<{ nodeId: string; embedding: number[] }> = [];
+		for (let index = 0; index < batch.length; index += 1) {
+			const node = batch[index];
+			const vector = embeddings[index];
+			if (!node || !vector) return undefined;
+			entries.push({ nodeId: node.id, embedding: vector });
+			stored.set(node.id, Float32Array.from(vector));
 		}
-		saveNodeEmbeddings({ sessionId, model: config.model, entries: safeEntries });
+		saveNodeEmbeddings({ sessionId, model: modelIdentity, entries });
 	}
-	const result = nodes.map((n) => stored.get(n.id));
-	if (result.some((v) => v === undefined)) return undefined;
-	return result as number[][];
+	return stored;
 }
 
-export async function retrieveTopologyWithEmbeddings(
-	input: RetrieveTopologyInput,
-	graph: SessionContextGraphResponse,
-	embeddingConfig: EmbeddingConfig,
-): Promise<RetrievedTopology | undefined> {
+export async function retrieveTopologyWithEmbeddings(input: RetrieveTopologyInput, graph: SessionContextGraphResponse, embeddingConfig: EmbeddingConfig): Promise<RetrievedTopology | undefined> {
 	if (graph.nodes.length === 0) return undefined;
 	const nodeEmbeddings = await getOrEmbedNodeEmbeddings(graph.sessionId, graph.nodes, embeddingConfig);
 	if (!nodeEmbeddings) return retrieveTopology(input, graph);
-	const queryEmbeddings = await embedTexts(embeddingConfig, [input.query]);
-	if (!queryEmbeddings) return retrieveTopology(input, graph);
-	if (!queryEmbeddings[0]) return retrieveTopology(input, graph);
-	const queryVec = queryEmbeddings[0]!;
-	const ranked = graph.nodes
-		.map((node, i) => ({ node, score: cosineSimilarity(queryVec, nodeEmbeddings[i]!) }))
-		.sort((a, b) => b.score - a.score);
+	const queryVector = (await embedTexts(embeddingConfig, [input.query]))?.[0];
+	if (!queryVector) return retrieveTopology(input, graph);
+	const ranked = graph.nodes.map((node) => ({ node, score: cosineSimilarity(queryVector, nodeEmbeddings.get(node.id) ?? []) })).sort((left, right) => right.score - left.score);
 	const candidates = ranked.slice(0, input.candidateNodeLimit);
 	const rankedCandidateNodeIds = candidates.map((item) => item.node.id);
 	const candidateIds = new Set(rankedCandidateNodeIds);
 	const expanded = expandNeighborsLocal(candidateIds, graph, input.expansionHops);
-	const scoreById = new Map(ranked.map((r) => [r.node.id, r.score]));
-	const orderedExpanded = graph.nodes
-		.filter((node) => expanded.has(node.id))
-		.sort((a, b) => (scoreById.get(b.id) ?? 0) - (scoreById.get(a.id) ?? 0));
-	const selectedNodes = orderedExpanded.slice(0, input.outputNodeLimit);
+	const scoreById = new Map(ranked.map((item) => [item.node.id, item.score]));
+	const selectedNodes = graph.nodes.filter((node) => expanded.has(node.id)).sort((left, right) => (scoreById.get(right.id) ?? 0) - (scoreById.get(left.id) ?? 0)).slice(0, input.outputNodeLimit);
 	const selectedNodeIds = selectedNodes.map((node) => node.id);
 	const selectedSet = new Set(selectedNodeIds);
-	const edges = graph.edges
-		.filter((edge) => selectedSet.has(edge.sourceNodeId) && selectedSet.has(edge.targetNodeId))
-		.slice(0, input.outputEdgeLimit);
-	const selectedEdgeIds = edges.map((edge) => edge.id);
-	const artifacts = graph.artifacts
-		.filter((artifact) => !artifact.nodeId || selectedSet.has(artifact.nodeId))
-		.slice(0, input.outputArtifactLimit)
-		.map((artifact) => ({
-			kind: artifact.kind,
-			ref: artifact.ref,
-			nodeId: artifact.nodeId,
-			label: artifact.label,
-		}));
-	return {
-		selectedNodeIds,
-		selectedEdgeIds,
-		candidateNodeIds: rankedCandidateNodeIds,
-		candidateEdgeIds: graph.edges
-			.filter((edge) => candidateIds.has(edge.sourceNodeId) && candidateIds.has(edge.targetNodeId))
-			.map((edge) => edge.id),
-		rankedCandidateNodeIds,
-		candidateNodeCount: candidates.length,
-		ranking: candidates.map((item) => ({
-			nodeId: item.node.id,
-			score: item.score,
-			reasons: { query: item.score, importance: 0, kind: 0 },
-		})),
-		artifacts,
-		omitted: {
-			nodeCount: Math.max(0, (graph.totalNodes || graph.nodes.length) - selectedNodeIds.length),
-			edgeCount: Math.max(0, graph.edges.length - selectedEdgeIds.length),
-			reason: graph.truncated || graph.nodes.length > input.outputNodeLimit ? "budget" : "none",
-		},
-	};
+	const selectedEdgeIds = graph.edges.filter((edge) => selectedSet.has(edge.sourceNodeId) && selectedSet.has(edge.targetNodeId)).slice(0, input.outputEdgeLimit).map((edge) => edge.id);
+	const artifacts = graph.artifacts.filter((artifact) => !artifact.nodeId || selectedSet.has(artifact.nodeId)).slice(0, input.outputArtifactLimit).map((artifact) => ({ kind: artifact.kind, ref: artifact.ref, nodeId: artifact.nodeId, label: artifact.label }));
+	return { selectedNodeIds, selectedEdgeIds, candidateNodeIds: rankedCandidateNodeIds, candidateEdgeIds: graph.edges.filter((edge) => candidateIds.has(edge.sourceNodeId) && candidateIds.has(edge.targetNodeId)).map((edge) => edge.id), rankedCandidateNodeIds, candidateNodeCount: candidates.length, ranking: candidates.map((item) => ({ nodeId: item.node.id, score: item.score, reasons: { query: item.score, importance: 0, kind: 0 } })), artifacts, omitted: { nodeCount: Math.max(0, (graph.totalNodes || graph.nodes.length) - selectedNodeIds.length), edgeCount: Math.max(0, graph.edges.length - selectedEdgeIds.length), reason: graph.truncated || graph.nodes.length > input.outputNodeLimit ? "budget" : "none" } };
+}
+
+async function retrieveConversationPairsWithEmbeddings(input: Parameters<typeof retrieveConversationPairs>[0], graph: SessionContextGraphResponse, config: EmbeddingConfig): Promise<PairRetrievalResult | undefined> {
+	const eligibleNodes = graph.nodes.filter((node) => node.nodeRole === "main" || node.nodeRole === "child");
+	const modelIdentity = `${config.model}::${TOPOLOGY_EMBEDDING_RECIPE_VERSION}`;
+	const vectors = await getOrEmbedNodeEmbeddings(graph.sessionId, eligibleNodes, config, modelIdentity, buildTopologyEmbeddingDocument);
+	if (!vectors) return retrieveConversationPairs(input, graph);
+	const queryVector = (await embedTexts(config, [input.query]))?.[0];
+	if (!queryVector) return retrieveConversationPairs(input, graph);
+	const semanticScores = new Map<string, number>();
+	for (const node of eligibleNodes) {
+		const vector = vectors.get(node.id);
+		if (vector) semanticScores.set(node.id, cosineSimilarity(queryVector, vector));
+	}
+	return retrieveConversationPairs({ ...input, semanticScores }, graph);
 }
 
 function pairRetrievalAsLegacyFocusInput(result: PairRetrievalResult): RetrievedTopology {
@@ -803,16 +794,27 @@ export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyF
 		if (graph.nodes.length === 0) return "";
 		const hasV2MainNodes = graph.nodes.some((node) => node.nodeRole === "main" && (node.population === "user" || node.population === "assistant"));
 		if (hasV2MainNodes) {
-			const retrieved = retrieveConversationPairs({
-				sessionId: input.sessionId,
-				query: input.query,
-				candidateMainLimit: limits.candidateNodeLimit,
-				outputNodeLimit: limits.outputNodeLimit,
-				outputEdgeLimit: limits.outputEdgeLimit,
-				outputArtifactLimit: limits.outputArtifactLimit,
-			}, graph);
+			const pairInput = { sessionId: input.sessionId, query: input.query, candidateMainLimit: limits.candidateNodeLimit, outputNodeLimit: limits.outputNodeLimit, outputEdgeLimit: limits.outputEdgeLimit, outputArtifactLimit: limits.outputArtifactLimit };
+			const embeddingConfig = getEmbeddingConfig();
+			const retrieved = embeddingConfig ? await retrieveConversationPairsWithEmbeddings(pairInput, graph, embeddingConfig) : retrieveConversationPairs(pairInput, graph);
 			if (!retrieved) return "";
-			return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, pairRetrievalAsLegacyFocusInput(retrieved));
+			let selected = retrieved;
+			const config = getTopologyRerankConfig();
+			const localTopScore = retrieved.ranking[0]?.score ?? 0;
+			if (config.enabled && shouldExternalRerank({ enabled: true, contextPercent: input.contextPercent, candidateNodeCount: retrieved.ranking.length, localTopScore, minContextPercent: config.minContextPercent, minCandidateNodes: config.minCandidateNodes, localConfidenceBelow: config.localConfidenceBelow })) {
+				const pairLimit = Math.max(1, Math.floor(limits.outputNodeLimit / 2));
+				const childLimit = Math.max(0, limits.outputNodeLimit - pairLimit * 2);
+				const request = buildTopologyPairRerankRequest({ query: input.query, graph, local: retrieved, pairLimit, nodeLimit: limits.outputNodeLimit, childLimit });
+				let raw: unknown;
+				if (config.provider === "http" && config.http.protocol === "siliconflow-rerank") raw = await rerankTopologyPairsWithSiliconflow({ ...config.http, relevanceThreshold: config.http.confidenceThreshold, apiKey: getHttpRerankApiKey(), request });
+				else if (config.provider === "model_role") {
+					try { raw = await (input.rerankClient ?? DISABLED_RERANK_CLIENT).rerankTopology({ modelRole: config.rerankModelRole, request, timeoutMs: config.timeoutMs }); } catch { raw = undefined; }
+				}
+				const parsed = parsePairRerankPatch(raw);
+				const valid = parsed ? validatePairRerankPatch({ patch: parsed, graph, local: retrieved, pairLimit, nodeLimit: limits.outputNodeLimit, childLimit }) : undefined;
+				if (valid) selected = applyPairRerankPatch({ local: retrieved, graph, patch: valid, pairLimit, nodeLimit: limits.outputNodeLimit, childLimit, edgeLimit: limits.outputEdgeLimit, artifactLimit: limits.outputArtifactLimit });
+			}
+			return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, pairRetrievalAsLegacyFocusInput(selected));
 		}
 	}
 

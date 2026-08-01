@@ -431,14 +431,14 @@ export function getCompleteSessionContextGraph(sessionId: string): SessionContex
 }
 
 
-export function getNodeEmbeddings(sessionId: string): Map<string, number[]> {
-	const rows = getDb().query<{ node_id: string; embedding: Uint8Array }, [string]>(
-		`SELECT node_id, embedding FROM session_context_node_embeddings WHERE session_id = ?`,
-	).all(sessionId);
-	const result = new Map<string, number[]>();
+export function getNodeEmbeddings(sessionId: string, modelIdentity: string): Map<string, Float32Array> {
+	const rows = getDb().query<{ node_id: string; embedding: Uint8Array }, [string, string]>(
+		`SELECT node_id, embedding FROM session_context_node_embeddings WHERE session_id = ? AND model = ?`,
+	).all(sessionId, modelIdentity);
+	const result = new Map<string, Float32Array>();
 	for (const row of rows) {
-		const floats = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
-		result.set(row.node_id, Array.from(floats));
+		const bytes = row.embedding.slice();
+		result.set(row.node_id, new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4));
 	}
 	return result;
 }

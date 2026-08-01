@@ -7,10 +7,12 @@ import type { SessionContextNode, SessionContextStatusResponse } from "@omp-deck
 import { closeDb, getDb, openDb } from "./index.ts";
 import {
 	getCompleteSessionContextGraph,
+	getNodeEmbeddings,
 	getSessionContextStatus,
 	getSessionContextGraph,
 	insertSessionContextNodes,
 	replaceSessionContext,
+	saveNodeEmbeddings,
 	upsertSessionContextCheckpoint,
 } from "./session-context.ts";
 
@@ -355,6 +357,18 @@ describe("session context store", () => {
 		].join("\n");
 		expect(combined).not.toContain(secret);
 		expect(combined).toContain("[REDACTED]");
+	});
+	test("RED: embedding cache identity rejects stale recipes and replaces the single node row", () => {
+		openTempDeckDb();
+		replaceSessionContext({ sessionId: "s1", nodes: [v2Node()], edges: [], artifacts: [] });
+		saveNodeEmbeddings({ sessionId: "s1", model: "embed-model::old-recipe", entries: [{ nodeId: v2Node().id, embedding: [1, 0] }] });
+
+		expect(getNodeEmbeddings("s1", "embed-model::conversation-v2").size).toBe(0);
+		expect(Array.from(getNodeEmbeddings("s1", "embed-model::old-recipe").get(v2Node().id) ?? [])).toEqual([1, 0]);
+
+		saveNodeEmbeddings({ sessionId: "s1", model: "embed-model::conversation-v2", entries: [{ nodeId: v2Node().id, embedding: [0, 1] }] });
+		expect(getNodeEmbeddings("s1", "embed-model::old-recipe").size).toBe(0);
+		expect(Array.from(getNodeEmbeddings("s1", "embed-model::conversation-v2").get(v2Node().id) ?? [])).toEqual([0, 1]);
 	});
 });
 
