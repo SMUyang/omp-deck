@@ -4,6 +4,7 @@ import type { SessionContextEdge, SessionContextNode } from "@omp-deck/protocol"
 import {
 	computeTopologyNodeLayout,
 	topologyEdgeStyle,
+	topologyInspectorCopyKey,
 	topologyNodeDetails,
 } from "./TopologyGraph.layout";
 
@@ -261,5 +262,13 @@ describe("topologyNodeDetails", () => {
 	test("returns only legacy-safe diagnostic fields when v2 semantics are absent", () => {
 		const details = topologyNodeDetails(node("legacy", { sourceTurnIndex: undefined }));
 		expect(details.map((detail) => detail.key)).toEqual(["importance"]);
+	});
+});
+
+describe("topologyInspectorCopyKey", () => {
+	test("selects translated copy keys for the empty and missing inspector states", () => {
+		expect(topologyInspectorCopyKey(null, false)).toBe("topologyWorkspace.graph.inspectHint");
+		expect(topologyInspectorCopyKey("missing-node", false)).toBe("topologyWorkspace.graph.nodeNotFound");
+		expect(topologyInspectorCopyKey("present-node", true)).toBeNull();
 	});
 });

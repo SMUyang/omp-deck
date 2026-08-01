@@ -206,6 +206,8 @@ void i18n.use(initReactI18next).init({
 						stats: "{{nodes}} nodes · {{edges}} edges",
 						legend: "Node kinds",
 						selectedNode: "Node details",
+						nodeNotFound: "Node not found.",
+						inspectHint: "Click a node in the graph to inspect it.",
 					},
 					details: {
 						title: "Title",
@@ -458,6 +460,8 @@ void i18n.use(initReactI18next).init({
 						stats: "{{nodes}} 节点 · {{edges}} 边",
 						legend: "节点类型",
 						selectedNode: "节点详情",
+						nodeNotFound: "未找到该节点。",
+						inspectHint: "点击图中的节点以查看详情。",
 					},
 					details: {
 						title: "标题",

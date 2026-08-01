@@ -13,7 +13,7 @@ import type {
 import { Layout } from "@/components/Layout";
 import { SessionContextStatusChip } from "@/components/session/SessionContextStatusChip";
 import { TopologyGraph } from "@/components/session/TopologyGraph";
-import { topologyNodeDetails } from "@/components/session/TopologyGraph.layout";
+import { topologyInspectorCopyKey, topologyNodeDetails } from "@/components/session/TopologyGraph.layout";
 import { ContextPackPanel } from "@/components/session/ContextPackPanel";
 import { ContextEvidenceTimeline } from "@/components/topology/ContextEvidenceTimeline";
 import { ContextSavingsCard } from "@/components/topology/ContextSavingsCard";
@@ -324,19 +324,17 @@ function NodeInspector({
 	t: TFunction;
 }) {
 	if (!node) {
-		if (selectedNodeId) {
-			return (
-				<div className="rounded-md border border-line p-2">
-					<p className="text-xs text-ink-3">Node not found.</p>
-				</div>
-			);
-		}
+		const copyKey = topologyInspectorCopyKey(selectedNodeId, false);
 		return (
 			<div className="rounded-md border border-line p-2">
-				<h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-3">
-					{t("topologyWorkspace.graph.selectedNode")}
-				</h4>
-				<p className="mt-1 text-xs text-ink-3">Click a node in the graph to inspect it.</p>
+				{selectedNodeId ? null : (
+					<h4 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-3">
+						{t("topologyWorkspace.graph.selectedNode")}
+					</h4>
+				)}
+				<p className={cn("text-xs text-ink-3", selectedNodeId ? "" : "mt-1")}>
+					{copyKey ? t(copyKey) : null}
+				</p>
 			</div>
 		);
 	}

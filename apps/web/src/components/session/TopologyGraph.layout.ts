@@ -77,6 +77,16 @@ export function topologyEdgeStyle(relation: SessionContextEdgeRelation): Topolog
 	return EDGE_STYLE[relation] ?? { dash: "0", color: "stroke-ink-3/30", width: 0.8 };
 }
 
+export function topologyInspectorCopyKey(
+	selectedNodeId: string | null,
+	nodeExists: boolean,
+): "topologyWorkspace.graph.inspectHint" | "topologyWorkspace.graph.nodeNotFound" | null {
+	if (nodeExists) return null;
+	return selectedNodeId
+		? "topologyWorkspace.graph.nodeNotFound"
+		: "topologyWorkspace.graph.inspectHint";
+}
+
 export function topologyNodeDetails(node: SessionContextNode): TopologyNodeDetail[] {
 	const details: TopologyNodeDetail[] = [];
 	pushSemanticDetail(details, "population", node.population);
