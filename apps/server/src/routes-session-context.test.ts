@@ -125,6 +125,12 @@ function insertLegacyV1Context(sessionId: string, sessionFile: string, counts = 
 	expect(raw?.extraction_schema_version).toBe(1);
 }
 
+function defer<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((done) => { resolve = done; });
+	return { promise, resolve };
+}
+
 /** Trigger rebuild and wait for it to complete (regex mode = instant). */
 async function rebuildAndWait(app: Hono, id: string): Promise<void> {
 	const res = await app.request(`/sessions/${id}/context/rebuild`, { method: "POST" });
@@ -213,6 +219,63 @@ describe("session context routes", () => {
 			expect(second.status).toBe(409);
 			expect(await second.json()).toEqual({ error: "already_rebuilding", sessionId: "persisted-s1" });
 			await rebuildAndWaitStatus(app, "persisted-s1");
+		});
+
+		test("serializes concurrent historical rebuild requests before session lookup resolves", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const sessionFile = path.join(dir, "persisted-s1.jsonl");
+			fs.writeFileSync(sessionFile, jsonl);
+			const listGate = defer<SessionSummary[]>();
+			let listCalls = 0;
+			const app = buildSessionContextRouter({
+				getSession: () => undefined,
+				listSessions: () => {
+					listCalls++;
+					return listGate.promise;
+				},
+			} as unknown as AgentBridge);
+
+			const firstPromise = app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			const secondPromise = app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			await Promise.resolve();
+
+			expect(listCalls).toBe(1);
+			listGate.resolve([{
+				id: "persisted-s1",
+				path: sessionFile,
+				cwd: "/repo",
+				title: "persisted-s1",
+				createdAt: "2026-07-02T00:00:00.000Z",
+				updatedAt: "2026-07-02T00:00:00.000Z",
+				messageCount: 1,
+			}]);
+
+			const [first, second] = await Promise.all([firstPromise, secondPromise]);
+			expect(first.status).toBe(202);
+			expect(second.status).toBe(409);
+			expect(await second.json()).toEqual({ error: "already_rebuilding", sessionId: "persisted-s1" });
+			await rebuildAndWaitStatus(app, "persisted-s1");
+		});
+
+		test("releases the rebuild claim when historical session lookup fails", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			let listCalls = 0;
+			const app = buildSessionContextRouter({
+				getSession: () => undefined,
+				listSessions: async () => {
+					listCalls++;
+					return [];
+				},
+			} as unknown as AgentBridge);
+
+			const first = await app.request("/sessions/missing/context/rebuild", { method: "POST" });
+			const second = await app.request("/sessions/missing/context/rebuild", { method: "POST" });
+
+			expect(first.status).toBe(404);
+			expect(second.status).toBe(404);
+			expect(listCalls).toBe(2);
 		});
 	});
 

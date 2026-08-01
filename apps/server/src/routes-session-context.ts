@@ -39,6 +39,9 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 
 	app.post("/sessions/:id/context/rebuild", async (c) => {
 		const id = c.req.param("id");
+		if (rebuilding.has(id)) return c.json({ error: "already_rebuilding", sessionId: id }, 409);
+		rebuilding.add(id);
+		let rebuildStarted = false;
 		try {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
@@ -46,14 +49,13 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			if (!(await Bun.file(target.sessionFile).exists())) {
 				return c.json({ error: "session_file_not_ready", retryable: true }, 409);
 			}
-			if (rebuilding.has(id)) return c.json({ error: "already_rebuilding", sessionId: id }, 409);
 
 			const ec = createExtractorPool();
 			const sessionFile = target.sessionFile;
-			rebuilding.add(id);
 
 			// Fire-and-forget: run the rebuild in the background so the HTTP
 			// connection is not held open past Bun's 255s idleTimeout.
+			rebuildStarted = true;
 			rebuildSessionContextFromFile({
 				sessionId: id,
 				sessionFile,
@@ -86,6 +88,8 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			}
 			log.error("context rebuild failed", err);
 			return c.json({ error: msg }, 500);
+		} finally {
+			if (!rebuildStarted) rebuilding.delete(id);
 		}
 	});
 
