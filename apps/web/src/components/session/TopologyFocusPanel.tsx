@@ -12,7 +12,10 @@ import {
 	latestUserText,
 	parseTopologyFocus,
 	splitQueryMatch,
+	topologyFocusNodeIds,
+	topologyFocusV1Projection,
 	type TopologyFocus,
+	type TopologyFocusV1,
 } from "@/lib/topology-focus";
 import { cn } from "@/lib/utils";
 import type { SessionContextFocusResponse } from "@omp-deck/protocol";
@@ -80,7 +83,7 @@ export function TopologyFocusPanel() {
 	const [graph, setGraph] = useState<SessionContextGraphResponse | null>(null);
 	const [graphLoading, setGraphLoading] = useState(false);
 	const focusIds = useMemo<Set<string>>(
-		() => new Set((state.focus?.nodes ?? []).map((n) => n.id)),
+		() => new Set(topologyFocusNodeIds(state.focus)),
 		[state.focus],
 	);
 	useEffect(() => {
@@ -158,7 +161,7 @@ export function TopologyFocusPanel() {
 						onRebuild={rebuild}
 						error={error ? t("topologyFocus.rebuildFailed") : null}
 					/>
-				) : state.focus && state.focus.nodes.length > 0 ? (
+				) : state.focus && topologyFocusNodeIds(state.focus).length > 0 ? (
 					<NodeList
 						focus={state.focus}
 						truncated={state.truncated}
@@ -236,47 +239,29 @@ function IconButton({
 }
 
 function NodeList({ focus, truncated }: { focus: TopologyFocus; truncated: boolean }) {
+	const projected = topologyFocusV1Projection(focus);
+	return <LegacyNodeList focus={projected} truncated={truncated} />;
+}
+
+function LegacyNodeList({ focus, truncated }: { focus: TopologyFocusV1; truncated: boolean }) {
 	const { t } = useTranslation();
 	const titleById = useMemo(() => {
 		const m = new Map<string, string>();
 		for (const n of focus.nodes) m.set(n.id, n.title);
 		return m;
 	}, [focus]);
-
 	const shown = focus.nodes.slice(0, NODE_DISPLAY_CAP);
 	const overflow = focus.nodes.length - shown.length;
-
 	return (
 		<div className="space-y-3 px-3 py-3">
 			<div className="flex items-center gap-2 text-2xs text-ink-3">
-				<span>
-					{focus.nodes.length} {t("topologyFocus.nodes")}
-				</span>
-				<span>·</span>
-				<span>
-					{focus.edges.length} {t("topologyFocus.edges")}
-				</span>
-				{focus.artifactCount > 0 ? (
-					<>
-						<span>·</span>
-						<span>
-							{focus.artifactCount} {t("topologyFocus.artifacts")}
-						</span>
-					</>
-				) : null}
+				<span>{focus.nodes.length} {t("topologyFocus.nodes")}</span><span>·</span><span>{focus.edges.length} {t("topologyFocus.edges")}</span>
+				{focus.artifactCount > 0 ? <><span>·</span><span>{focus.artifactCount} {t("topologyFocus.artifacts")}</span></> : null}
 			</div>
-			{shown.map((n, idx) => (
-				<FocusNodeCard key={n.id} node={n} rank={idx + 1} titleLookup={titleById} />
-			))}
-			{overflow > 0 ? (
-				<div className="text-2xs text-ink-3">{t("topologyFocus.more", { count: overflow })}</div>
-			) : null}
+			{shown.map((n, idx) => <FocusNodeCard key={n.id} node={n} rank={idx + 1} titleLookup={titleById} />)}
+			{overflow > 0 ? <div className="text-2xs text-ink-3">{t("topologyFocus.more", { count: overflow })}</div> : null}
 			{focus.edges.length > 0 ? <EdgeList edges={focus.edges} titleLookup={titleById} /> : null}
-			{(truncated || focus.omittedNodeCount > 0) ? (
-				<div className="text-2xs text-ink-3">
-					{t("topologyWorkspace.graph.truncated", { total: focus.nodes.length + focus.omittedNodeCount })}
-				</div>
-			) : null}
+			{(truncated || focus.omittedNodeCount > 0) ? <div className="text-2xs text-ink-3">{t("topologyWorkspace.graph.truncated", { total: focus.nodes.length + focus.omittedNodeCount })}</div> : null}
 		</div>
 	);
 }
@@ -285,7 +270,7 @@ function FocusNodeCard({
 	node,
 	rank,
 }: {
-	node: TopologyFocus["nodes"][number];
+	node: TopologyFocusV1["nodes"][number];
 	rank: number;
 	titleLookup: Map<string, string>;
 }) {
@@ -334,7 +319,7 @@ function EdgeList({
 	edges,
 	titleLookup,
 }: {
-	edges: TopologyFocus["edges"];
+	edges: TopologyFocusV1["edges"];
 	titleLookup: Map<string, string>;
 }) {
 	const { t } = useTranslation();

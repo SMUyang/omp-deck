@@ -6,8 +6,10 @@ import * as path from "node:path";
 import { Hono } from "hono";
 
 import type {
+	SessionContextEdge,
 	SessionContextFocusResponse,
 	SessionContextGraphResponse,
+	SessionContextNode,
 	SessionContextPackResponse,
 	SessionContextStatusResponse,
 	SessionSummary,
@@ -472,6 +474,49 @@ describe("session context routes", () => {
 			expect(body.focus).not.toContain('"relevance"');
 		});
 
+
+		test("reports authoritative v2 totals and exact selected counts", async () => {
+			const dir = tempDir();
+			openDb({ path: path.join(dir, "deck.db") });
+			const sessionFile = path.join(dir, "s-counts.jsonl");
+			fs.writeFileSync(sessionFile, jsonl);
+			const pairId = "pair-selected";
+			const user: SessionContextNode = { id: "u-selected", sessionId: "s-counts", kind: "goal", title: "selected", body: "selected needle", compressedBody: "selected needle", importance: 1, createdAt: "", sourceMessageId: "u1", sourceTurnIndex: 1, population: "user", nodeRole: "main", origin: "user", pairId, operation: "request", purpose: "selected needle", purposeSource: "explicit_text", status: "completed", metadata: {} };
+			const assistant: SessionContextNode = { id: "a-selected", sessionId: "s-counts", kind: "resolution", title: "answer", body: "answer", compressedBody: "answer", importance: 1, createdAt: "", sourceMessageId: "a1", sourceTurnIndex: 2, population: "assistant", nodeRole: "main", origin: "assistant", pairId, operation: "answer", purpose: "answer", purposeSource: "explicit_text", status: "completed", metadata: {} };
+			const child: SessionContextNode = { id: "c-selected", sessionId: "s-counts", kind: "evidence", title: "test", body: "passed", compressedBody: "passed", importance: 1, createdAt: "", sourceMessageId: "t1", sourceTurnIndex: 3, population: "assistant", nodeRole: "child", origin: "tool", childType: "test", pairId, parentNodeId: assistant.id, operation: "verify", purpose: "test", purposeSource: "deterministic", status: "completed", metadata: {} };
+			const unrelatedNodes = Array.from({ length: 70 }, (_, index): SessionContextNode => ({
+				...child,
+				id: `c-unowned-${index}`,
+				pairId: `pair-unowned-${index}`,
+				parentNodeId: `missing-assistant-${index}`,
+				title: `unowned ${index}`,
+				body: `unrelated ${index}`,
+				compressedBody: `unrelated ${index}`,
+				sourceMessageId: `tool-unowned-${index}`,
+				sourceTurnIndex: index + 4,
+			}));
+			const edges: SessionContextEdge[] = [
+				{ id: "answers-selected", sessionId: "s-counts", sourceNodeId: user.id, targetNodeId: assistant.id, relation: "answers", weight: 1, metadata: {} },
+				{ id: "child-selected", sessionId: "s-counts", sourceNodeId: assistant.id, targetNodeId: child.id, relation: "verified_by", weight: 1, metadata: {} },
+			];
+			const nodes = [user, assistant, child, ...unrelatedNodes];
+			replaceSessionContext({ sessionId: "s-counts", nodes, edges, artifacts: [] });
+			upsertSessionContextCheckpoint({ sessionId: "s-counts", sourcePath: sessionFile, sourceMtimeMs: 1, sourceSizeBytes: 1, nodeCount: nodes.length, edgeCount: edges.length, extractionSchemaVersion: 2, rebuiltAt: "2026-08-01T00:00:00.000Z" });
+			const app = buildSessionContextRouter(makeBridge({ sessionId: "s-counts", sessionFile }));
+
+			const res = await app.request("/sessions/s-counts/context-focus?q=selected%20needle");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextFocusResponse;
+			expect(body.nodeCount).toBe(nodes.length);
+			expect(body.edgeCount).toBe(edges.length);
+			expect(body.selectedNodeCount).toBe(3);
+			expect(body.selectedEdgeCount).toBe(2);
+			expect(body.truncated).toBe(true);
+			const payload = JSON.parse(body.focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)![1]!);
+			expect(payload.schemaVersion).toBe(2);
+			expect(payload.pairs).toHaveLength(1);
+		});
 		test("returns rendered focus for persisted session after rebuild", async () => {
 			const { app } = setupPersistedSession();
 			await rebuildAndWait(app, "persisted-s1");
@@ -515,6 +560,8 @@ describe("session context routes", () => {
 			const body = (await res.json()) as SessionContextFocusResponse;
 			expect(body.nodeCount).toBe(501);
 			expect(body.edgeCount).toBe(500);
+			expect(body.selectedNodeCount).toBeUndefined();
+			expect(body.selectedEdgeCount).toBeUndefined();
 			expect(body.truncated).toBe(true);
 			expect(getSessionContextStatus("persisted-s1").extractionSchemaVersion).toBe(1);
 		});

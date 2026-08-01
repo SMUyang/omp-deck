@@ -5,7 +5,7 @@ import type { SessionContextFocusResponse } from "@omp-deck/protocol";
 import type { AgentBridge } from "./bridge/types.ts";
 import { getSessionContextGraph, getSessionContextStatus, SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION } from "./db/session-context.ts";
 import { logger } from "./log.ts";
-import { getStoredQueryTopologyFocus, getStoredSessionContextPack, rebuildSessionContextFromFile } from "./session-context.ts";
+import { getStoredQueryTopologyFocusResult, getStoredSessionContextPack, rebuildSessionContextFromFile } from "./session-context.ts";
 import { createExtractorPool } from "./bridge/auto-rebuild.ts";
 
 const log = logger("routes-session-context");
@@ -148,7 +148,7 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 					emptyReason: "session_not_built",
 				} satisfies SessionContextFocusResponse);
 			}
-			const focus = await getStoredQueryTopologyFocus({
+			const focusResult = await getStoredQueryTopologyFocusResult({
 				sessionId: id,
 				query,
 				contextPercent: Number.isFinite(parsedPercent) ? parsedPercent : null,
@@ -157,11 +157,15 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			return c.json({
 				sessionId: id,
 				query,
-				focus,
+				focus: focusResult.focus,
 				nodeCount,
 				edgeCount,
-				truncated: nodeCount > graph.nodes.length,
-				...(focus ? {} : { emptyReason: "no_relevant_context" as const }),
+				...(focusResult.selectedNodeCount === undefined ? {} : { selectedNodeCount: focusResult.selectedNodeCount }),
+				...(focusResult.selectedEdgeCount === undefined ? {} : { selectedEdgeCount: focusResult.selectedEdgeCount }),
+				truncated: focusResult.selectedNodeCount !== undefined
+					? focusResult.selectedNodeCount < nodeCount || (focusResult.selectedEdgeCount ?? edgeCount) < edgeCount
+					: nodeCount > graph.nodes.length,
+				...(focusResult.focus ? {} : { emptyReason: "no_relevant_context" as const }),
 			} satisfies SessionContextFocusResponse);
 		} catch (err) {
 			log.error("context focus failed", err);

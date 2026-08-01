@@ -78,6 +78,55 @@ describe("parseTopologyFocus", () => {
 		});
 		expect(parseTopologyFocus(focus)?.edges).toHaveLength(1);
 	});
+
+	test("parses strict schema-v2 conversation pairs without carrying unknown fields", () => {
+		const parsed = parseTopologyFocus(wrap({
+			type: "session_topology_subgraph",
+			schemaVersion: 2,
+			sessionId: "s2",
+			query: "launcher",
+			pairs: [{
+				pairId: "pair-1",
+				user: { id: "u1", operation: "request", operationDetail: "start", purpose: "Start deck", purposeSource: "explicit_text", refinedPurpose: "Use production", body: "start mode", status: "completed", source: { messageId: "m1", turnIndex: 1 }, score: 99 },
+				assistant: { id: "a1", operation: "answer", body: "production launcher", source: { messageId: "m2" } },
+				children: [{ id: "c1", childType: "test", origin: "tool", body: "test passed", status: "completed", source: { turnIndex: 3 }, metadata: { rank: 1 } }],
+				artifacts: [{ kind: "test", ref: "bun test", label: "focused", nodeId: "c1", score: 4 }],
+			}],
+			omitted: { pairCount: 1, childCount: 2, artifactCount: 3, reason: "budget", ranking: [] },
+		}));
+
+		expect(parsed).toEqual({
+			schemaVersion: 2,
+			sessionId: "s2",
+			query: "launcher",
+			pairs: [{
+				pairId: "pair-1",
+				user: { id: "u1", operation: "request", operationDetail: "start", purpose: "Start deck", purposeSource: "explicit_text", refinedPurpose: "Use production", body: "start mode", status: "completed", source: { messageId: "m1", turnIndex: 1 } },
+				assistant: { id: "a1", operation: "answer", body: "production launcher", source: { messageId: "m2" } },
+				children: [{ id: "c1", childType: "test", origin: "tool", body: "test passed", status: "completed", source: { turnIndex: 3 } }],
+				artifacts: [{ kind: "test", ref: "bun test", label: "focused", nodeId: "c1" }],
+			}],
+			omitted: { pairCount: 1, childCount: 2, artifactCount: 3, reason: "budget" },
+		});
+	});
+
+	test("rejects malformed and unknown schema-v2 payloads without throwing", () => {
+		const goodUser = { id: "u1", body: "request" };
+		const goodChild = { id: "c1", childType: "test", body: "passed" };
+		const cases = [
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ user: goodUser, children: [], artifacts: [] }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ pairId: "p", children: [], artifacts: [] }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ pairId: "p", user: { id: "u1" }, children: [], artifacts: [] }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ pairId: "p", user: goodUser, children: [{ childType: "test", body: "x" }], artifacts: [] }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ pairId: "p", user: goodUser, children: [{ id: "c", body: "x" }], artifacts: [] }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ pairId: "p", user: goodUser, children: [{ id: "c", childType: "test" }], artifacts: [] }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: "bad", omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 2, sessionId: "s", query: "q", pairs: [{ pairId: "p", user: goodUser, children: [goodChild], artifacts: "bad" }], omitted: { pairCount: 0, childCount: 0, artifactCount: 0, reason: "none" } },
+			{ schemaVersion: 3, sessionId: "s", query: "q", pairs: [] },
+		];
+		for (const payload of cases) expect(() => parseTopologyFocus(wrap(payload))).not.toThrow();
+		for (const payload of cases) expect(parseTopologyFocus(wrap(payload))).toBeNull();
+	});
 });
 
 describe("latestUserText", () => {

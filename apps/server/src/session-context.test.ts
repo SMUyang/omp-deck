@@ -5,7 +5,8 @@ import * as path from "node:path";
 
 import { closeDb, getDb, openDb } from "./db/index.ts";
 import { getCompleteSessionContextGraph, getSessionContextGraph, getNodeEmbeddings, getSessionContextStatus, replaceSessionContext, saveNodeEmbeddings, upsertSessionContextCheckpoint } from "./db/session-context.ts";
-import { buildTopologyEmbeddingDocument, extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext, TOPOLOGY_EMBEDDING_RECIPE_VERSION } from "./session-context.ts";
+import { buildTopologyEmbeddingDocument, extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedConversationPairsAsFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext, TOPOLOGY_EMBEDDING_RECIPE_VERSION } from "./session-context.ts";
+import type { PairRetrievalResult } from "./session-pair-retrieval.ts";
 import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
 import type { SessionContextEdge, SessionContextGraphResponse, SessionContextNode, SessionContextPackResponse } from "@omp-deck/protocol";
 import type { EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
@@ -580,6 +581,104 @@ describe("context replacement", () => {
 		expect(payload.nodes[0].body).toContain("siliconflow");
 	});
 
+	test("renderRetrievedConversationPairsAsFocus renders complete clean schema-v2 pairs", () => {
+		const user: SessionContextNode = {
+			id: "u1", sessionId: "s1", kind: "user_intent", title: "Start mode request", body: "Please start mode with the production launcher", compressedBody: "Please start mode", importance: 0.9, createdAt: "", sourceMessageId: "user-1", sourceTurnIndex: 3,
+			population: "user", nodeRole: "main", origin: "user", pairId: "pair-1", operation: "request", operationDetail: "start mode", purpose: "Start the deck", purposeSource: "explicit_text", refinedPurpose: "Start production mode", status: "completed", metadata: { score: 99 },
+		};
+		const assistant: SessionContextNode = {
+			id: "a1", sessionId: "s1", kind: "resolution", title: "Production launcher", body: "Use the production launcher now", compressedBody: "Use launcher", importance: 0.8, createdAt: "", sourceMessageId: "assistant-1", sourceTurnIndex: 4,
+			population: "assistant", nodeRole: "main", origin: "assistant", pairId: "pair-1", operation: "answer", purpose: "Provide launcher", purposeSource: "structured_intent", status: "completed", metadata: { confidence: 0.8 },
+		};
+		const child: SessionContextNode = {
+			id: "c1", sessionId: "s1", kind: "evidence", title: "Targeted test passed", body: "", compressedBody: "", importance: 0.7, createdAt: "", sourceMessageId: "tool-1", sourceTurnIndex: 5,
+			population: "assistant", nodeRole: "child", origin: "tool", childType: "test", pairId: "pair-1", parentNodeId: "a1", operation: "verify", purpose: null, purposeSource: "deterministic", status: "completed", metadata: { candidateDiagnostics: { rank: 1 } },
+		};
+		const graph: SessionContextGraphResponse = {
+			sessionId: "s1",
+			nodes: [user, assistant, child],
+			edges: [
+				{ id: "answers", sessionId: "s1", sourceNodeId: user.id, targetNodeId: assistant.id, relation: "answers", weight: 1, metadata: { pairId: "pair-1" } },
+				{ id: "verified", sessionId: "s1", sourceNodeId: assistant.id, targetNodeId: child.id, relation: "verified_by", weight: 0.9, metadata: {} },
+			],
+			artifacts: [
+				{ id: "artifact-1", sessionId: "s1", nodeId: child.id, kind: "test", ref: "bun test focused", label: "focused test", metadata: { threshold: 0.4 } },
+			],
+			totalNodes: 3,
+			truncated: false,
+		};
+		const retrieved: PairRetrievalResult = {
+			selectedPairIds: ["pair-1"],
+			selectedNodeIds: [user.id, assistant.id, child.id],
+			selectedChildIds: [child.id],
+			selectedEdgeIds: ["answers", "verified"],
+			artifacts: [{ kind: "test", ref: "bun test focused", nodeId: child.id, label: "focused test" }],
+			eligibleCounts: { userMain: 2, assistantMain: 1, children: 2 },
+			candidateCounts: { userMain: 1, assistantMain: 1, children: 1 },
+			omitted: { pairs: 1, children: 1, reason: "budget" },
+			ranking: [{ unitId: "pair-1", score: 0.95, nodeIds: [user.id, assistant.id] }],
+		};
+
+		const focus = renderRetrievedConversationPairsAsFocus(graph, "s1", "production launcher", retrieved);
+		const json = focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
+		expect(json).toBeDefined();
+		const payload = JSON.parse(json!);
+		expect(payload.schemaVersion).toBe(2);
+		expect(payload.pairs).toHaveLength(1);
+		expect(payload.pairs[0].pairId).toBe("pair-1");
+		expect(payload.pairs[0].user).toMatchObject({ id: "u1", operation: "request", operationDetail: "start mode", purpose: "Start the deck", purposeSource: "explicit_text", refinedPurpose: "Start production mode", status: "completed", source: { messageId: "user-1", turnIndex: 3 } });
+		expect(payload.pairs[0].user.body).toContain("start mode");
+		expect(payload.pairs[0].assistant).toMatchObject({ id: "a1", operation: "answer", purpose: "Provide launcher", source: { messageId: "assistant-1", turnIndex: 4 } });
+		expect(payload.pairs[0].assistant.body).toContain("production launcher");
+		expect(payload.pairs[0].children[0]).toMatchObject({ id: "c1", childType: "test", origin: "tool", body: "Targeted test passed", source: { messageId: "tool-1", turnIndex: 5 } });
+		expect(payload.pairs[0].artifacts).toEqual([{ kind: "test", ref: "bun test focused", label: "focused test", nodeId: "c1" }]);
+		expect(payload.omitted).toEqual({ pairCount: 1, childCount: 1, artifactCount: 0, reason: "budget" });
+
+		const forbidden = new Set(["importance", "weight", "score", "scores", "rank", "confidence", "relevance", "cosine", "bm25", "reranker", "rerankReason", "localReason", "candidateDiagnostics", "threshold", "thresholds", "metadata", "refinement"]);
+		const visit = (value: unknown): void => {
+			if (Array.isArray(value)) for (const item of value) visit(item);
+			else if (value && typeof value === "object") for (const [key, item] of Object.entries(value)) {
+				expect(forbidden.has(key)).toBe(false);
+				visit(item);
+			} else if (typeof value === "string") {
+				expect(value).not.toContain('"candidateDiagnostics"');
+				expect(value).not.toContain('"score"');
+			}
+		};
+		visit(payload);
+	});
+
+
+	test("renderRetrievedConversationPairsAsFocus attaches an unowned legacy artifact once", () => {
+		const makeUser = (pairId: string, id: string): SessionContextNode => ({ id, sessionId: "s1", kind: "goal", title: id, body: id, compressedBody: id, importance: 1, createdAt: "", population: "user", nodeRole: "main", origin: "user", pairId, metadata: {} });
+		const first = makeUser("p1", "u1");
+		const second = makeUser("p2", "u2");
+		const graph: SessionContextGraphResponse = { sessionId: "s1", nodes: [first, second], edges: [], artifacts: [{ id: "legacy", sessionId: "s1", kind: "url", ref: "https://example.test", label: "legacy", metadata: {} }], totalNodes: 2, truncated: false };
+		const retrieved: PairRetrievalResult = {
+			selectedPairIds: ["p2", "p1"], selectedNodeIds: [second.id, first.id], selectedChildIds: [], selectedEdgeIds: [], artifacts: [{ kind: "url", ref: "https://example.test", label: "legacy" }],
+			eligibleCounts: { userMain: 2, assistantMain: 0, children: 0 }, candidateCounts: { userMain: 2, assistantMain: 0, children: 0 }, omitted: { pairs: 0, children: 0, reason: "none" }, ranking: [],
+		};
+		const payload = JSON.parse(renderRetrievedConversationPairsAsFocus(graph, "s1", "", retrieved).match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)![1]!);
+		expect(payload.pairs.map((pair: { pairId: string }) => pair.pairId)).toEqual(["p2", "p1"]);
+		expect(payload.pairs[0].artifacts).toHaveLength(1);
+		expect(payload.pairs[1].artifacts).toHaveLength(0);
+	});
+	test("renderRetrievedConversationPairsAsFocus supports unanswered pairs and partial source pointers", () => {
+		const user: SessionContextNode = {
+			id: "u-only", sessionId: "s1", kind: "goal", title: "Deterministic fallback", body: "", compressedBody: "", importance: 1, createdAt: "", sourceTurnIndex: 7,
+			population: "user", nodeRole: "main", origin: "user", pairId: "pair-only", operation: "ask", purpose: null, status: "pending", metadata: {},
+		};
+		const graph: SessionContextGraphResponse = { sessionId: "s1", nodes: [user], edges: [], artifacts: [], totalNodes: 1, truncated: false };
+		const retrieved: PairRetrievalResult = {
+			selectedPairIds: ["pair-only"], selectedNodeIds: [user.id], selectedChildIds: [], selectedEdgeIds: [], artifacts: [],
+			eligibleCounts: { userMain: 1, assistantMain: 0, children: 0 }, candidateCounts: { userMain: 1, assistantMain: 0, children: 0 }, omitted: { pairs: 0, children: 0, reason: "none" }, ranking: [],
+		};
+		const payload = JSON.parse(renderRetrievedConversationPairsAsFocus(graph, "s1", "fallback", retrieved).match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)![1]!);
+		expect(payload.pairs[0].user.body).toBe("Deterministic fallback");
+		expect(payload.pairs[0].user.source).toEqual({ turnIndex: 7 });
+		expect(payload.pairs[0].assistant).toBeUndefined();
+	});
+
 	test("combined hard case: IDF picks answer node from generic crowd AND renderer exposes hidden answer", () => {
 		const query = "topology env file url provider rerank siliconflow";
 		const genericNodes = Array.from({ length: 20 }, (_, i) => ({
@@ -659,7 +758,8 @@ describe("context replacement", () => {
 		if (savedDataDir === undefined) delete process.env.OMP_DECK_DATA_DIR;
 		else process.env.OMP_DECK_DATA_DIR = savedDataDir;
 		const v2Payload = JSON.parse(v2Focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1] ?? "null");
-		expect(v2Payload.nodes.map((node: { id: string }) => node.id)).toEqual(expect.arrayContaining([user.id, assistant.id]));
+		expect(v2Payload.pairs[0].user.id).toBe(user.id);
+		expect(v2Payload.pairs[0].assistant.id).toBe(assistant.id);
 		expect(JSON.stringify(v2Payload)).not.toContain("ranking");
 
 		closeDb();

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { parseTopologyFocus, latestUserText } from "@/lib/topology-focus";
+import { parseTopologyFocus, latestUserText, topologyFocusNodeIds } from "@/lib/topology-focus";
 
 import type {
 	ContextReplacementEvent,
@@ -107,7 +107,7 @@ export function TopologyView() {
 			.then((resp) => {
 				if (cancelled) return;
 				const parsed = parseTopologyFocus(resp.focus);
-				setFocusIds(new Set(parsed?.nodes.map((n) => n.id) ?? []));
+				setFocusIds(new Set(topologyFocusNodeIds(parsed)));
 			})
 			.catch((err) => {
 				if (!cancelled) setFocusError(err instanceof Error ? err.message : String(err));

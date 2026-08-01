@@ -6,6 +6,11 @@ import type {
 	SessionContextPackResponse,
 	SessionContextRawRef,
 	SessionContextRebuildResponse,
+	SessionTopologyFocusPayloadV2,
+	SessionTopologyFocusSource,
+	SessionTopologyFocusV2Child,
+	SessionTopologyFocusV2Node,
+	SessionTopologyFocusV2Pair,
 } from "@omp-deck/protocol";
 
 import {
@@ -767,37 +772,25 @@ async function retrieveConversationPairsWithEmbeddings(input: Parameters<typeof 
 	return retrieveConversationPairs({ ...input, semanticScores }, graph);
 }
 
-function pairRetrievalAsLegacyFocusInput(result: PairRetrievalResult): RetrievedTopology {
-	return {
-		selectedNodeIds: result.selectedNodeIds,
-		selectedEdgeIds: result.selectedEdgeIds,
-		candidateNodeIds: result.ranking.flatMap((item) => item.nodeIds),
-		candidateEdgeIds: [],
-		rankedCandidateNodeIds: result.ranking.flatMap((item) => item.nodeIds),
-		candidateNodeCount: result.candidateCounts.userMain + result.candidateCounts.assistantMain,
-		ranking: [],
-		artifacts: result.artifacts.map((artifact) => ({ ...artifact, nodeId: artifact.nodeId })),
-		omitted: {
-			nodeCount: result.omitted.pairs + result.omitted.children,
-			// Pair retrieval does not expose edge omission diagnostics in this temporary schema-v1 render bridge.
-			edgeCount: 0,
-			reason: result.omitted.reason,
-		},
-	};
+
+export interface StoredQueryTopologyFocusResult {
+	focus: string;
+	selectedNodeCount?: number;
+	selectedEdgeCount?: number;
 }
 
-export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): Promise<string> {
+export async function getStoredQueryTopologyFocusResult(input: GetStoredQueryTopologyFocusInput): Promise<StoredQueryTopologyFocusResult> {
 	const status = getSessionContextStatus(input.sessionId);
 	const limits = input.fullGraph ? FULL_GRAPH_LIMITS : DEFAULT_LIMITS;
 	if ((status.extractionSchemaVersion ?? 1) >= 2) {
 		const graph = getCompleteSessionContextGraph(input.sessionId);
-		if (graph.nodes.length === 0) return "";
+		if (graph.nodes.length === 0) return { focus: "" };
 		const hasV2MainNodes = graph.nodes.some((node) => node.nodeRole === "main" && (node.population === "user" || node.population === "assistant"));
 		if (hasV2MainNodes) {
 			const pairInput = { sessionId: input.sessionId, query: input.query, candidateMainLimit: limits.candidateNodeLimit, outputNodeLimit: limits.outputNodeLimit, outputEdgeLimit: limits.outputEdgeLimit, outputArtifactLimit: limits.outputArtifactLimit };
 			const embeddingConfig = getEmbeddingConfig();
 			const retrieved = embeddingConfig ? await retrieveConversationPairsWithEmbeddings(pairInput, graph, embeddingConfig) : retrieveConversationPairs(pairInput, graph);
-			if (!retrieved) return "";
+			if (!retrieved) return { focus: "" };
 			let selected = retrieved;
 			const config = getTopologyRerankConfig();
 			const localTopScore = retrieved.ranking[0]?.score ?? 0;
@@ -814,12 +807,16 @@ export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyF
 				const valid = parsed ? validatePairRerankPatch({ patch: parsed, graph, local: retrieved, pairLimit, nodeLimit: limits.outputNodeLimit, childLimit }) : undefined;
 				if (valid) selected = applyPairRerankPatch({ local: retrieved, graph, patch: valid, pairLimit, nodeLimit: limits.outputNodeLimit, childLimit, edgeLimit: limits.outputEdgeLimit, artifactLimit: limits.outputArtifactLimit });
 			}
-			return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, pairRetrievalAsLegacyFocusInput(selected));
+			return {
+				focus: renderRetrievedConversationPairsAsFocus(graph, input.sessionId, input.query, selected),
+				selectedNodeCount: selected.selectedNodeIds.length,
+				selectedEdgeCount: selected.selectedEdgeIds.length,
+			};
 		}
 	}
 
 	const graph = getSessionContextGraph(input.sessionId, input.fullGraph ? 1000 : 500);
-	if (graph.nodes.length === 0) return "";
+	if (graph.nodes.length === 0) return { focus: "" };
 	const embeddingConfig = getEmbeddingConfig();
 	const input_ = {
 		sessionId: input.sessionId,
@@ -833,7 +830,7 @@ export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyF
 	const retrieved = embeddingConfig
 		? await retrieveTopologyWithEmbeddings(input_, graph, embeddingConfig)
 		: retrieveTopology(input_, graph);
-	if (!retrieved) return "";
+	if (!retrieved) return { focus: "" };
 
 	let selected = retrieved;
 	const config = getTopologyRerankConfig();
@@ -876,7 +873,11 @@ export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyF
 		}
 	}
 
-	return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, selected);
+	return { focus: renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, selected) };
+}
+
+export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): Promise<string> {
+	return (await getStoredQueryTopologyFocusResult(input)).focus;
 }
 
 const SNIPPET_WINDOW = 120;
@@ -889,34 +890,129 @@ const SNIPPET_MAX_APPEND = 400;
  * Avoids duplicating content already visible in compressedBody.
  */
 function buildQueryAwareBody(node: SessionContextNode, queryTokens: string[]): string {
-	const base = node.compressedBody;
-	if (queryTokens.length === 0 || !node.body) return base;
-	const compressedLower = base.toLowerCase();
-	const bodyLower = node.body.toLowerCase();
-	const missingTokens = queryTokens.filter(
-		(token) => !compressedLower.includes(token) && bodyLower.includes(token),
-	);
-	if (missingTokens.length === 0) return base;
-	const snippets: string[] = [];
-	let appendedLen = 0;
-	for (const token of missingTokens) {
-		if (appendedLen >= SNIPPET_MAX_APPEND) break;
-		const idx = bodyLower.indexOf(token);
-		if (idx < 0) continue;
-		const windowBudget = SNIPPET_MAX_APPEND - appendedLen;
-		const half = Math.min(SNIPPET_WINDOW, Math.floor((windowBudget - token.length) / 2));
-		if (half <= 0) break;
-		const start = Math.max(0, idx - half);
-		const end = Math.min(node.body.length, idx + token.length + half);
-		const snippet = node.body.slice(start, end).trim();
-		const prefix = start > 0 ? "…" : "";
-		const suffix = end < node.body.length ? "…" : "";
-		const piece = `${prefix}${snippet}${suffix}`;
-		snippets.push(piece);
-		appendedLen += piece.length + 1;
+	const base = node.compressedBody.trim();
+	let rendered = base;
+	if (queryTokens.length > 0 && node.body) {
+		const compressedLower = base.toLowerCase();
+		const bodyLower = node.body.toLowerCase();
+		const missingTokens = queryTokens.filter(
+			(token) => !compressedLower.includes(token) && bodyLower.includes(token),
+		);
+		const snippets: string[] = [];
+		let appendedLen = 0;
+		for (const token of missingTokens) {
+			if (appendedLen >= SNIPPET_MAX_APPEND) break;
+			const idx = bodyLower.indexOf(token);
+			if (idx < 0) continue;
+			const windowBudget = SNIPPET_MAX_APPEND - appendedLen;
+			const half = Math.min(SNIPPET_WINDOW, Math.floor((windowBudget - token.length) / 2));
+			if (half <= 0) break;
+			const start = Math.max(0, idx - half);
+			const end = Math.min(node.body.length, idx + token.length + half);
+			const snippet = node.body.slice(start, end).trim();
+			const prefix = start > 0 ? "…" : "";
+			const suffix = end < node.body.length ? "…" : "";
+			const piece = `${prefix}${snippet}${suffix}`;
+			snippets.push(piece);
+			appendedLen += piece.length + 1;
+		}
+		if (snippets.length > 0) rendered = `${base}${base ? " " : ""}[query match] ${snippets.join(" ")}`;
 	}
-	if (snippets.length === 0) return base;
-	return `${base} [query match] ${snippets.join(" ")}`;
+	return rendered.trim() || node.body.trim() || node.refinedPurpose?.trim() || node.purpose?.trim() || node.title.trim() || node.id;
+}
+
+function renderFocusSource(node: SessionContextNode): SessionTopologyFocusSource | undefined {
+	if (!node.sourceMessageId && node.sourceTurnIndex === undefined) return undefined;
+	return {
+		...(node.sourceMessageId ? { messageId: node.sourceMessageId } : {}),
+		...(node.sourceTurnIndex !== undefined ? { turnIndex: node.sourceTurnIndex } : {}),
+	};
+}
+
+function renderV2Node(node: SessionContextNode, queryTokens: string[]): SessionTopologyFocusV2Node {
+	const source = renderFocusSource(node);
+	return {
+		id: node.id,
+		...(node.operation ? { operation: node.operation } : {}),
+		...(node.operationDetail ? { operationDetail: node.operationDetail } : {}),
+		...(node.purpose !== undefined ? { purpose: node.purpose } : {}),
+		...(node.purposeSource ? { purposeSource: node.purposeSource } : {}),
+		...(node.refinedPurpose ? { refinedPurpose: node.refinedPurpose } : {}),
+		body: buildQueryAwareBody(node, queryTokens),
+		...(node.status ? { status: node.status } : {}),
+		...(source ? { source } : {}),
+	};
+}
+
+export function renderRetrievedConversationPairsAsFocus(graph: SessionContextGraphResponse, sessionId: string, query: string, retrieved: PairRetrievalResult): string {
+	const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+	const pairNodes = new Map<string, SessionContextNode[]>();
+	for (const node of graph.nodes) {
+		if (!node.pairId) continue;
+		const existing = pairNodes.get(node.pairId);
+		if (existing) existing.push(node);
+		else pairNodes.set(node.pairId, [node]);
+	}
+	const selectedChildIds = new Set(retrieved.selectedChildIds);
+	const selectedNodeIds = new Set(retrieved.selectedNodeIds);
+	const queryTokens = [...new Set(tokenize(query))];
+	const pairByNodeId = new Map<string, string>();
+	const pairs: SessionTopologyFocusV2Pair[] = [];
+
+	for (const pairId of retrieved.selectedPairIds) {
+		const nodes = pairNodes.get(pairId) ?? [];
+		const user = nodes.find((node) => node.nodeRole === "main" && node.population === "user" && selectedNodeIds.has(node.id));
+		if (!user) continue;
+		const assistant = nodes.find((node) => node.nodeRole === "main" && node.population === "assistant" && selectedNodeIds.has(node.id));
+		const children: SessionTopologyFocusV2Child[] = assistant
+			? retrieved.selectedChildIds
+				.map((id) => nodeById.get(id))
+				.filter((node): node is SessionContextNode => Boolean(node && selectedChildIds.has(node.id) && node.nodeRole === "child" && node.pairId === pairId && node.parentNodeId === assistant.id && node.childType))
+				.map((node) => ({ ...renderV2Node(node, queryTokens), childType: node.childType!, ...(node.origin ? { origin: node.origin } : {}) }))
+			: [];
+		pairByNodeId.set(user.id, pairId);
+		if (assistant) pairByNodeId.set(assistant.id, pairId);
+		for (const child of children) pairByNodeId.set(child.id, pairId);
+		pairs.push({ pairId, user: renderV2Node(user, queryTokens), ...(assistant ? { assistant: renderV2Node(assistant, queryTokens) } : {}), children, artifacts: [] });
+	}
+
+	const pairById = new Map(pairs.map((pair) => [pair.pairId, pair]));
+	for (const artifact of retrieved.artifacts) {
+		const ownerPairId = artifact.nodeId ? pairByNodeId.get(artifact.nodeId) : pairs[0]?.pairId;
+		if (!ownerPairId) continue;
+		const owner = pairById.get(ownerPairId);
+		if (!owner) continue;
+		owner.artifacts.push({ kind: artifact.kind as SessionContextArtifact["kind"], ref: artifact.ref, ...(artifact.label ? { label: artifact.label } : {}), ...(artifact.nodeId ? { nodeId: artifact.nodeId } : {}) });
+	}
+
+	const eligiblePairCount = new Set(graph.nodes.filter((node) => node.nodeRole === "main" && node.population === "user" && node.pairId).map((node) => node.pairId!)).size;
+	const renderedChildCount = pairs.reduce((count, pair) => count + pair.children.length, 0);
+	const renderedArtifactCount = pairs.reduce((count, pair) => count + pair.artifacts.length, 0);
+	const payload: SessionTopologyFocusPayloadV2 = {
+		type: "session_topology_subgraph",
+		schemaVersion: 2,
+		sessionId,
+		query,
+		pairs,
+		omitted: {
+			pairCount: Math.max(retrieved.omitted.pairs, eligiblePairCount - pairs.length),
+			childCount: Math.max(retrieved.omitted.children, retrieved.eligibleCounts.children - renderedChildCount),
+			artifactCount: Math.max(0, graph.artifacts.length - renderedArtifactCount),
+			reason: retrieved.omitted.reason,
+		},
+	};
+	return [
+		"Use the following session topology subgraph as source-grounded memory.",
+		"Interpretation rules:",
+		"1. Each pair preserves a prior user intent and the assistant answer or action that responded to it.",
+		"2. Children are observations owned by that pair's assistant response; tests and errors report observed status, not proof of correctness.",
+		"3. Artifacts are evidence references owned by the selected node named by nodeId; an unowned legacy artifact appears only on the first pair.",
+		"4. Keep pair relationships intact and do not infer claims beyond the bodies, source pointers, child observations, and artifacts shown.",
+		"5. If required evidence or detail is absent, say what is missing.",
+		"<session_topology_subgraph>",
+		JSON.stringify(payload),
+		"</session_topology_subgraph>",
+	].join("\n");
 }
 
 export function renderRetrievedTopologyAsFocus(graph: SessionContextGraphResponse, sessionId: string, query: string, retrieved: RetrievedTopology): string {

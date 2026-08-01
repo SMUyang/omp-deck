@@ -7,7 +7,19 @@
  * this conversation currently focusing on" without re-running retrieval.
  */
 
-import type { SessionContextEdgeRelation, SessionContextNodeKind } from "@omp-deck/protocol";
+import type {
+	SessionContextArtifactKind,
+	SessionContextChildType,
+	SessionContextEdgeRelation,
+	SessionContextNodeKind,
+	SessionContextNodeOrigin,
+	SessionContextNodeStatus,
+	SessionContextOperation,
+	SessionContextPurposeSource,
+	SessionTopologyFocusSource,
+	SessionTopologyFocusV2Child,
+	SessionTopologyFocusV2Node,
+} from "@omp-deck/protocol";
 
 export interface FocusNode {
 	id: string;
@@ -24,13 +36,32 @@ export interface FocusEdge {
 	targetNodeId: string;
 }
 
-export interface TopologyFocus {
+export interface TopologyFocusV1 {
+	schemaVersion: 1;
 	query: string;
 	nodes: FocusNode[];
 	edges: FocusEdge[];
 	artifactCount: number;
 	omittedNodeCount: number;
 }
+
+export interface TopologyFocusV2Pair {
+	pairId: string;
+	user: SessionTopologyFocusV2Node;
+	assistant?: SessionTopologyFocusV2Node;
+	children: SessionTopologyFocusV2Child[];
+	artifacts: Array<{ kind: SessionContextArtifactKind; ref: string; label?: string; nodeId?: string }>;
+}
+
+export interface TopologyFocusV2 {
+	schemaVersion: 2;
+	sessionId: string;
+	query: string;
+	pairs: TopologyFocusV2Pair[];
+	omitted: { pairCount: number; childCount: number; artifactCount: number; reason: string };
+}
+
+export type TopologyFocus = TopologyFocusV1 | TopologyFocusV2;
 
 const OPEN_TAG = "<session_topology_subgraph>";
 const CLOSE_TAG = "</session_topology_subgraph>";
@@ -68,60 +99,107 @@ export function parseTopologyFocus(focusText: string): TopologyFocus | null {
 	} catch {
 		return null;
 	}
-	if (!payload || typeof payload !== "object") return null;
-	const p = payload as Record<string, unknown>;
+	if (!isRecord(payload)) return null;
+	if (payload.schemaVersion === 2) return parseV2(payload);
+	if (payload.schemaVersion !== undefined && payload.schemaVersion !== 1) return null;
+	return parseV1(payload);
+}
 
+function parseV1(p: Record<string, unknown>): TopologyFocusV1 {
 	const nodes: FocusNode[] = [];
 	if (Array.isArray(p.nodes)) {
 		for (const n of p.nodes) {
-			if (!n || typeof n !== "object") continue;
-			const r = n as Record<string, unknown>;
-			if (typeof r.id !== "string" || typeof r.title !== "string") continue;
-			const kind = typeof r.kind === "string" && NODE_KINDS.has(r.kind) ? (r.kind as SessionContextNodeKind) : "evidence";
-			const src = r.source && typeof r.source === "object" ? (r.source as Record<string, unknown>) : {};
-			nodes.push({
-				id: r.id,
-				kind,
-				title: r.title,
-				body: typeof r.body === "string" ? r.body : "",
-				source: {
-					messageId: typeof src.messageId === "string" ? src.messageId : undefined,
-					turnIndex: typeof src.turnIndex === "number" ? src.turnIndex : undefined,
-				},
-			});
+			if (!isRecord(n) || typeof n.id !== "string" || typeof n.title !== "string") continue;
+			const kind = typeof n.kind === "string" && NODE_KINDS.has(n.kind) ? n.kind as SessionContextNodeKind : "evidence";
+			const source = sanitizeSource(n.source) ?? {};
+			nodes.push({ id: n.id, kind, title: n.title, body: typeof n.body === "string" ? n.body : "", source });
 		}
 	}
-
 	const edges: FocusEdge[] = [];
 	if (Array.isArray(p.edges)) {
 		for (const e of p.edges) {
-			if (!e || typeof e !== "object") continue;
-			const r = e as Record<string, unknown>;
-			if (
-				typeof r.sourceNodeId === "string" &&
-				typeof r.targetNodeId === "string" &&
-				typeof r.relation === "string"
-			) {
-				edges.push({
-					sourceNodeId: r.sourceNodeId,
-					relation: r.relation as SessionContextEdgeRelation,
-					targetNodeId: r.targetNodeId,
-				});
+			if (isRecord(e) && typeof e.sourceNodeId === "string" && typeof e.targetNodeId === "string" && typeof e.relation === "string") {
+				edges.push({ sourceNodeId: e.sourceNodeId, relation: e.relation as SessionContextEdgeRelation, targetNodeId: e.targetNodeId });
 			}
 		}
 	}
+	const omittedNodeCount = isRecord(p.omitted) && typeof p.omitted.nodeCount === "number" ? p.omitted.nodeCount : 0;
+	return { schemaVersion: 1, query: typeof p.query === "string" ? p.query : "", nodes, edges, artifactCount: Array.isArray(p.artifacts) ? p.artifacts.length : 0, omittedNodeCount };
+}
 
-	const omittedNodeCount =
-		p.omitted && typeof p.omitted === "object" && typeof (p.omitted as Record<string, unknown>).nodeCount === "number"
-			? ((p.omitted as Record<string, unknown>).nodeCount as number)
-			: 0;
+function parseV2(p: Record<string, unknown>): TopologyFocusV2 | null {
+	if (p.type !== "session_topology_subgraph" || typeof p.sessionId !== "string" || typeof p.query !== "string" || !Array.isArray(p.pairs) || !isRecord(p.omitted)) return null;
+	const omitted = p.omitted;
+	if (typeof omitted.pairCount !== "number" || typeof omitted.childCount !== "number" || typeof omitted.artifactCount !== "number" || typeof omitted.reason !== "string") return null;
+	const pairs: TopologyFocusV2Pair[] = [];
+	for (const value of p.pairs) {
+		if (!isRecord(value) || typeof value.pairId !== "string" || !Array.isArray(value.children) || !Array.isArray(value.artifacts)) return null;
+		const user = sanitizeV2Node(value.user);
+		if (!user) return null;
+		const assistant = value.assistant === undefined ? undefined : sanitizeV2Node(value.assistant);
+		if (value.assistant !== undefined && !assistant) return null;
+		const children: SessionTopologyFocusV2Child[] = [];
+		for (const childValue of value.children) {
+			const childRecord = isRecord(childValue) ? childValue : undefined;
+			const child = sanitizeV2Node(childValue);
+			if (!childRecord || !child || typeof childRecord.childType !== "string") return null;
+			children.push({ ...child, childType: childRecord.childType as SessionContextChildType, ...(typeof childRecord.origin === "string" ? { origin: childRecord.origin as SessionContextNodeOrigin } : {}) });
+		}
+		const artifacts: TopologyFocusV2Pair["artifacts"] = [];
+		for (const artifactValue of value.artifacts) {
+			if (!isRecord(artifactValue) || typeof artifactValue.kind !== "string" || typeof artifactValue.ref !== "string") return null;
+			artifacts.push({ kind: artifactValue.kind as SessionContextArtifactKind, ref: artifactValue.ref, ...(typeof artifactValue.label === "string" ? { label: artifactValue.label } : {}), ...(typeof artifactValue.nodeId === "string" ? { nodeId: artifactValue.nodeId } : {}) });
+		}
+		pairs.push({ pairId: value.pairId, user, ...(assistant ? { assistant } : {}), children, artifacts });
+	}
+	return { schemaVersion: 2, sessionId: p.sessionId, query: p.query, pairs, omitted: { pairCount: omitted.pairCount, childCount: omitted.childCount, artifactCount: omitted.artifactCount, reason: omitted.reason } };
+}
 
+function sanitizeV2Node(value: unknown): SessionTopologyFocusV2Node | null {
+	if (!isRecord(value) || typeof value.id !== "string" || typeof value.body !== "string" || value.body.trim().length === 0) return null;
+	const source = sanitizeSource(value.source);
 	return {
-		query: typeof p.query === "string" ? p.query : "",
+		id: value.id,
+		...(typeof value.operation === "string" ? { operation: value.operation as SessionContextOperation } : {}),
+		...(typeof value.operationDetail === "string" ? { operationDetail: value.operationDetail } : {}),
+		...(value.purpose === null || typeof value.purpose === "string" ? { purpose: value.purpose as string | null } : {}),
+		...(typeof value.purposeSource === "string" ? { purposeSource: value.purposeSource as SessionContextPurposeSource } : {}),
+		...(typeof value.refinedPurpose === "string" ? { refinedPurpose: value.refinedPurpose } : {}),
+		body: value.body,
+		...(typeof value.status === "string" ? { status: value.status as SessionContextNodeStatus } : {}),
+		...(source ? { source } : {}),
+	};
+}
+
+function sanitizeSource(value: unknown): SessionTopologyFocusSource | undefined {
+	if (!isRecord(value)) return undefined;
+	const source = { ...(typeof value.messageId === "string" ? { messageId: value.messageId } : {}), ...(typeof value.turnIndex === "number" ? { turnIndex: value.turnIndex } : {}) };
+	return source.messageId || source.turnIndex !== undefined ? source : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+export function topologyFocusNodeIds(focus: TopologyFocus | null): string[] {
+	if (!focus) return [];
+	if (focus.schemaVersion === 1) return focus.nodes.map((node) => node.id);
+	return focus.pairs.flatMap((pair) => [pair.user.id, ...(pair.assistant ? [pair.assistant.id] : []), ...pair.children.map((child) => child.id)]);
+}
+
+export function topologyFocusV1Projection(focus: TopologyFocus): TopologyFocusV1 {
+	if (focus.schemaVersion === 1) return focus;
+	const nodes: FocusNode[] = focus.pairs.flatMap((pair) => [
+		{ id: pair.user.id, kind: "user_intent", title: pair.user.purpose ?? pair.user.refinedPurpose ?? pair.user.operationDetail ?? pair.user.operation ?? "User intent", body: pair.user.body, source: pair.user.source ?? {} },
+		...(pair.assistant ? [{ id: pair.assistant.id, kind: "resolution" as const, title: pair.assistant.purpose ?? pair.assistant.refinedPurpose ?? pair.assistant.operationDetail ?? pair.assistant.operation ?? "Assistant answer", body: pair.assistant.body, source: pair.assistant.source ?? {} }] : []),
+		...pair.children.map((child) => ({ id: child.id, kind: "evidence" as const, title: child.purpose ?? child.refinedPurpose ?? child.operationDetail ?? child.childType, body: child.body, source: child.source ?? {} })),
+	]);
+	return {
+		schemaVersion: 1,
+		query: focus.query,
 		nodes,
-		edges,
-		artifactCount: Array.isArray(p.artifacts) ? p.artifacts.length : 0,
-		omittedNodeCount,
+		edges: [],
+		artifactCount: focus.pairs.reduce((count, pair) => count + pair.artifacts.length, 0),
+		omittedNodeCount: focus.omitted.pairCount + focus.omitted.childCount,
 	};
 }
 

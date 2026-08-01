@@ -2144,12 +2144,63 @@ export interface SessionContextPackResponse {
 	omitted: SessionContextOmitted;
 }
 
+export interface SessionTopologyFocusSource {
+	messageId?: string;
+	turnIndex?: number;
+}
+
+export interface SessionTopologyFocusV2Node {
+	id: string;
+	operation?: SessionContextOperation;
+	operationDetail?: string;
+	purpose?: string | null;
+	purposeSource?: SessionContextPurposeSource;
+	refinedPurpose?: string;
+	body: string;
+	status?: SessionContextNodeStatus;
+	source?: SessionTopologyFocusSource;
+}
+
+export interface SessionTopologyFocusV2Child extends SessionTopologyFocusV2Node {
+	childType: SessionContextChildType;
+	origin?: SessionContextNodeOrigin;
+}
+
+export interface SessionTopologyFocusV2Pair {
+	pairId: string;
+	user: SessionTopologyFocusV2Node;
+	assistant?: SessionTopologyFocusV2Node;
+	children: SessionTopologyFocusV2Child[];
+	artifacts: Array<{
+		kind: SessionContextArtifactKind;
+		ref: string;
+		label?: string;
+		nodeId?: string;
+	}>;
+}
+
+export interface SessionTopologyFocusPayloadV2 {
+	type: "session_topology_subgraph";
+	schemaVersion: 2;
+	sessionId: string;
+	query: string;
+	pairs: SessionTopologyFocusV2Pair[];
+	omitted: {
+		pairCount: number;
+		childCount: number;
+		artifactCount: number;
+		reason: string;
+	};
+}
+
 export interface SessionContextFocusResponse {
 	sessionId: string;
 	query: string;
 	focus: string;
 	nodeCount: number;
 	edgeCount: number;
+	selectedNodeCount?: number;
+	selectedEdgeCount?: number;
 	truncated: boolean;
 	emptyReason?: "session_not_built" | "no_relevant_context";
 }
