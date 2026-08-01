@@ -14,16 +14,14 @@ import type {
 } from "@omp-deck/protocol";
 
 import type { AgentBridge } from "./bridge/types.ts";
-import { closeDb, openDb } from "./db/index.ts";
+import { closeDb, getDb, openDb } from "./db/index.ts";
+import { getSessionContextStatus, replaceSessionContext, upsertSessionContextCheckpoint } from "./db/session-context.ts";
 import { buildSessionContextRouter } from "./routes-session-context.ts";
-
 const jsonl = [
-	JSON.stringify({ type: "title", v: 1, title: "Context topology" }),
-	JSON.stringify({ type: "session", version: 3, id: "s1", cwd: "/repo", timestamp: "2026-07-02T00:00:00.000Z" }),
-	JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "继续会话内拓扑记忆系统的搭建" }] } }),
-	JSON.stringify({ type: "message", id: "a1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "推荐先做 Memory Cockpit 可视化拓扑。" }] } }),
-	JSON.stringify({ type: "message", id: "u2", timestamp: "2026-07-02T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "我希望的是作为上下文数据的替换方法，节省上下文空间" }] } }),
-	JSON.stringify({ type: "message", id: "tool1", timestamp: "2026-07-02T00:00:04.000Z", message: { role: "tool", content: [{ type: "text", text: "bun test apps/server/src/session-context.test.ts\n10 pass 0 fail" }] } }),
+	JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-07-31T10:00:00.000Z", message: { role: "user", content: [{ type: "text", text: "Run the topology context test." }], timestamp: Date.parse("2026-07-31T10:00:00.000Z") } }),
+	JSON.stringify({ type: "message", id: "a-tools", parentId: "u1", timestamp: "2026-07-31T10:00:01.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "test-1", name: "bash", arguments: { command: "bun test apps/server/src/routes-session-context.test.ts" } }], stopReason: "toolUse", timestamp: Date.parse("2026-07-31T10:00:01.000Z") } }),
+	JSON.stringify({ type: "message", id: "r1", parentId: "a-tools", timestamp: "2026-07-31T10:00:02.000Z", message: { role: "toolResult", toolCallId: "test-1", toolName: "bash", content: [{ type: "text", text: "39 pass\n0 fail" }], details: { exitCode: 0 }, isError: false, timestamp: Date.parse("2026-07-31T10:00:02.000Z") } }),
+	JSON.stringify({ type: "message", id: "a1", parentId: "r1", timestamp: "2026-07-31T10:00:03.000Z", message: { role: "assistant", content: [{ type: "text", text: "The topology context test passes." }], stopReason: "stop", timestamp: Date.parse("2026-07-31T10:00:03.000Z") } }),
 ].join("\n");
 
 const tempDirs: string[] = [];
@@ -89,30 +87,82 @@ function setupPersistedSession(): { app: Hono; sessionFile: string } {
 	return { app, sessionFile };
 }
 
+function insertLegacyV1Context(sessionId: string, sessionFile: string, counts = { nodeCount: 2, edgeCount: 1 }): void {
+	const db = getDb();
+	const nodes = Array.from({ length: counts.nodeCount }, (_, index) => ({
+		id: `${sessionId}-legacy-${index}`,
+		sessionId,
+		kind: index === 0 ? "goal" as const : "evidence" as const,
+		title: `legacy ${index}`,
+		body: `legacy body ${index}`,
+		compressedBody: `legacy body ${index}`,
+		importance: 1 - index / Math.max(1, counts.nodeCount),
+		createdAt: `2026-07-01T00:00:${String(index).padStart(2, "0")}.000Z`,
+		metadata: {},
+	}));
+	const edges = Array.from({ length: counts.edgeCount }, (_, index) => ({
+		id: `${sessionId}-legacy-edge-${index}`,
+		sessionId,
+		sourceNodeId: nodes[index % nodes.length]!.id,
+		targetNodeId: nodes[(index + 1) % nodes.length]!.id,
+		relation: "verified_by" as const,
+		weight: 0.8,
+		metadata: {},
+	}));
+	replaceSessionContext({ sessionId, nodes, edges, artifacts: [] });
+	const stat = fs.statSync(sessionFile);
+	upsertSessionContextCheckpoint({
+		sessionId,
+		sourcePath: sessionFile,
+		sourceMtimeMs: Math.trunc(stat.mtimeMs),
+		sourceSizeBytes: stat.size,
+		nodeCount: counts.nodeCount,
+		edgeCount: counts.edgeCount,
+		extractionSchemaVersion: 1,
+		rebuiltAt: "2026-07-01T00:00:10.000Z",
+	});
+	const raw = db.query<{ extraction_schema_version: number }, [string]>("SELECT extraction_schema_version FROM session_context_checkpoints WHERE session_id = ?").get(sessionId);
+	expect(raw?.extraction_schema_version).toBe(1);
+}
+
 /** Trigger rebuild and wait for it to complete (regex mode = instant). */
 async function rebuildAndWait(app: Hono, id: string): Promise<void> {
 	const res = await app.request(`/sessions/${id}/context/rebuild`, { method: "POST" });
 	expect(res.status).toBe(202);
-	const deadline = Date.now() + 5000;
-	while (Date.now() < deadline) {
+	return rebuildAndWaitStatus(app, id).then(() => {});
+}
+
+async function rebuildAndWaitStatus(app: Hono, id: string): Promise<SessionContextStatusResponse> {
+	for (;;) {
 		const statusRes = await app.request(`/sessions/${id}/context-status`);
 		if (statusRes.status === 200) {
 			const body = (await statusRes.json()) as SessionContextStatusResponse;
-			if (body.built && !body.rebuilding) return;
+			if (body.built && !body.rebuilding) return body;
 		}
-		await Bun.sleep(20);
+		await Bun.sleep(1);
 	}
-	throw new Error(`rebuild did not complete for ${id} within 5s`);
 }
+
 
 // Force regex extraction so tests don't hit real DeepSeek API
 let extractionModeBackup: string | undefined;
+let embeddingEnabledBackup: string | undefined;
+let dataDirBackup: string | undefined;
 beforeEach(() => {
+	extractionModeBackup = process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE;
+	embeddingEnabledBackup = process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED;
+	dataDirBackup = process.env.OMP_DECK_DATA_DIR;
 	process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = "regex";
+	process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED = "0";
+	process.env.OMP_DECK_DATA_DIR = tempDir();
 });
 afterEach(() => {
-	if (extractionModeBackup) process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = extractionModeBackup;
+	if (extractionModeBackup !== undefined) process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE = extractionModeBackup;
 	else delete process.env.OMP_DECK_TOPOLOGY_EXTRACTION_MODE;
+	if (embeddingEnabledBackup !== undefined) process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED = embeddingEnabledBackup;
+	else delete process.env.OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED;
+	if (dataDirBackup !== undefined) process.env.OMP_DECK_DATA_DIR = dataDirBackup;
+	else delete process.env.OMP_DECK_DATA_DIR;
 });
 
 describe("session context routes", () => {
@@ -137,37 +187,32 @@ describe("session context routes", () => {
 			expect(await res.json()).toEqual({ error: "session_file_not_ready", retryable: true });
 		});
 
-		test("returns 202 and rebuilds async when session has a file", async () => {
-			const { app, sessionFile } = setupSession();
-			const res = await app.request("/sessions/s1/context/rebuild", { method: "POST" });
+		test("returns current extraction version while rebuilding and stores version 2 for a historical session", async () => {
+			const { app, sessionFile } = setupPersistedSession();
+			insertLegacyV1Context("persisted-s1", sessionFile);
+
+			const res = await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+
 			expect(res.status).toBe(202);
-			const body = (await res.json()) as { sessionId: string; status: string; sourcePath: string };
-			expect(body.sessionId).toBe("s1");
-			expect(body.status).toBe("rebuilding");
-			expect(body.sourcePath).toBe(sessionFile);
-		// Wait for async rebuild to settle (poll status, don't re-trigger)
-		for (let i = 0; i < 100; i++) {
-			const sr = await app.request("/sessions/s1/context-status");
-			const sb = (await sr.json()) as SessionContextStatusResponse;
-			if (sb.built && !sb.rebuilding) break;
-			await Bun.sleep(20);
-		}
+			const body = (await res.json()) as SessionContextStatusResponse;
+			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.rebuilding).toBe(true);
+			expect(body.extractionSchemaVersion).toBe(2);
+			await rebuildAndWaitStatus(app, "persisted-s1");
+			const status = getSessionContextStatus("persisted-s1");
+			expect(status.extractionSchemaVersion).toBe(2);
 		});
 
-		test("returns 202 for persisted session and rebuilds async", async () => {
-			const { app, sessionFile } = setupPersistedSession();
-			const res = await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
-			expect(res.status).toBe(202);
-			const body = (await res.json()) as { sessionId: string; status: string; sourcePath: string };
-			expect(body.sessionId).toBe("persisted-s1");
-			expect(body.status).toBe("rebuilding");
-			expect(body.sourcePath).toBe(sessionFile);
-		for (let i = 0; i < 100; i++) {
-			const sr = await app.request("/sessions/persisted-s1/context-status");
-			const sb = (await sr.json()) as SessionContextStatusResponse;
-			if (sb.built && !sb.rebuilding) break;
-			await Bun.sleep(20);
-		}
+		test("rejects a second rebuild while the first historical rebuild is in progress", async () => {
+			const { app } = setupPersistedSession();
+
+			const first = await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+			const second = await app.request("/sessions/persisted-s1/context/rebuild", { method: "POST" });
+
+			expect(first.status).toBe(202);
+			expect(second.status).toBe(409);
+			expect(await second.json()).toEqual({ error: "already_rebuilding", sessionId: "persisted-s1" });
+			await rebuildAndWaitStatus(app, "persisted-s1");
 		});
 	});
 
@@ -238,6 +283,18 @@ describe("session context routes", () => {
 			const body = (await res.json()) as { error: string };
 			expect(body.error).toContain("boom: list sessions failed");
 		});
+
+		test("reads a v1 checkpoint without mutating its version", async () => {
+			const { app, sessionFile } = setupPersistedSession();
+			insertLegacyV1Context("persisted-s1", sessionFile);
+
+			const res = await app.request("/sessions/persisted-s1/context-status");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextStatusResponse;
+			expect(body.extractionSchemaVersion).toBe(1);
+			expect(getSessionContextStatus("persisted-s1").extractionSchemaVersion).toBe(1);
+		});
 	});
 
 	describe("GET /sessions/:id/context-pack", () => {
@@ -271,6 +328,19 @@ describe("session context routes", () => {
 			expect(Array.isArray(body.goals)).toBe(true);
 			expect(typeof body.summary).toBe("string");
 		});
+
+		test("reads a v1 pack without implicitly rebuilding the checkpoint", async () => {
+			const { app, sessionFile } = setupPersistedSession();
+			insertLegacyV1Context("persisted-s1", sessionFile);
+
+			const res = await app.request("/sessions/persisted-s1/context-pack?q=legacy&budget=4000");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextPackResponse;
+			expect(body.sessionId).toBe("persisted-s1");
+			expect(body.summary).toContain("legacy body");
+			expect(getSessionContextStatus("persisted-s1").extractionSchemaVersion).toBe(1);
+		});
 	});
 
 	describe("GET /sessions/:id/context-graph", () => {
@@ -301,6 +371,19 @@ describe("session context routes", () => {
 			expect(body.nodes.length).toBeLessThanOrEqual(2);
 			expect(body.totalNodes).toBe(3);
 			expect(body.truncated).toBe(true);
+		});
+
+		test("reads a v1 graph without implicitly rebuilding the checkpoint", async () => {
+			const { app, sessionFile } = setupPersistedSession();
+			insertLegacyV1Context("persisted-s1", sessionFile);
+
+			const res = await app.request("/sessions/persisted-s1/context-graph?limit=1");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextGraphResponse;
+			expect(body.nodes).toHaveLength(1);
+			expect(body.totalNodes).toBe(2);
+			expect(getSessionContextStatus("persisted-s1").extractionSchemaVersion).toBe(1);
 		});
 	});
 
@@ -357,6 +440,20 @@ describe("session context routes", () => {
 				truncated: false,
 				emptyReason: "session_not_built",
 			});
+		});
+
+		test("uses checkpoint totals for bounded focus and keeps v1 checkpoint read-only", async () => {
+			const { app, sessionFile } = setupPersistedSession();
+			insertLegacyV1Context("persisted-s1", sessionFile, { nodeCount: 501, edgeCount: 500 });
+
+			const res = await app.request("/sessions/persisted-s1/context-focus?q=legacy");
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as SessionContextFocusResponse;
+			expect(body.nodeCount).toBe(501);
+			expect(body.edgeCount).toBe(500);
+			expect(body.truncated).toBe(true);
+			expect(getSessionContextStatus("persisted-s1").extractionSchemaVersion).toBe(1);
 		});
 
 		test("returns 404 when session is missing", async () => {

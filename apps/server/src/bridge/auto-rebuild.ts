@@ -7,7 +7,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { getSessionContextStatus } from "../db/session-context.ts";
+import { getDb } from "../db/index.ts";
+import { getSessionContextStatus, SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION } from "../db/session-context.ts";
 import { logger } from "../log.ts";
 import { rebuildSessionContextFromFile } from "../session-context.ts";
 import { createPooledTopologyExtractorClient, SYSTEM_PROMPT, type TopologyExtractorModelClient, type TopologyExtractorPoolSlot } from "../topology-extractor.ts";
@@ -16,8 +17,10 @@ const log = logger("auto-rebuild");
 
 export interface AutoRebuildCheckpoint {
 	built: boolean;
+	sourcePath?: string;
 	sourceMtimeMs?: number;
 	sourceSizeBytes?: number;
+	extractionSchemaVersion?: number;
 }
 
 export interface AutoRebuildDeps {
@@ -27,6 +30,20 @@ export interface AutoRebuildDeps {
 	getCheckpoint: (sid: string) => AutoRebuildCheckpoint;
 	rebuild: (sid: string, f: string) => Promise<void>;
 	sleep: (ms: number) => Promise<void>;
+}
+
+
+export function isCheckpointFresh(
+	checkpoint: AutoRebuildCheckpoint,
+	source: { path: string; mtimeMs: number; size: number },
+	currentVersion = SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION,
+): boolean {
+	return checkpoint.built
+		&& typeof checkpoint.sourcePath === "string"
+		&& path.normalize(path.resolve(checkpoint.sourcePath)) === path.normalize(path.resolve(source.path))
+		&& checkpoint.sourceMtimeMs === Math.trunc(source.mtimeMs)
+		&& checkpoint.sourceSizeBytes === Math.trunc(source.size)
+		&& (checkpoint.extractionSchemaVersion ?? 1) >= currentVersion;
 }
 
 export class AutoRebuildTopology {
@@ -61,9 +78,11 @@ export class AutoRebuildTopology {
 				try {
 					const stat = await this.#deps.statFile(sessionFile);
 					const checkpoint = this.#deps.getCheckpoint(this.#deps.sessionId);
-					if (checkpoint.built && checkpoint.sourceMtimeMs === Math.trunc(stat.mtimeMs) && checkpoint.sourceSizeBytes === stat.size) {
-						stale = false;
-					}
+					stale = !isCheckpointFresh(checkpoint, {
+						path: sessionFile,
+						mtimeMs: stat.mtimeMs,
+						size: stat.size,
+					});
 				} catch {
 					stale = false;
 				}
@@ -85,7 +104,14 @@ export function createAutoRebuildTopology(deps: { sessionId: string; getSessionF
 	return new AutoRebuildTopology({
 		...deps,
 		statFile: (p) => Bun.file(p).stat(),
-		getCheckpoint: (id) => getSessionContextStatus(id),
+		getCheckpoint: (id) => {
+			const status = getSessionContextStatus(id);
+			if (!status.built) return status;
+			const source = getDb().query<{ source_path: string }, [string]>(
+				"SELECT source_path FROM session_context_checkpoints WHERE session_id = ?",
+			).get(id);
+			return { ...status, sourcePath: source?.source_path };
+		},
 		rebuild: (id, f) => rebuildSessionContextFromFile({
 			sessionId: id,
 			sessionFile: f,

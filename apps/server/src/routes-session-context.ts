@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { SessionContextFocusResponse } from "@omp-deck/protocol";
 
 import type { AgentBridge } from "./bridge/types.ts";
-import { getSessionContextGraph, getSessionContextStatus } from "./db/session-context.ts";
+import { getSessionContextGraph, getSessionContextStatus, SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION } from "./db/session-context.ts";
 import { logger } from "./log.ts";
 import { getStoredQueryTopologyFocus, getStoredSessionContextPack, rebuildSessionContextFromFile } from "./session-context.ts";
 import { createExtractorPool } from "./bridge/auto-rebuild.ts";
@@ -68,7 +68,17 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 				rebuilding.delete(id);
 			});
 
-			return c.json({ sessionId: id, status: "rebuilding", nodeCount: 0, edgeCount: 0, sourcePath: sessionFile, rebuiltAt: new Date().toISOString() }, 202);
+			const previous = getSessionContextStatus(id);
+			return c.json({
+				sessionId: id,
+				built: previous.built,
+				rebuilding: true,
+				nodeCount: previous.nodeCount,
+				edgeCount: previous.edgeCount,
+				sourcePath: sessionFile,
+				rebuiltAt: new Date().toISOString(),
+				extractionSchemaVersion: SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION,
+			}, 202);
 		} catch (err) {
 			const msg = String((err as Error).message ?? err);
 			if (msg.includes("session file not found")) {
@@ -85,7 +95,10 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
 			const status = getSessionContextStatus(id);
-			if (rebuilding.has(id)) status.rebuilding = true;
+			if (rebuilding.has(id)) {
+				status.rebuilding = true;
+				status.extractionSchemaVersion ??= SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION;
+			}
 			return c.json(status);
 		} catch (err) {
 			log.error("context status failed", err);
@@ -115,11 +128,12 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 		try {
 			const target = await resolveSessionContextTarget(bridge, id);
 			if (!target.exists) return c.json({ error: "session not found" }, 404);
-			// Probe the SAME node pool focus retrieval uses (500; 1000 with
-			// full=1) so nodeCount/truncated match what the model actually sees.
+			const status = getSessionContextStatus(id);
 			const fullGraph = c.req.query("full") === "1" || c.req.query("full") === "true";
 			const graph = getSessionContextGraph(id, fullGraph ? 1000 : 500);
-			if (graph.nodes.length === 0) {
+			const nodeCount = status.built ? status.nodeCount : graph.totalNodes;
+			const edgeCount = status.built ? status.edgeCount : graph.edges.length;
+			if (nodeCount === 0) {
 				return c.json({
 					sessionId: id,
 					query,
@@ -140,9 +154,9 @@ export function buildSessionContextRouter(bridge: AgentBridge): Hono {
 				sessionId: id,
 				query,
 				focus,
-				nodeCount: graph.totalNodes,
-				edgeCount: graph.edges.length,
-				truncated: graph.truncated,
+				nodeCount,
+				edgeCount,
+				truncated: nodeCount > graph.nodes.length,
 				...(focus ? {} : { emptyReason: "no_relevant_context" as const }),
 			} satisfies SessionContextFocusResponse);
 		} catch (err) {

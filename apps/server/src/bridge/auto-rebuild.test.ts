@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { AutoRebuildTopology, createExtractorPool, type AutoRebuildDeps } from "./auto-rebuild.ts";
+import { AutoRebuildTopology, createExtractorPool, type AutoRebuildCheckpoint, type AutoRebuildDeps } from "./auto-rebuild.ts";
 import { buildExtractionPrompt } from "../topology-extractor.ts";
 
 /** Build stub deps with controllable behaviour for deterministic async tests. */
@@ -12,6 +12,17 @@ function makeDeps(overrides: Partial<AutoRebuildDeps> = {}): AutoRebuildDeps {
 		getCheckpoint: () => ({ built: false }),
 		rebuild: () => Promise.resolve(),
 		sleep: () => Promise.resolve(),
+		...overrides,
+	};
+}
+
+function checkpoint(extractionSchemaVersion?: number, overrides: Partial<AutoRebuildCheckpoint> = {}) {
+	return {
+		built: true,
+		sourcePath: "/fake/session.jsonl",
+		sourceMtimeMs: 1000,
+		sourceSizeBytes: 500,
+		...(extractionSchemaVersion === undefined ? {} : { extractionSchemaVersion }),
 		...overrides,
 	};
 }
@@ -34,15 +45,69 @@ describe("AutoRebuildTopology", () => {
 		expect(rebuilt).toBe(1);
 	});
 
-	test("skips rebuild when checkpoint matches file stat", async () => {
+	test("rebuilds when matching source checkpoint uses extraction schema version 1", async () => {
+		let rebuilt = 0;
+		const sleeps: number[] = [];
+		const arb = new AutoRebuildTopology(makeDeps({
+			getCheckpoint: () => checkpoint(1),
+			rebuild: () => { rebuilt++; return Promise.resolve(); },
+			sleep: (ms) => { sleeps.push(ms); return Promise.resolve(); },
+		}));
+		await arb.trigger();
+		expect(rebuilt).toBe(1);
+		expect(sleeps).toEqual([500]);
+	});
+
+	test("skips rebuild when matching source checkpoint uses current extraction schema version", async () => {
 		let rebuilt = 0;
 		const arb = new AutoRebuildTopology(makeDeps({
-			getCheckpoint: () => ({ built: true, sourceMtimeMs: 1000, sourceSizeBytes: 500 }),
+			getCheckpoint: () => checkpoint(2),
 			rebuild: () => { rebuilt++; return Promise.resolve(); },
 		}));
 		await arb.trigger();
 		expect(rebuilt).toBe(0);
 	});
+
+	test("treats a legacy checkpoint without extraction schema version as version 1 and stale", async () => {
+		let rebuilt = 0;
+		const arb = new AutoRebuildTopology(makeDeps({
+			getCheckpoint: () => checkpoint(),
+			rebuild: () => { rebuilt++; return Promise.resolve(); },
+		}));
+		await arb.trigger();
+		expect(rebuilt).toBe(1);
+	});
+
+	test("keeps a matching checkpoint from a newer extraction schema version fresh", async () => {
+		let rebuilt = 0;
+		const arb = new AutoRebuildTopology(makeDeps({
+			getCheckpoint: () => checkpoint(3),
+			rebuild: () => { rebuilt++; return Promise.resolve(); },
+		}));
+		await arb.trigger();
+		expect(rebuilt).toBe(0);
+	});
+
+	test("rebuilds on source mtime or size mismatch regardless of extraction schema version", async () => {
+		let rebuilt = 0;
+		const arb = new AutoRebuildTopology(makeDeps({
+			getCheckpoint: () => checkpoint(3, { sourceMtimeMs: 999, sourceSizeBytes: 499 }),
+			rebuild: () => { rebuilt++; return Promise.resolve(); },
+		}));
+		await arb.trigger();
+		expect(rebuilt).toBe(1);
+	});
+
+	test("rebuilds when normalized checkpoint source path differs", async () => {
+		let rebuilt = 0;
+		const arb = new AutoRebuildTopology(makeDeps({
+			getCheckpoint: () => checkpoint(2, { sourcePath: "/fake/other.jsonl" }),
+			rebuild: () => { rebuilt++; return Promise.resolve(); },
+		}));
+		await arb.trigger();
+		expect(rebuilt).toBe(1);
+	});
+
 
 	test("skips when sessionFile is undefined", async () => {
 		let rebuilt = 0;
@@ -153,7 +218,7 @@ describe("createExtractorPool", () => {
 					choices: [{
 						message: {
 							content: JSON.stringify({
-								nodes: chunkNodes.map((n) => ({ id: n.id, kind: "evidence", title: `refined:${n.id}`, body: "body" })),
+								nodes: chunkNodes.map((n) => ({ id: n.id, operationDetail: "refine_test_node", refinedPurpose: `Refine ${n.id}` })),
 							}),
 						},
 					}],
