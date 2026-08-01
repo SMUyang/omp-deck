@@ -229,8 +229,8 @@ function safeIdentity(value: string): string {
 }
 
 function agentBuilds(sessionId: string, pair: PairWork, assistantNodeId: string): ChildBuild[] {
-	const finalByAgent = new Map<string, { call: NormalizedToolCall; result: NormalizedToolResult }>();
-	const targets = new Map<string, string>();
+	const finalByAgentCall = new Map<string, { rawAgentId: string; agentId: string; call: NormalizedToolCall; result: NormalizedToolResult }>();
+	const targetsByRawAgentId = new Map<string, string>();
 	for (const call of pair.toolCalls.values()) {
 		if (!/(?:agent|task|hub)/i.test(call.name)) continue;
 		const result = pair.toolResults.get(call.id);
@@ -240,13 +240,15 @@ function agentBuilds(sessionId: string, pair: PairWork, assistantNodeId: string)
 		if (!rawAgentId) continue;
 		const agentId = safeIdentity(rawAgentId);
 		const target = firstString(call.arguments, ["target", "task", "message", "prompt", "description"]);
-		if (target) targets.set(agentId, safeText(target, PURPOSE_LIMIT));
+		if (target) targetsByRawAgentId.set(rawAgentId, safeText(target, PURPOSE_LIMIT));
 		const action = firstString(call.arguments, ["action", "op", "operation", "type"]);
 		const status = firstString(details, ["status", "state", "lifecycle"]);
 		const conclusion = firstString(details, ["conclusion", "summary", "result", "final", "output"]);
-		if (/^(?:result|final|complete|completed|done)$/i.test(action ?? "") || /^(?:completed|failed|error|aborted|cancelled|canceled|done)$/i.test(status ?? "") || conclusion) finalByAgent.set(agentId, { call, result });
+		if (/^(?:result|final|complete|completed|done)$/i.test(action ?? "") || /^(?:completed|failed|error|aborted|cancelled|canceled|done)$/i.test(status ?? "") || conclusion) {
+			finalByAgentCall.set(`${rawAgentId}\u0000${agentId}\u0000${call.id}`, { rawAgentId, agentId, call, result });
+		}
 	}
-	return Array.from(finalByAgent.entries()).map(([agentId, item]) => {
+	return Array.from(finalByAgentCall.values()).map((item) => {
 		const details = detailRecord(item.result);
 		const failure = structuredFailure(item.result);
 		const statusText = firstString(details, ["status", "state"]);
@@ -254,11 +256,12 @@ function agentBuilds(sessionId: string, pair: PairWork, assistantNodeId: string)
 		const conclusion = firstString(details, ["conclusion", "summary", "result", "final", "output"]) ?? item.result.text;
 		const mutationValue = details.mutatedFiles ?? details.mutation ?? details.mutated;
 		const mutation = mutationValue === true || (Array.isArray(details.filesChanged) && details.filesChanged.length > 0);
-		const target = targets.get(agentId) ?? safeText(firstString(item.call.arguments, ["target", "task", "message", "prompt"]) ?? "delegated task", PURPOSE_LIMIT);
-		const nodeId = `${sessionId}:pair:${pair.prompt.entryId}:agent:${agentId}`;
+		const target = targetsByRawAgentId.get(item.rawAgentId) ?? safeText(firstString(item.call.arguments, ["target", "task", "message", "prompt"]) ?? "delegated task", PURPOSE_LIMIT);
+		const identityHash = createHash("sha256").update(item.rawAgentId).update("\u0000").update(item.call.id).digest("hex").slice(0, 32);
+		const nodeId = `${sessionId}:pair:${pair.prompt.entryId}:agent:${item.agentId}:${identityHash}`;
 		const body = boundedBody([conclusion]);
 		const detail = operationDetail(item.call, "delegate");
-		const node: SessionContextNode = { id: nodeId, sessionId, kind: mutation && status === "completed" ? "resolution" : status === "failed" ? "issue" : "evidence", title: safeText(`${agentId}: ${conclusion}`, TITLE_LIMIT) || `${agentId} result`, body, compressedBody: safeText(body, 300), importance: status === "failed" ? 0.9 : 0.75, createdAt: item.result.lifecycleEndedAt ?? eventTimestamp(pair.prompt), sourceMessageId: item.result.sourceEntryId, population: "assistant", nodeRole: "child", origin: "subagent", childType: "subagent_result", pairId: pair.pairId, parentNodeId: assistantNodeId, operation: "delegate", ...(detail ? { operationDetail: detail } : {}), purpose: target || null, purposeSource: target ? "structured_intent" : "unclassified", status, metadata: { agentId, delegatedTarget: target, mutation, toolCallId: item.call.id, resultSourceEntryId: item.result.sourceEntryId, rawSource: { entryId: item.result.sourceEntryId, toolCallId: item.call.id } } };
+		const node: SessionContextNode = { id: nodeId, sessionId, kind: mutation && status === "completed" ? "resolution" : status === "failed" ? "issue" : "evidence", title: safeText(`${item.agentId}: ${conclusion}`, TITLE_LIMIT) || `${item.agentId} result`, body, compressedBody: safeText(body, 300), importance: status === "failed" ? 0.9 : 0.75, createdAt: item.result.lifecycleEndedAt ?? eventTimestamp(pair.prompt), sourceMessageId: item.result.sourceEntryId, population: "assistant", nodeRole: "child", origin: "subagent", childType: "subagent_result", pairId: pair.pairId, parentNodeId: assistantNodeId, operation: "delegate", ...(detail ? { operationDetail: detail } : {}), purpose: target || null, purposeSource: target ? "structured_intent" : "unclassified", status, metadata: { agentId: item.agentId, rawAgentId: item.rawAgentId, delegatedTarget: target, mutation, toolCallId: item.call.id, resultSourceEntryId: item.result.sourceEntryId, rawSource: { entryId: item.result.sourceEntryId, toolCallId: item.call.id } } };
 		return { node, artifacts: collectArtifacts(sessionId, nodeId, item.call, item.result, false), mutation: mutation && status === "completed", investigation: !mutation && status === "completed" };
 	});
 }
@@ -321,7 +324,7 @@ function collectAssistantArtifacts(sessionId: string, nodeId: string, text: stri
 
 function finishPair(sessionId: string, pair: PairWork, finalEvent: NormalizedSessionEvent | undefined, fallback: boolean, nodes: SessionContextNode[], edges: ExtractedSessionContext["edges"], artifacts: SessionContextArtifact[]): void {
 	if (!finalEvent || !finalEvent.text.trim()) {
-		pair.userNode.status = "unknown";
+		pair.userNode.status = pair.closeReason === "error" ? "failed" : pair.closeReason === "aborted" ? "aborted" : "unknown";
 		pair.userNode.metadata = { ...pair.userNode.metadata, pairCloseReason: pair.closeReason ?? "unanswered" };
 		return;
 	}

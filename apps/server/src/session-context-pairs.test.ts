@@ -143,6 +143,8 @@ describe("buildConversationTopology conversation pairs", () => {
 			expect(mains(topology)).toHaveLength(1);
 			expect(mains(topology)[0]?.population).toBe("user");
 			expect(topology.edges).toHaveLength(0);
+			expect(mains(topology)[0]?.status).toBe(stopReason === "error" ? "failed" : "aborted");
+			expect(mains(topology)[0]?.metadata.pairCloseReason).toBe(stopReason);
 		}
 	});
 
@@ -296,15 +298,37 @@ describe("buildConversationTopology assistant children", () => {
 		});
 		expect(children(topology)).toHaveLength(1);
 		expect(children(topology)[0]).toMatchObject({
-			id: "s1:pair:u1:agent:Agent-7-unsafe",
+			id: expect.stringMatching(/^s1:pair:u1:agent:Agent-7-unsafe:[0-9a-f]{32}$/),
 			childType: "subagent_result",
 			origin: "subagent",
 			operation: "delegate",
 			status: "completed",
-			metadata: { agentId: "Agent-7-unsafe", delegatedTarget: "audit model role routes", mutation: false },
+			metadata: { agentId: "Agent-7-unsafe", rawAgentId: "Agent 7/unsafe", delegatedTarget: "audit model role routes", mutation: false },
 		});
 		expect(children(topology)[0]?.body).toContain("Routes preserve");
 		expect(children(topology)[0]?.body).not.toContain("still running");
+	});
+
+	test("distinct raw subagent identities that sanitize equally retain two collision-proof children", () => {
+		const topology = buildConversationTopology({
+			sessionId: "s1",
+			events: [
+				event("u1", "user", "Delegate both audits."),
+				event("a-tools", "assistant", "", { stopReason: "toolUse", toolCalls: [
+					call("agent/final:one", "agent", { action: "result", agentId: "Agent/A", target: "audit route A" }),
+					call("agent/final:two", "agent", { action: "result", agentId: "Agent A", target: "audit route B" }),
+				] }),
+				result("agent/final:one", "first complete", { toolName: "agent", details: { agentId: "Agent/A", status: "completed", conclusion: "First audit complete." } }),
+				result("agent/final:two", "second complete", { toolName: "agent", details: { agentId: "Agent A", status: "completed", conclusion: "Second audit complete." } }),
+				event("a1", "assistant", "Both audits completed.", { stopReason: "stop" }),
+			],
+		});
+		const agentChildren = children(topology).filter((node) => node.childType === "subagent_result");
+		expect(agentChildren).toHaveLength(2);
+		expect(new Set(agentChildren.map((node) => node.id)).size).toBe(2);
+		expect(agentChildren.map((node) => node.metadata.rawAgentId).sort()).toEqual(["Agent A", "Agent/A"]);
+		expect(agentChildren.map((node) => node.metadata.toolCallId).sort()).toEqual(["agent/final:one", "agent/final:two"]);
+		expect(agentChildren.every((node) => node.id.includes("Agent-A") && /:[0-9a-f]{32}$/.test(node.id))).toBe(true);
 	});
 
 	test("todo task transitions collapse to one latest task state child per stable identity", () => {
