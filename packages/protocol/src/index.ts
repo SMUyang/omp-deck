@@ -1984,6 +1984,39 @@ export type SessionContextNodeKind =
 	| "todo_state"
 	| "handoff_summary";
 
+export type SessionContextPopulation = "user" | "assistant";
+export type SessionContextNodeRole = "main" | "child";
+export type SessionContextNodeOrigin = "user" | "assistant" | "tool" | "subagent" | "task";
+export type SessionContextChildType = "test" | "subagent_result" | "task_state" | "tool_evidence" | "error";
+export type SessionContextOperation =
+	| "ask"
+	| "request"
+	| "provide"
+	| "correct"
+	| "constrain"
+	| "approve"
+	| "reject"
+	| "report"
+	| "answer"
+	| "plan"
+	| "investigate"
+	| "implement"
+	| "modify"
+	| "verify"
+	| "explain"
+	| "summarize"
+	| "delegate"
+	| "track"
+	| "observe"
+	| "unknown";
+export type SessionContextPurposeSource = "explicit_text" | "structured_intent" | "deterministic" | "unclassified";
+export type SessionContextNodeStatus = "pending" | "completed" | "failed" | "blocked" | "aborted" | "unknown";
+
+export interface SessionContextRefinementProvenance {
+	model: string;
+	promptVersion: string;
+}
+
 export type SessionContextEdgeRelation =
 	| "caused_by"
 	| "fixed_by"
@@ -1994,7 +2027,8 @@ export type SessionContextEdgeRelation =
 	| "continues"
 	| "contradicts"
 	| "blocks"
-	| "summarizes";
+	| "summarizes"
+	| "answers";
 
 export interface SessionContextNode {
 	id: string;
@@ -2007,6 +2041,19 @@ export interface SessionContextNode {
 	createdAt: string;
 	sourceMessageId?: string;
 	sourceTurnIndex?: number;
+	population?: SessionContextPopulation;
+	nodeRole?: SessionContextNodeRole;
+	origin?: SessionContextNodeOrigin;
+	childType?: SessionContextChildType;
+	pairId?: string;
+	parentNodeId?: string;
+	operation?: SessionContextOperation;
+	operationDetail?: string;
+	purpose?: string | null;
+	purposeSource?: SessionContextPurposeSource;
+	refinedPurpose?: string;
+	refinement?: SessionContextRefinementProvenance;
+	status?: SessionContextNodeStatus;
 	metadata: Record<string, unknown>;
 }
 
@@ -2053,6 +2100,7 @@ export interface SessionContextRebuildResponse {
 	edgeCount: number;
 	sourcePath: string;
 	rebuiltAt: string;
+	extractionSchemaVersion?: number;
 }
 
 export interface SessionContextStatusResponse {
@@ -2064,6 +2112,7 @@ export interface SessionContextStatusResponse {
 	rebuiltAt?: string;
 	sourceMtimeMs?: number;
 	sourceSizeBytes?: number;
+	extractionSchemaVersion?: number;
 }
 
 /**

@@ -6,8 +6,10 @@ import * as path from "node:path";
 import type { SessionContextNode, SessionContextStatusResponse } from "@omp-deck/protocol";
 import { closeDb, getDb, openDb } from "./index.ts";
 import {
+	getCompleteSessionContextGraph,
 	getSessionContextStatus,
 	getSessionContextGraph,
+	insertSessionContextNodes,
 	replaceSessionContext,
 	upsertSessionContextCheckpoint,
 } from "./session-context.ts";
@@ -38,6 +40,33 @@ function node(id: string, kind: SessionContextNode["kind"], title: string): Sess
 		importance: 0.7,
 		createdAt: "2026-07-02T00:00:00.000Z",
 		metadata: { source: "test" },
+	};
+}
+
+function v2Node(id = "s1:entry:u1:message", sessionId = "s1"): SessionContextNode {
+	return {
+		id,
+		sessionId,
+		kind: "goal",
+		title: "Keep start mode alive",
+		body: "start mode must remain alive in the background",
+		compressedBody: "start mode must remain alive in the background",
+		importance: 0.7,
+		createdAt: "2026-07-31T00:00:00.000Z",
+		sourceMessageId: "u1",
+		sourceTurnIndex: 1,
+		population: "user",
+		nodeRole: "main",
+		origin: "user",
+		pairId: `${sessionId}:pair:u1`,
+		operation: "request",
+		operationDetail: "fix_background_start",
+		purpose: "让 start 模式保持后台运行",
+		purposeSource: "explicit_text",
+		refinedPurpose: "确保后台服务持续存活",
+		refinement: { model: "fast/model", promptVersion: "purpose-v1" },
+		status: "completed",
+		metadata: {},
 	};
 }
 
@@ -78,6 +107,91 @@ describe("session context store", () => {
 		expect(graph.nodes.map((n) => n.id)).toEqual(["n3"]);
 		expect(graph.edges).toHaveLength(0);
 		expect(graph.artifacts).toHaveLength(0);
+	});
+
+	test("round-trips v2 semantics and answers through replace", () => {
+		openTempDeckDb();
+		const user = v2Node();
+		const assistant = {
+			...node("a1", "resolution", "start mode stays alive"),
+			sessionId: "s1",
+			sourceTurnIndex: 2,
+		};
+
+		replaceSessionContext({
+			sessionId: "s1",
+			nodes: [user, assistant],
+			edges: [{
+				id: "s1:answers:a1:u1",
+				sessionId: "s1",
+				sourceNodeId: "a1",
+				targetNodeId: user.id,
+				relation: "answers",
+				weight: 1,
+				evidenceMessageId: "a1",
+				metadata: {},
+			}],
+			artifacts: [],
+		});
+
+		const graph = getSessionContextGraph("s1", 50);
+		expect(graph.nodes.find((candidate) => candidate.id === user.id)).toEqual(user);
+		expect(graph.edges).toEqual([{
+			id: "s1:answers:a1:u1",
+			sessionId: "s1",
+			sourceNodeId: "a1",
+			targetNodeId: user.id,
+			relation: "answers",
+			weight: 1,
+			evidenceMessageId: "a1",
+			metadata: {},
+		}]);
+	});
+
+	test("round-trips every v2 semantic field through incremental insert", () => {
+		openTempDeckDb();
+		const user = v2Node("s2:entry:u1:message", "s2");
+
+		insertSessionContextNodes({ sessionId: "s2", nodes: [user], edges: [], artifacts: [] });
+
+		expect(getSessionContextGraph("s2", 50).nodes).toEqual([user]);
+	});
+
+	test("complete graph returns all nodes and edges without changing bounded reads", () => {
+		openTempDeckDb();
+		const earlyUser = v2Node("s-large:entry:u1:message", "s-large");
+		const evidenceNodes = Array.from({ length: 650 }, (_, index) => ({
+			...node(`e${index}`, "evidence", `late evidence ${index}`),
+			sessionId: "s-large",
+			sourceTurnIndex: index + 2,
+			importance: 1,
+			createdAt: `2026-07-31T00:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+		}));
+		const edges = evidenceNodes.map((evidence, index) => ({
+			id: `edge-${index}`,
+			sessionId: "s-large",
+			sourceNodeId: evidence.id,
+			targetNodeId: earlyUser.id,
+			relation: "depends_on" as const,
+			weight: 1,
+			metadata: {},
+		}));
+
+		replaceSessionContext({ sessionId: "s-large", nodes: [earlyUser, ...evidenceNodes], edges, artifacts: [] });
+
+		const bounded = getSessionContextGraph("s-large", 500);
+		expect(bounded.nodes).toHaveLength(500);
+		expect(bounded.nodes.some((candidate) => candidate.id === earlyUser.id)).toBe(false);
+		expect(bounded.truncated).toBe(true);
+		expect(bounded.totalNodes).toBe(651);
+
+		const complete = getCompleteSessionContextGraph("s-large");
+		expect(complete.nodes).toHaveLength(651);
+		expect(complete.nodes[0]?.id).toBe(earlyUser.id);
+		expect(complete.edges).toHaveLength(650);
+		expect(complete.artifacts).toEqual([]);
+		expect(complete.truncated).toBe(false);
+		expect(complete.totalNodes).toBe(651);
 	});
 
 	test("redacts direct replaceSessionContext writes", () => {
@@ -247,6 +361,7 @@ describe("session context status", () => {
 			sourceSizeBytes: 5678,
 			nodeCount: 12,
 			edgeCount: 3,
+			extractionSchemaVersion: 2,
 			rebuiltAt: "2026-07-02T00:00:00.000Z",
 		});
 
@@ -258,6 +373,7 @@ describe("session context status", () => {
 			rebuiltAt: "2026-07-02T00:00:00.000Z",
 			sourceMtimeMs: 1234,
 			sourceSizeBytes: 5678,
+			extractionSchemaVersion: 2,
 		});
 	});
 });

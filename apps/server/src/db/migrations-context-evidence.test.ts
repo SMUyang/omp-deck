@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Database } from "bun:sqlite";
 
 import { closeDb, getDb, openDb } from "./index.ts";
 
@@ -16,6 +17,8 @@ function expectDefined<T>(value: T | undefined, label: string): T {
 	if (value === undefined) throw new Error(`expected ${label}`);
 	return value;
 }
+
+const migrationsDir = path.join(import.meta.dir, "migrations");
 
 function openTempDeckDb(): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-evidence-db-"));
@@ -304,5 +307,78 @@ describe("migration 008-context-evidence", () => {
 			.get("008-context-evidence.sql");
 
 		expect(row).not.toBeNull();
+	});
+});
+
+describe("session context conversation migrations", () => {
+	test("records migrations 010 and 011 and adds semantic checkpoint columns", () => {
+		openTempDeckDb();
+		const db = getDb();
+		const migrationNames = db
+			.query<{ name: string }, []>("SELECT name FROM schema_migrations WHERE name IN ('010-session-context-node-semantics.sql', '011-session-context-edge-answers.sql') ORDER BY name")
+			.all()
+			.map((row) => row.name);
+		expect(migrationNames).toEqual([
+			"010-session-context-node-semantics.sql",
+			"011-session-context-edge-answers.sql",
+		]);
+
+		const nodeColumns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(session_context_nodes)").all().map((column) => column.name));
+		for (const column of [
+			"population", "node_role", "origin", "child_type", "pair_id", "parent_node_id",
+			"operation", "operation_detail", "purpose", "purpose_source", "refined_purpose",
+			"refinement_json", "status",
+		]) expect(nodeColumns.has(column)).toBe(true);
+
+		const checkpointColumns = new Map(
+			db.query<{ name: string; notnull: number; dflt_value: string | null }, []>("PRAGMA table_info(session_context_checkpoints)")
+				.all()
+				.map((column) => [column.name, column]),
+		);
+		expect(checkpointColumns.get("extraction_schema_version")).toMatchObject({ notnull: 1, dflt_value: "1" });
+	});
+
+	test("accepts answers and every legacy edge relation after rebuilding the table", () => {
+		openTempDeckDb();
+		const db = getDb();
+		db.run(`INSERT INTO session_context_nodes (id, session_id, kind, title, body, compressed_body, importance, created_at, metadata_json)
+			VALUES ('source', 's1', 'goal', 'source', 'source', 'source', 1, '2026-07-31T00:00:00.000Z', '{}'),
+			       ('target', 's1', 'resolution', 'target', 'target', 'target', 1, '2026-07-31T00:00:01.000Z', '{}')`);
+		const relations = [
+			"caused_by", "fixed_by", "verified_by", "depends_on", "supersedes",
+			"references_file", "continues", "contradicts", "blocks", "summarizes", "answers",
+		];
+		for (const [index, relation] of relations.entries()) {
+			db.run(
+				"INSERT INTO session_context_edges (id, session_id, source_node_id, target_node_id, relation) VALUES (?, 's1', 'source', 'target', ?)",
+				[`edge-${index}`, relation],
+			);
+		}
+		expect(db.query<{ relation: string }, []>("SELECT relation FROM session_context_edges ORDER BY id").all()).toHaveLength(relations.length);
+	});
+
+	test("preserves existing edge rows and recreates edge indexes during migration 011", () => {
+		const db = new Database(":memory:");
+		try {
+			db.exec(fs.readFileSync(path.join(migrationsDir, "005-session-context.sql"), "utf8"));
+			db.exec(fs.readFileSync(path.join(migrationsDir, "010-session-context-node-semantics.sql"), "utf8"));
+			db.run(`INSERT INTO session_context_nodes (id, session_id, kind, title, body, compressed_body, importance, created_at, metadata_json)
+				VALUES ('old-source', 'old-session', 'goal', 'source', 'source', 'source', 1, '2026-07-31T00:00:00.000Z', '{}'),
+				       ('old-target', 'old-session', 'resolution', 'target', 'target', 'target', 1, '2026-07-31T00:00:01.000Z', '{}')`);
+			db.run("INSERT INTO session_context_edges (id, session_id, source_node_id, target_node_id, relation, weight, metadata_json) VALUES ('preexisting-edge', 'old-session', 'old-source', 'old-target', 'continues', 0.75, '{}')");
+
+			db.exec(fs.readFileSync(path.join(migrationsDir, "011-session-context-edge-answers.sql"), "utf8"));
+
+			const indexes = db.query<{ name: string }, []>("PRAGMA index_list(session_context_edges)").all().map((row) => row.name);
+			expect(indexes).toContain("idx_session_context_edges_session");
+			expect(indexes).toContain("idx_session_context_edges_source");
+			expect(indexes).toContain("idx_session_context_edges_target");
+			expect(db.query<{ id: string; relation: string }, []>("SELECT id, relation FROM session_context_edges WHERE id = 'preexisting-edge'").get()).toEqual({
+				id: "preexisting-edge",
+				relation: "continues",
+			});
+		} finally {
+			db.close();
+		}
 	});
 });
