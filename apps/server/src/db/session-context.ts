@@ -5,6 +5,7 @@ import type {
 	SessionContextNode,
 	SessionContextStatusResponse,
 } from "@omp-deck/protocol";
+import type { Statement } from "bun:sqlite";
 
 export const SESSION_CONTEXT_EXTRACTION_SCHEMA_VERSION = 2;
 
@@ -162,8 +163,7 @@ function nodeFromRow(row: NodeRow): SessionContextNode {
 		...(row.parent_node_id ? { parentNodeId: row.parent_node_id } : {}),
 		...(isOperation(row.operation) ? { operation: row.operation } : {}),
 		...(row.operation_detail ? { operationDetail: row.operation_detail } : {}),
-		...(row.purpose !== null ? { purpose: row.purpose } : {}),
-		...(isPurposeSource(row.purpose_source) ? { purposeSource: row.purpose_source } : {}),
+		...(isPurposeSource(row.purpose_source) ? { purpose: row.purpose, purposeSource: row.purpose_source } : {}),
 		...(row.refined_purpose ? { refinedPurpose: row.refined_purpose } : {}),
 		...(refinement ? { refinement } : {}),
 		...(isNodeStatus(row.status) ? { status: row.status } : {}),
@@ -212,6 +212,45 @@ export function countSessionContextNodes(sessionId: string): number {
 	return row?.c ?? 0;
 }
 
+const INSERT_SESSION_CONTEXT_NODE_SQL = `
+	INSERT OR REPLACE INTO session_context_nodes (
+		id, session_id, kind, title, body, compressed_body,
+		source_message_id, source_turn_index, population, node_role, origin,
+		child_type, pair_id, parent_node_id, operation, operation_detail,
+		purpose, purpose_source, refined_purpose, refinement_json, status,
+		importance, created_at, metadata_json
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+
+function insertSessionContextNode(insertNode: Statement, node: SessionContextNode): void {
+	insertNode.run(
+		node.id,
+		node.sessionId,
+		node.kind,
+		redactSensitiveText(node.title),
+		redactSensitiveText(node.body),
+		redactSensitiveText(node.compressedBody),
+		node.sourceMessageId ?? null,
+		node.sourceTurnIndex ?? null,
+		node.population ?? null,
+		node.nodeRole ?? null,
+		node.origin ?? null,
+		node.childType ?? null,
+		node.pairId ?? null,
+		node.parentNodeId ?? null,
+		node.operation ?? null,
+		node.operationDetail ?? null,
+		node.purpose ?? null,
+		node.purposeSource ?? null,
+		node.refinedPurpose ?? null,
+		node.refinement ? JSON.stringify(node.refinement) : null,
+		node.status ?? null,
+		node.importance,
+		node.createdAt,
+		JSON.stringify(node.metadata),
+	);
+}
 
 export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 	const db = getDb();
@@ -220,43 +259,8 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 		db.prepare("DELETE FROM session_context_edges WHERE session_id = ?").run(input.sessionId);
 		db.prepare("DELETE FROM session_context_nodes WHERE session_id = ?").run(input.sessionId);
 
-		const insertNode = db.prepare(`
-			INSERT OR REPLACE INTO session_context_nodes (
-				id, session_id, kind, title, body, compressed_body,
-				source_message_id, source_turn_index, population, node_role, origin,
-				child_type, pair_id, parent_node_id, operation, operation_detail,
-				purpose, purpose_source, refined_purpose, refinement_json, status,
-				importance, created_at, metadata_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`);
-		for (const node of input.nodes) {
-			insertNode.run(
-				node.id,
-				node.sessionId,
-				node.kind,
-				redactSensitiveText(node.title),
-				redactSensitiveText(node.body),
-				redactSensitiveText(node.compressedBody),
-				node.sourceMessageId ?? null,
-				node.sourceTurnIndex ?? null,
-				node.population ?? null,
-				node.nodeRole ?? null,
-				node.origin ?? null,
-				node.childType ?? null,
-				node.pairId ?? null,
-				node.parentNodeId ?? null,
-				node.operation ?? null,
-				node.operationDetail ?? null,
-				node.purpose ?? null,
-				node.purposeSource ?? null,
-				node.refinedPurpose ?? null,
-				node.refinement ? JSON.stringify(node.refinement) : null,
-				node.status ?? null,
-				node.importance,
-				node.createdAt,
-				JSON.stringify(node.metadata),
-			);
-		}
+		const insertNode = db.prepare(INSERT_SESSION_CONTEXT_NODE_SQL);
+		for (const node of input.nodes) insertSessionContextNode(insertNode, node);
 
 		const insertEdge = db.prepare(`
 			INSERT OR REPLACE INTO session_context_edges (
@@ -300,43 +304,8 @@ export function replaceSessionContext(input: ReplaceSessionContextInput): void {
 export function insertSessionContextNodes(input: ReplaceSessionContextInput): void {
 	const db = getDb();
 	const tx = db.transaction(() => {
-		const insertNode = db.prepare(`
-			INSERT OR REPLACE INTO session_context_nodes (
-				id, session_id, kind, title, body, compressed_body,
-				source_message_id, source_turn_index, population, node_role, origin,
-				child_type, pair_id, parent_node_id, operation, operation_detail,
-				purpose, purpose_source, refined_purpose, refinement_json, status,
-				importance, created_at, metadata_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`);
-		for (const node of input.nodes) {
-			insertNode.run(
-				node.id,
-				node.sessionId,
-				node.kind,
-				redactSensitiveText(node.title),
-				redactSensitiveText(node.body),
-				redactSensitiveText(node.compressedBody),
-				node.sourceMessageId ?? null,
-				node.sourceTurnIndex ?? null,
-				node.population ?? null,
-				node.nodeRole ?? null,
-				node.origin ?? null,
-				node.childType ?? null,
-				node.pairId ?? null,
-				node.parentNodeId ?? null,
-				node.operation ?? null,
-				node.operationDetail ?? null,
-				node.purpose ?? null,
-				node.purposeSource ?? null,
-				node.refinedPurpose ?? null,
-				node.refinement ? JSON.stringify(node.refinement) : null,
-				node.status ?? null,
-				node.importance,
-				node.createdAt,
-				JSON.stringify(node.metadata),
-			);
-		}
+		const insertNode = db.prepare(INSERT_SESSION_CONTEXT_NODE_SQL);
+		for (const node of input.nodes) insertSessionContextNode(insertNode, node);
 		const insertEdge = db.prepare(`
 			INSERT OR REPLACE INTO session_context_edges (
 				id, session_id, source_node_id, target_node_id, relation,

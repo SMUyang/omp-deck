@@ -157,6 +157,27 @@ describe("session context store", () => {
 		expect(getSessionContextGraph("s2", 50).nodes).toEqual([user]);
 	});
 
+	test("preserves explicit null purpose for v2 nodes but omits it for legacy nodes", () => {
+		openTempDeckDb();
+		const v2WithoutPurpose: SessionContextNode = {
+			...v2Node("s-null:entry:u1:message", "s-null"),
+			purpose: null,
+			purposeSource: "unclassified",
+		};
+		const legacy = {
+			...node("legacy", "goal", "legacy goal"),
+			sessionId: "s-null",
+		};
+
+		replaceSessionContext({ sessionId: "s-null", nodes: [v2WithoutPurpose, legacy], edges: [], artifacts: [] });
+
+		const graph = getSessionContextGraph("s-null", 50);
+		const storedV2 = graph.nodes.find((candidate) => candidate.id === v2WithoutPurpose.id);
+		const storedLegacy = graph.nodes.find((candidate) => candidate.id === legacy.id);
+		expect(storedV2).toHaveProperty("purpose", null);
+		expect(storedLegacy).not.toHaveProperty("purpose");
+	});
+
 	test("complete graph returns all nodes and edges without changing bounded reads", () => {
 		openTempDeckDb();
 		const earlyUser = v2Node("s-large:entry:u1:message", "s-large");
