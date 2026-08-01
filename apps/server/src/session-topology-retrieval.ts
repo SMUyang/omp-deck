@@ -71,12 +71,42 @@ const CHINESE_STOPWORDS = new Set([
 	"对", "错", "好", "坏", "大", "小", "多", "少", "全", "图",
 ]);
 
+const TOKEN_LIMIT = 64;
+const TOKEN_RUN_PATTERN = /[a-z0-9_]+|[\u4e00-\u9fff]+/g;
+
 export function tokenize(text: string): string[] {
-	return text
-		.toLowerCase()
-		.split(/[^a-z0-9_\u4e00-\u9fff]+/g)
-		.filter((token) => token.length >= 2)
-		.filter((token) => !CHINESE_STOPWORDS.has(token));
+	const normalized = text.toLowerCase();
+	const tokens: string[] = [];
+	const seen = new Set<string>();
+	const hanRuns: string[] = [];
+	const addToken = (token: string): void => {
+		if (tokens.length >= TOKEN_LIMIT || token.length < 2 || CHINESE_STOPWORDS.has(token) || seen.has(token)) return;
+		seen.add(token);
+		tokens.push(token);
+	};
+
+	for (const match of normalized.matchAll(TOKEN_RUN_PATTERN)) {
+		const run = match[0];
+		addToken(run);
+		const firstCodePoint = run.charCodeAt(0);
+		if (firstCodePoint >= 0x4e00 && firstCodePoint <= 0x9fff && hanRuns.length < TOKEN_LIMIT) hanRuns.push(run);
+		if (tokens.length >= TOKEN_LIMIT) return tokens;
+	}
+
+	// Generate lazily and round-robin by offset so no Han run allocates an unbounded n-gram list or starves later runs.
+	for (const size of [2, 3]) {
+		for (let offset = 0; tokens.length < TOKEN_LIMIT; offset += 1) {
+			let generated = false;
+			for (const run of hanRuns) {
+				if (offset + size > run.length) continue;
+				generated = true;
+				addToken(run.slice(offset, offset + size));
+				if (tokens.length >= TOKEN_LIMIT) break;
+			}
+			if (!generated) break;
+		}
+	}
+	return tokens;
 }
 
 function nodeText(node: SessionContextNode): string {

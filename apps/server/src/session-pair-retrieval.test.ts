@@ -216,6 +216,48 @@ describe("retrieveConversationPairs complete graph retrieval", () => {
 		);
 		expect(result?.selectedPairIds[0]).toBe(purposePair.pairId);
 	});
+	test("segments a long Chinese paraphrase so an unanswered matching user qualifies", () => {
+		const target = mainNode("u-chinese-delete", "user", "pair-chinese-delete", {
+			purpose: "删除没用的脚本",
+			body: "删除没用的脚本",
+			compressedBody: "删除没用的脚本",
+			status: "unknown",
+		});
+		const result = retrieveConversationPairs(
+			{ ...INPUT, query: "用户要求删除什么没用的内容脚本" },
+			graph([target]),
+		);
+		expect(result?.selectedPairIds).toContain(target.pairId);
+		expect(result?.selectedNodeIds).toContain(target.id);
+		expect(result?.ranking.findIndex((item) => item.unitId === target.pairId)).toBeLessThan(10);
+	});
+
+	test("ranks a mixed Han and Latin capability pair above an omp-only crowd and closes it atomically", () => {
+		const target = pair(100, "unrelated", {
+			user: {
+				purpose: "新增思考强度控制并整理Workspace文件夹",
+				body: "需要新增思考强度控制和Workspace文件夹入口",
+				compressedBody: "新增思考强度控制与Workspace文件夹入口",
+			},
+			assistant: {
+				purpose: "已在OMP设置面板加入思考强度选项和Workspace文件夹管理",
+				body: "OMP设置面板现在包含思考强度选项及Workspace文件夹管理",
+				compressedBody: "OMP设置面板支持思考强度和Workspace文件夹管理",
+			},
+		});
+		const crowd = Array.from({ length: 12 }, (_, index) => pair(index, `omp generic preference ${index}`));
+		const result = retrieveConversationPairs(
+			{ ...INPUT, query: "新增 思考强度 workspace 文件夹 OMP 设置", outputNodeLimit: 20 },
+			graph(
+				[...crowd.flatMap((item) => [item.user, item.assistant]), target.user, target.assistant],
+				[...crowd.map((item) => item.edge), target.edge],
+			),
+		);
+		expect(result?.ranking[0]?.unitId).toBe(target.pairId);
+		expect(result?.selectedPairIds.slice(0, 10)).toContain(target.pairId);
+		expect(result?.selectedNodeIds).toEqual(expect.arrayContaining([target.user.id, target.assistant.id]));
+	});
+
 });
 
 describe("retrieveConversationPairs child closure and bounds", () => {

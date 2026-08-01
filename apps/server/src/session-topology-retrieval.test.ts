@@ -233,6 +233,21 @@ describe("tokenize", () => {
 		expect(tokenize("我们 测试")).toEqual(["测试"]);
 		expect(tokenize("已经 done")).toEqual(["done"]);
 	});
+
+	test("separates mixed Han and Latin runs while keeping output stable and bounded", () => {
+		const mixed = tokenize("中文Workspace设置");
+		expect(mixed).toEqual(tokenize("中文Workspace设置"));
+		expect(mixed).toEqual(expect.arrayContaining(["workspace", "中文", "设置"]));
+		expect(new Set(mixed).size).toBe(mixed.length);
+		expect(mixed.every((token) => token.length >= 2)).toBe(true);
+
+		const longHan = Array.from({ length: 256 }, (_, index) => String.fromCharCode(0x4e00 + index)).join("");
+		const bounded = tokenize(longHan);
+		expect(bounded).toEqual(tokenize(longHan));
+		expect(bounded.length).toBeLessThanOrEqual(64);
+		expect(new Set(bounded).size).toBe(bounded.length);
+		expect(bounded.every((token) => token.length >= 2)).toBe(true);
+	});
 });
 
 describe("IDF stress tests", () => {
