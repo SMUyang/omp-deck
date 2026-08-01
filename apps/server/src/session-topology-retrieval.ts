@@ -1,3 +1,9 @@
+/**
+ * Legacy schema-v1 compatibility retrieval.
+ *
+ * Conversational schema-v2 focus selection must use session-pair-retrieval.ts
+ * over the complete graph instead of this bounded, node-first implementation.
+ */
 import type {
 	SessionContextGraphResponse,
 	SessionContextNode,

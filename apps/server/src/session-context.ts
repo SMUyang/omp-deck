@@ -9,6 +9,7 @@ import type {
 } from "@omp-deck/protocol";
 
 import {
+	getCompleteSessionContextGraph,
 	getSessionContextGraph,
 	getSessionContextStatus,
 	replaceSessionContext,
@@ -20,6 +21,7 @@ import { buildConversationTopology } from "./session-context-pairs.ts";
 
 import { getTopologyRerankConfig } from "./config-topology-rerank.ts";
 import { retrieveTopology, tokenize, type RetrievedTopology, type RetrieveTopologyInput } from "./session-topology-retrieval.ts";
+import { retrieveConversationPairs, type PairRetrievalResult } from "./session-pair-retrieval.ts";
 import {
 	rerankTopologyWithExternalApi,
 	shouldExternalRerank,
@@ -774,10 +776,48 @@ export async function retrieveTopologyWithEmbeddings(
 	};
 }
 
+function pairRetrievalAsLegacyFocusInput(result: PairRetrievalResult): RetrievedTopology {
+	return {
+		selectedNodeIds: result.selectedNodeIds,
+		selectedEdgeIds: result.selectedEdgeIds,
+		candidateNodeIds: result.ranking.flatMap((item) => item.nodeIds),
+		candidateEdgeIds: [],
+		rankedCandidateNodeIds: result.ranking.flatMap((item) => item.nodeIds),
+		candidateNodeCount: result.candidateCounts.userMain + result.candidateCounts.assistantMain,
+		ranking: [],
+		artifacts: result.artifacts.map((artifact) => ({ ...artifact, nodeId: artifact.nodeId })),
+		omitted: {
+			nodeCount: result.omitted.pairs + result.omitted.children,
+			// Pair retrieval does not expose edge omission diagnostics in this temporary schema-v1 render bridge.
+			edgeCount: 0,
+			reason: result.omitted.reason,
+		},
+	};
+}
+
 export async function getStoredQueryTopologyFocus(input: GetStoredQueryTopologyFocusInput): Promise<string> {
+	const status = getSessionContextStatus(input.sessionId);
+	const limits = input.fullGraph ? FULL_GRAPH_LIMITS : DEFAULT_LIMITS;
+	if ((status.extractionSchemaVersion ?? 1) >= 2) {
+		const graph = getCompleteSessionContextGraph(input.sessionId);
+		if (graph.nodes.length === 0) return "";
+		const hasV2MainNodes = graph.nodes.some((node) => node.nodeRole === "main" && (node.population === "user" || node.population === "assistant"));
+		if (hasV2MainNodes) {
+			const retrieved = retrieveConversationPairs({
+				sessionId: input.sessionId,
+				query: input.query,
+				candidateMainLimit: limits.candidateNodeLimit,
+				outputNodeLimit: limits.outputNodeLimit,
+				outputEdgeLimit: limits.outputEdgeLimit,
+				outputArtifactLimit: limits.outputArtifactLimit,
+			}, graph);
+			if (!retrieved) return "";
+			return renderRetrievedTopologyAsFocus(graph, input.sessionId, input.query, pairRetrievalAsLegacyFocusInput(retrieved));
+		}
+	}
+
 	const graph = getSessionContextGraph(input.sessionId, input.fullGraph ? 1000 : 500);
 	if (graph.nodes.length === 0) return "";
-	const limits = input.fullGraph ? FULL_GRAPH_LIMITS : DEFAULT_LIMITS;
 	const embeddingConfig = getEmbeddingConfig();
 	const input_ = {
 		sessionId: input.sessionId,

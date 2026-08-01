@@ -4,10 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { closeDb, getDb, openDb } from "./db/index.ts";
-import { getSessionContextGraph, getNodeEmbeddings, getSessionContextStatus, saveNodeEmbeddings } from "./db/session-context.ts";
+import { getCompleteSessionContextGraph, getSessionContextGraph, getNodeEmbeddings, getSessionContextStatus, replaceSessionContext, saveNodeEmbeddings, upsertSessionContextCheckpoint } from "./db/session-context.ts";
 import { extractSessionContextFromJsonl, getStoredQueryTopologyFocus, rebuildSessionContextFromFile, renderPackAsCompactFocus, renderRetrievedTopologyAsFocus, renderSessionContextPack, renderTopologyGraphAsCompactFocus, retrieveTopologyWithEmbeddings, shouldReplaceContext } from "./session-context.ts";
 import { retrieveTopology, type RetrievedTopology } from "./session-topology-retrieval.ts";
-import type { SessionContextGraphResponse, SessionContextPackResponse } from "@omp-deck/protocol";
+import type { SessionContextEdge, SessionContextGraphResponse, SessionContextNode, SessionContextPackResponse } from "@omp-deck/protocol";
 import type { EmbeddingConfig } from "./topology-siliconflow-embedding.ts";
 import type { TopologyExtractorModelClient } from "./topology-extractor.ts";
 
@@ -314,6 +314,21 @@ function tempDir(): string {
 	return dir;
 }
 
+// These tests exercise the preserved v1 rerank/embedding path after the shared rebuild helper writes a v2 checkpoint.
+function markStoredGraphAsLegacy(sessionId: string, sourcePath: string): void {
+	const graph = getCompleteSessionContextGraph(sessionId);
+	upsertSessionContextCheckpoint({
+		sessionId,
+		sourcePath,
+		sourceMtimeMs: 1,
+		sourceSizeBytes: 1,
+		nodeCount: graph.nodes.length,
+		edgeCount: graph.edges.length,
+		extractionSchemaVersion: 1,
+		rebuiltAt: "2026-08-01T00:00:00.000Z",
+	});
+}
+
 test("v2 rebuild normalizes active JSONL into pairs children answers and checkpoint schema 2 without proximity edges", async () => {
 	const dir = tempDir();
 	openDb({ path: path.join(dir, "deck.db") });
@@ -600,6 +615,43 @@ describe("context replacement", () => {
 		expect(payload.nodes[0].body).toContain("bge-reranker-v2-m3");
 	});
 
+	test("v2 stored focus searches the complete graph while v1 remains bounded to the legacy top 500", async () => {
+		const v2Dir = tempDir();
+		openDb({ path: path.join(v2Dir, "deck.db") });
+		const pairId = "s_v2:pair:early";
+		const user: SessionContextNode = {
+			id: "s_v2:entry:u-early:message", sessionId: "s_v2", kind: "goal", title: "early", body: "earlyexact", compressedBody: "earlyexact", importance: 0, createdAt: "2020-01-01T00:00:00.000Z", sourceMessageId: "u-early", sourceTurnIndex: 1,
+			population: "user", nodeRole: "main", origin: "user", pairId, operation: "request", purpose: "earlyexact", purposeSource: "explicit_text", status: "completed", metadata: {},
+		};
+		const assistant: SessionContextNode = {
+			id: "s_v2:entry:a-early:message", sessionId: "s_v2", kind: "resolution", title: "answer", body: "answer", compressedBody: "answer", importance: 0, createdAt: "2020-01-01T00:00:01.000Z", sourceMessageId: "a-early", sourceTurnIndex: 2,
+			population: "assistant", nodeRole: "main", origin: "assistant", pairId, operation: "answer", purpose: "answer", purposeSource: "explicit_text", status: "completed", metadata: {},
+		};
+		const answerEdge: SessionContextEdge = { id: `${pairId}:answers`, sessionId: "s_v2", sourceNodeId: user.id, targetNodeId: assistant.id, relation: "answers", weight: 1, metadata: {} };
+		const children = Array.from({ length: 600 }, (_, index): SessionContextNode => ({
+			id: `s_v2:child:${index}`, sessionId: "s_v2", kind: "evidence", title: `new ${index}`, body: `new evidence ${index}`, compressedBody: `new evidence ${index}`, importance: 1, createdAt: "2026-07-31T00:00:00.000Z", sourceTurnIndex: index + 3,
+			population: "assistant", nodeRole: "child", origin: "tool", childType: "tool_evidence", pairId, parentNodeId: assistant.id, operation: "observe", purpose: `new evidence ${index}`, purposeSource: "structured_intent", status: "completed", metadata: {},
+		}));
+		replaceSessionContext({ sessionId: "s_v2", nodes: [user, assistant, ...children], edges: [answerEdge], artifacts: [] });
+		upsertSessionContextCheckpoint({ sessionId: "s_v2", sourcePath: "/tmp/s_v2.jsonl", sourceMtimeMs: 1, sourceSizeBytes: 1, nodeCount: 602, edgeCount: 1, extractionSchemaVersion: 2, rebuiltAt: "2026-08-01T00:00:00.000Z" });
+		expect(getSessionContextGraph("s_v2", 500).nodes.some((node) => node.id === user.id)).toBe(false);
+		expect(getCompleteSessionContextGraph("s_v2").nodes.some((node) => node.id === user.id)).toBe(true);
+		const v2Focus = await getStoredQueryTopologyFocus({ sessionId: "s_v2", query: "earlyexact" });
+		const v2Payload = JSON.parse(v2Focus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1] ?? "null");
+		expect(v2Payload.nodes.map((node: { id: string }) => node.id)).toEqual(expect.arrayContaining([user.id, assistant.id]));
+		expect(JSON.stringify(v2Payload)).not.toContain("ranking");
+
+		closeDb();
+		const v1Dir = tempDir();
+		openDb({ path: path.join(v1Dir, "deck.db") });
+		const legacyNeedle: SessionContextNode = { ...user, id: "legacy-early", sessionId: "s_v1", population: undefined, nodeRole: undefined, origin: undefined, pairId: undefined, importance: 0 };
+		const newerLegacy = Array.from({ length: 600 }, (_, index): SessionContextNode => ({ ...legacyNeedle, id: `legacy-new-${index}`, title: `new ${index}`, body: `new ${index}`, compressedBody: `new ${index}`, importance: 1, createdAt: "2026-07-31T00:00:00.000Z", sourceTurnIndex: index + 2 }));
+		replaceSessionContext({ sessionId: "s_v1", nodes: [legacyNeedle, ...newerLegacy], edges: [], artifacts: [] });
+		upsertSessionContextCheckpoint({ sessionId: "s_v1", sourcePath: "/tmp/s_v1.jsonl", sourceMtimeMs: 1, sourceSizeBytes: 1, nodeCount: 601, edgeCount: 0, extractionSchemaVersion: 1, rebuiltAt: "2026-08-01T00:00:00.000Z" });
+		const v1Focus = await getStoredQueryTopologyFocus({ sessionId: "s_v1", query: "earlyexact" });
+		expect(v1Focus).not.toContain("legacy-early");
+	});
+
 	test("getStoredQueryTopologyFocus applies an injected rerank patch and keeps focus clean", async () => {
 		await withModelRoleRerankEnv(async () => {
 			const dir = tempDir();
@@ -611,6 +663,7 @@ describe("context replacement", () => {
 				JSON.stringify({ type: "message", id: "u2", parentId: "u1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "please keep this deliberately unrelated external API patch validation node" }] } }),
 			].join("\n"));
 			await rebuildSessionContextFromFile({ sessionId: "s_rerank", sessionFile });
+			markStoredGraphAsLegacy("s_rerank", sessionFile);
 			const graph = getSessionContextGraph("s_rerank", 200);
 			const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_rerank", query: "unmatched-rerank-trigger", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
 			const localJson = localFocus.match(/<session_topology_subgraph>\n(.+)\n<\/session_topology_subgraph>/)?.[1];
@@ -646,6 +699,7 @@ describe("context replacement", () => {
 				JSON.stringify({ type: "message", id: "u1", timestamp: "2026-07-02T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "topology rerank fallback local baseline" }] } }),
 			].join("\n"));
 			await rebuildSessionContextFromFile({ sessionId: "s_invalid_rerank", sessionFile });
+			markStoredGraphAsLegacy("s_invalid_rerank", sessionFile);
 
 			const localFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => undefined } });
 			const fallbackFocus = await getStoredQueryTopologyFocus({ sessionId: "s_invalid_rerank", query: "topology", contextPercent: 99, rerankClient: { rerankTopology: async () => ({ keepNodeIds: ["missing"], keepEdgeIds: [], demoteNodeIds: [] }) } });
@@ -663,6 +717,7 @@ describe("context replacement", () => {
 			JSON.stringify({ type: "message", id: "u2", parentId: "u1", timestamp: "2026-07-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "beta service config" }] } }),
 		].join("\n"));
 		await rebuildSessionContextFromFile({ sessionId: "s_embed_flip", sessionFile });
+		markStoredGraphAsLegacy("s_embed_flip", sessionFile);
 
 		// Point managed env to temp dir so getEmbeddingConfig reads an empty file
 		const savedDataDir = process.env.OMP_DECK_DATA_DIR;
