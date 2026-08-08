@@ -63,7 +63,6 @@ function makeConfig(dir: string): Config {
 		dbPath: path.join(dir, "deck.db"),
 		uploadsRoot: path.join(dir, "uploads"),
 		autoStartCommand: null,
-		agentBackend: "in-process",
 		ompBin: "omp",
 	};
 }

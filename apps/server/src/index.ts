@@ -9,11 +9,10 @@ import "./bootstrap-env.ts";
 import type { Server, ServerWebSocket } from "bun";
 import * as path from "node:path";
 
-import { InProcessAgentBridge } from "./bridge/in-process.ts";
 import { RpcAgentBridge } from "./bridge/rpc.ts";
 import { RoutinesRunner } from "./routines-runner.ts";
 import { closeDb, openDb } from "./db/index.ts";
-import { loadConfig } from "./config.ts";
+import { checkOmpAvailable, loadConfig } from "./config.ts";
 import { logger } from "./log.ts";
 import { resolveBunExecutable } from "./runtime-bun.ts";
 import { primeUpdateCheckOnBoot } from "./update-check.ts";
@@ -98,19 +97,19 @@ async function main(): Promise<void> {
 	notificationService.register(new BrowserNotificationChannel());
 
 
-	const bridge =
-		config.agentBackend === "rpc"
-			? new RpcAgentBridge({
-					ompBin: config.ompBin,
-					cwd: config.defaultCwd,
-					idleTimeoutMs: config.idleTimeoutMs,
-					autoStartCommand: config.autoStartCommand,
-				})
-			: new InProcessAgentBridge({
-					idleTimeoutMs: config.idleTimeoutMs,
-					autoStartCommand: config.autoStartCommand,
-					ompBin: config.ompBin,
-				});
+	// RPC-only: verify omp CLI exists before starting the bridge.
+	const ompErr = await checkOmpAvailable(config.ompBin);
+	if (ompErr) {
+		log.error(ompErr);
+		throw new Error(ompErr);
+	}
+
+	const bridge = new RpcAgentBridge({
+		ompBin: config.ompBin,
+		cwd: config.defaultCwd,
+		idleTimeoutMs: config.idleTimeoutMs,
+		autoStartCommand: config.autoStartCommand,
+	});
 	const routinesRunner = new RoutinesRunner();
 	routinesRunner.start();
 	let server: Server<ConnectionData>;

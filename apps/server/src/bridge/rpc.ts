@@ -3,11 +3,9 @@
  *
  * Each deck session spawns one omp subprocess. Model listing reuses a shared
  * transport so /api/models responds fast. Session events from the RPC process
- * are forwarded directly to the WS layer — the wire shape is identical to the
- * in-process bridge because both originate from the same SDK event stream.
+ * are forwarded directly to the WS layer.
  *
- * Enable with: OMP_DECK_AGENT_BACKEND=rpc  (default omp binary on PATH)
- *           or: OMP_DECK_OMP_BIN=/path/to/omp
+ * Configure omp binary: OMP_DECK_OMP_BIN=/path/to/omp (default: omp on PATH)
  *
  * Not yet covered (graceful degradation):
  *   - plan-mode enter/exit/respond (throws)

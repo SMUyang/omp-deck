@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { spawn } from "node:child_process";
 
 export interface Config {
 	host: string;
@@ -22,9 +23,7 @@ export interface Config {
 	 * ~/.omp/agent/commands/start.md slash command if present).
 	 */
 	autoStartCommand: string | null;
-	/** Agent backend: "in-process" (default, embeds SDK) or "rpc" (spawns omp --mode rpc). */
-	agentBackend: "in-process" | "rpc";
-	/** Path to the omp binary used when agentBackend is "rpc". Default: "omp" (from PATH). */
+	/** Path to the omp binary. Default: "omp" (from PATH). */
 	ompBin: string;
 }
 
@@ -97,6 +96,28 @@ function resolveOmpBin(): string {
 	return "omp";
 }
 
+/**
+ * Verify the omp CLI is installed and runnable. Returns an error message
+ * if the binary is missing or `omp --version` fails; returns null on success.
+ */
+export async function checkOmpAvailable(ompBin: string): Promise<string | null> {
+	try {
+		const result = await new Promise<{ ok: boolean; stderr: string }>((resolve) => {
+			const proc = spawn(ompBin, ["--version"], { stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
+			let stderr = "";
+			proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+			proc.on("error", (err) => resolve({ ok: false, stderr: String(err.message ?? err) }));
+			proc.on("close", (code) => resolve({ ok: code === 0, stderr }));
+		});
+		if (!result.ok) {
+			return `omp CLI not found at "${ompBin}". Install omp first: npm install -g @oh-my-pi/pi-cli${result.stderr ? ` (${result.stderr.trim().slice(0, 120)})` : ""}`;
+		}
+		return null;
+	} catch (err) {
+		return `Failed to verify omp CLI: ${String((err as Error).message ?? err)}`;
+	}
+}
+
 export function loadConfig(): Config {
 	const home = os.homedir();
 	const defaultCwd = process.env.OMP_DECK_DEFAULT_CWD?.trim() || home;
@@ -135,7 +156,6 @@ export function loadConfig(): Config {
 		// Set OMP_DECK_AUTO_START="" or "0" to disable, or to any other prompt
 		// string to override the default "/start" slash-command invocation.
 	autoStartCommand: parseAutoStart(process.env.OMP_DECK_AUTO_START),
-	agentBackend: process.env.OMP_DECK_AGENT_BACKEND === "in-process" ? "in-process" : "rpc",
 	ompBin: process.env.OMP_DECK_OMP_BIN?.trim() || resolveOmpBin(),
 };
 }

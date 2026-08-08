@@ -14,9 +14,8 @@ import type {
 } from "@omp-deck/protocol";
 
 /**
- * Abstract bridge to omp. The in-process impl embeds @oh-my-pi/pi-coding-agent
- * directly; a future RPC impl will spawn `omp --mode rpc` subprocesses behind
- * the same surface. Anything the server needs from omp MUST flow through this.
+ * Abstract bridge to omp. The RPC impl spawns `omp --mode rpc` subprocesses.
+ * Anything the server needs from omp MUST flow through this.
  */
 export interface AgentBridge {
 	createSession(opts: CreateSessionOpts): Promise<SessionHandle>;

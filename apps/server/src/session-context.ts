@@ -428,17 +428,25 @@ export async function rebuildSessionContextFromFile(input: {
 	const file = Bun.file(input.sessionFile);
 	if (!(await file.exists())) throw new Error("session file not found");
 	const [content, stat] = await Promise.all([file.text(), file.stat()]);
+
+	// Chunked async extraction: yield to the event loop between heavy
+	// synchronous operations so WebSocket heartbeats and other I/O are
+	// not starved on large sessions (1000+ messages).
 	const normalized = normalizeSessionJsonl({ content });
+	await Bun.sleep(0);
+
 	const extracted = buildConversationTopology({ sessionId: input.sessionId, events: normalized.activeEvents });
+	await Bun.sleep(0);
 
 	let nodes = extracted.nodes;
 	if (input.extractorClient && input.extractorModelRole && nodes.length > 0) {
 		nodes = await refineNodesWithLLM({ nodes, client: input.extractorClient, modelRole: input.extractorModelRole });
 	}
+	await Bun.sleep(0);
+
 	const nodeIds = new Set(nodes.map((node) => node.id));
 	const edges = extracted.edges.filter((edge) => nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId));
 	const artifacts = extracted.artifacts.filter((artifact) => !artifact.nodeId || nodeIds.has(artifact.nodeId));
-
 
 	replaceSessionContext({ sessionId: input.sessionId, nodes, edges, artifacts });
 	const rebuiltAt = new Date().toISOString();
@@ -830,6 +838,7 @@ export async function getStoredQueryTopologyFocusResult(input: GetStoredQueryTop
 	const retrieved = embeddingConfig
 		? await retrieveTopologyWithEmbeddings(input_, graph, embeddingConfig)
 		: retrieveTopology(input_, graph);
+	await Bun.sleep(0);
 	if (!retrieved) return { focus: "" };
 
 	let selected = retrieved;
