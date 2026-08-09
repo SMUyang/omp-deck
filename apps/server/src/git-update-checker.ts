@@ -11,6 +11,8 @@
  * signal.
  */
 
+import { existsSync } from "node:fs";
+import * as path from "node:path";
 import { resolveRepoRoot, runUpdateSteps } from "./update-runner.ts";
 import { logger } from "./log.ts";
 
@@ -113,7 +115,11 @@ export function startGitUpdateChecker(onUpdate?: () => void): void {
 	if (process.env.OMP_DECK_DISABLE_UPDATE_CHECK === "1") return;
 
 	const repoRoot = resolveRepoRoot();
-	log.info(`git update checker started (interval ${Math.round(intervalMs / 1000)}s)`);
+	if (!existsSync(path.join(repoRoot, ".git"))) {
+		log.info("git update checker skipped (not a git repository — likely a zip download)");
+		return;
+	}
+ 	log.info(`git update checker started (interval ${Math.round(intervalMs / 1000)}s)`);
 
 	// Initial check after 10s (let server finish booting)
 	setTimeout(() => void checkOnce(repoRoot, onUpdate), 10_000);
