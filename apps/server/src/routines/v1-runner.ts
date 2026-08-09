@@ -412,6 +412,11 @@ async function dispatchStep(
 
 export function buildRoutineEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 	const out = filterEnv(env);
+	if (!out.OMP_DECK_PORT) {
+		// Templates reference {{ env.OMP_DECK_PORT }} directly (e.g. memory-graph-maintainer);
+		// fill it from the derived default so loopback http steps never see an empty port.
+		out.OMP_DECK_PORT = "8787";
+	}
 	if (!out.OMP_DECK_API_BASE) {
 		const host = out.OMP_DECK_HOST?.trim() || "127.0.0.1";
 		const port = out.OMP_DECK_PORT?.trim() || "8787";

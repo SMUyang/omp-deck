@@ -56,8 +56,8 @@ steps:
   - id: analyze
     type: agent
     fallback_models:
-      - deepseek/deepseek-v4-flash
-      - deepseek/deepseek-v4-pro
+      - deepseek/deepseek-v4-flash:low
+      - deepseek/deepseek-v4-pro:medium
     when: steps.compute_stats.json.analyze === true
     timeout_secs: 120
     prompt: |
