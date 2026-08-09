@@ -1,6 +1,6 @@
 {
 	"name": "@omp-deck/topology-memory",
-	"version": "0.7.9",
+	"version": "0.7.10",
 	"description": "Standalone OMP extension: session topology extraction, IDF retrieval, and context injection with optional deck-server connection.",
 	"type": "module",
 	"main": "src/index.ts",

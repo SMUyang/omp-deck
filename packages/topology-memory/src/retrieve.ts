@@ -16,6 +16,7 @@
  */
 
 import type { TopologyNode, TopologyEdge, TopologyArtifact, RetrievedTopology, RetrievedNode } from "./types.ts";
+import { semanticScore } from "./local-embedding.ts";
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -405,8 +406,10 @@ export function retrieveTopology(
 			}
 		}
 		const normalizedMatch = matchScore / Math.sqrt(queryTokens.length);
+		const semScore = semanticScore(query, nodeText(node));
+		const blendedMatch = 0.65 * normalizedMatch + 0.35 * semScore;
 		const kindWeight = KIND_WEIGHTS[node.kind] ?? 0.7;
-		let finalScore = 0.45 * normalizedMatch + 0.30 * node.importance + 0.25 * kindWeight;
+		let finalScore = 0.45 * blendedMatch + 0.30 * node.importance + 0.25 * kindWeight;
 
 		// V3.1c: active supersession leaf boost (the CURRENT state)
 		if (activeLeafIds.has(node.id)) {
