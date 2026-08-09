@@ -16,7 +16,7 @@
  */
 
 import type { TopologyNode, TopologyEdge, TopologyArtifact, RetrievedTopology, RetrievedNode } from "./types.ts";
-import { semanticScore } from "./local-embedding.ts";
+import { semanticScore, tokenizeCache, clearTokenizeCache } from "./embedding.ts";
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -95,246 +95,6 @@ export function detectQueryIntent(q: string): QueryIntent {
 	return "general";
 }
 
-// ── Candidate Retrieval (lexical: word IDF + char n-gram) ───────────────
-
-interface CandidateResult {
-	candidates: RetrievedNode[];
-	candidateNodeCount: number;
-}
-
-function retrieveCandidates(
-	query: string,
-	nodes: TopologyNode[],
-	candidateLimit: number,
-): CandidateResult {
-	if (nodes.length === 0) return { candidates: [], candidateNodeCount: 0 };
-
-	const queryTokens = [...new Set(tokenize(query))];
-	if (queryTokens.length === 0) {
-		const sorted = [...nodes].sort((a, b) => b.importance - a.importance).slice(0, candidateLimit);
-		return {
-			candidates: sorted.map((node) => ({ node, score: node.importance, reasons: ["importance"] })),
-			candidateNodeCount: nodes.length,
-		};
-	}
-
-	const docFreq = new Map<string, number>();
-	for (const node of nodes) {
-		for (const t of new Set(tokenize(nodeText(node)))) {
-			docFreq.set(t, (docFreq.get(t) ?? 0) + 1);
-		}
-	}
-	const N = nodes.length;
-
-	const scored: RetrievedNode[] = nodes.map((node) => {
-		const tokenSet = new Set(tokenize(nodeText(node)));
-		let matchScore = 0;
-		const reasons: string[] = [];
-		for (const qt of queryTokens) {
-			if (tokenSet.has(qt)) {
-				const idf = Math.log(1 + N / (docFreq.get(qt) ?? 1));
-				matchScore += idf;
-				reasons.push(`[match] ${qt}`);
-			}
-		}
-		const normalizedMatch = matchScore / Math.sqrt(queryTokens.length);
-		const kindWeight = KIND_WEIGHTS[node.kind] ?? 0.7;
-		const finalScore = 0.45 * normalizedMatch + 0.30 * node.importance + 0.25 * kindWeight;
-		return { node, score: finalScore, reasons };
-	});
-
-	return {
-		candidates: scored.filter((r) => r.score > 0).sort((a, b) => b.score - a.score).slice(0, candidateLimit),
-		candidateNodeCount: scored.filter((r) => r.score > 0).length,
-	};
-}
-
-// ── Weighted Neighbor Expansion ─────────────────────────────────────────
-
-function expandNeighborsWeighted(
-	seeds: Map<string, number>, // nodeId → seed score
-	edges: TopologyEdge[],
-	maxExpanded: number,
-): Map<string, number> {
-	const result = new Map(seeds);
-	const adjacency = new Map<string, Array<{ target: string; weight: number }>>();
-	for (const edge of edges) {
-		const w = RELATION_WEIGHTS[edge.relation] ?? 0.3;
-		if (!adjacency.has(edge.sourceNodeId)) adjacency.set(edge.sourceNodeId, []);
-		if (!adjacency.has(edge.targetNodeId)) adjacency.set(edge.targetNodeId, []);
-		adjacency.get(edge.sourceNodeId)!.push({ target: edge.targetNodeId, weight: w });
-		adjacency.get(edge.targetNodeId)!.push({ target: edge.sourceNodeId, weight: w });
-	}
-
-	let expanded = 0;
-	// 1-hop expansion with weighted scores
-	for (const [seedId, seedScore] of seeds) {
-		if (expanded >= maxExpanded) break;
-		const neighbors = adjacency.get(seedId);
-		if (!neighbors) continue;
-		for (const { target, weight } of neighbors) {
-			if (result.has(target)) continue;
-			if (expanded >= maxExpanded) break;
-			result.set(target, seedScore * weight);
-			expanded++;
-		}
-	}
-
-	return result;
-}
-
-// ── Intent + State + Relation Aware Reranking ──────────────────────────
-
-function rerankCandidates(
-	candidates: RetrievedNode[],
-	intent: QueryIntent,
-	edges: TopologyEdge[],
-	supersededNodeIds: Set<string>,
-): RetrievedNode[] {
-	// Build relation lookup: which nodes are connected to high-scoring seeds
-	const seedIds = new Set(candidates.slice(0, 10).map((c) => c.node.id));
-	const relationBoost = new Map<string, number>();
-	for (const edge of edges) {
-		const boost = RELATION_WEIGHTS[edge.relation] ?? 0.3;
-		// If seed connects to another node via a strong relation, boost that node
-		if (seedIds.has(edge.sourceNodeId) && !seedIds.has(edge.targetNodeId)) {
-			relationBoost.set(edge.targetNodeId, Math.max(relationBoost.get(edge.targetNodeId) ?? 0, boost * 0.3));
-		}
-		if (seedIds.has(edge.targetNodeId) && !seedIds.has(edge.sourceNodeId)) {
-			relationBoost.set(edge.sourceNodeId, Math.max(relationBoost.get(edge.sourceNodeId) ?? 0, boost * 0.3));
-		}
-	}
-
-	return candidates.map((c) => {
-		let score = c.score;
-		const reasons = [...c.reasons];
-
-		// State boost: active nodes get boosted for current_state queries
-		const isSuperseded = supersededNodeIds.has(c.node.id);
-		if (intent === "current_state") {
-			if (isSuperseded) {
-				score *= 0.1;
-				reasons.push("[stale] ×0.1");
-			} else {
-				score += 0.30;
-				reasons.push("[active] +0.30");
-			}
-		} else if (intent === "historical" && isSuperseded) {
-			// Historical queries should find superseded nodes (reduce penalty)
-		score += 0.15;
-		reasons.push("[superseded, historical access] +0.15");
-		} else if (isSuperseded) {
-			score *= 0.1;
-			reasons.push("[superseded] ×0.1");
-		}
-
-		// Intent-aware kind boost
-		if (intent === "resolution" && c.node.kind === "resolution") {
-			score += 0.35;
-			reasons.push("[resolution intent] +0.35");
-		}
-		if (intent === "artifact" && (c.node.kind === "action" || c.node.kind === "artifact")) {
-			score += 0.25;
-			reasons.push("[artifact intent] +0.25");
-		}
-
-		// Relation boost from topology edges
-		const rBoost = relationBoost.get(c.node.id);
-		if (rBoost) {
-			score += rBoost;
-			reasons.push(`[relation] +${rBoost.toFixed(2)}`);
-		}
-
-		// Constraint/goal always get a small boost (they're usually important)
-		if (c.node.kind === "constraint" || c.node.kind === "goal") {
-			score += 0.05;
-		}
-
-		return { node: c.node, score, reasons };
-	}).sort((a, b) => b.score - a.score);
-}
-
-// ── No-Answer Gate ──────────────────────────────────────────────────────
-
-function applyNoAnswerGate(
-	reranked: RetrievedNode[],
-	query: string,
-): RetrievedNode[] {
-	if (reranked.length === 0) return [];
-
-	const top1 = reranked[0]!;
-	const top1Score = top1.score;
-
-	// Calculate query token coverage of the top node
-	const queryTokens = new Set(tokenize(query));
-	const nodeTokens = new Set(tokenize(nodeText(top1.node)));
-	const coverage = queryTokens.size > 0
-		? [...queryTokens].filter((t) => nodeTokens.has(t)).length / queryTokens.size
-		: 0;
-
-	// Confidence: coverage is the strongest signal for relevance
-	const confidence = 0.25 * Math.min(1, top1Score) + 0.55 * coverage + 0.20 * (top1.node.importance);
-	if (confidence < 0.40) return [];
-
-	return reranked;
-}
-
-// ── Budget-Aware Focus Selection ────────────────────────────────────────
-
-function selectFocusBudgeted(
-	reranked: RetrievedNode[],
-	intent: QueryIntent,
-	maxNodes: number,
-): RetrievedNode[] {
-	// Simpler budget: top scoring nodes with intent-aware priority boosts
-	// already applied in reranking. Just ensure diversity by capping
-	// per-kind and guaranteeing at least 1 constraint/goal if present.
-	const selected: RetrievedNode[] = [];
-	const seen = new Set<string>();
-	const kindCounts = new Map<string, number>();
-	const maxPerKind = Math.ceil(maxNodes / 3);
-
-	// First pass: ensure critical kinds get representation
-	const priorityKinds = intent === "resolution" ? ["resolution", "issue"]
-		: intent === "artifact" ? ["action", "artifact"]
-		: intent === "current_state" ? ["user_intent", "constraint"]
-		: ["goal", "constraint", "decision"];
-
-	for (const kind of priorityKinds) {
-		const node = reranked.find((r) => !seen.has(r.node.id) && r.node.kind === kind);
-		if (node) {
-			selected.push(node);
-			seen.add(node.node.id);
-			kindCounts.set(kind, 1);
-		}
-	}
-
-	// Fill by score with per-kind diversity cap
-	for (const r of reranked) {
-		if (selected.length >= maxNodes) break;
-		if (seen.has(r.node.id)) continue;
-		const count = kindCounts.get(r.node.kind) ?? 0;
-		if (count >= maxPerKind) continue;
-		selected.push(r);
-		seen.add(r.node.id);
-		kindCounts.set(r.node.kind, count + 1);
-	}
-
-	return selected;
-}
-
-// ── Edge Selection ──────────────────────────────────────────────────────
-
-function selectEdges(edges: TopologyEdge[], nodeIds: Set<string>): Set<string> {
-	const selected = new Set<string>();
-	for (const edge of edges) {
-		if (nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId)) {
-			selected.add(edge.id);
-		}
-	}
-	return selected;
-}
-
 /** Relation weight for topology propagation. Boosts resolved_by when query asks about fixing. */
 function relationWeight(relation: string, query: string): number {
 	if (relation === "resolved_by" && /解决|修复|怎么修|resolve|fix|solution/i.test(query)) return 1.0;
@@ -346,6 +106,16 @@ function relationWeight(relation: string, query: string): number {
 		case "continues": return 0.2;
 		default: return 0.15;
 	}
+}
+
+function selectEdges(edges: TopologyEdge[], nodeIds: Set<string>): Set<string> {
+	const selected = new Set<string>();
+	for (const edge of edges) {
+		if (nodeIds.has(edge.sourceNodeId) && nodeIds.has(edge.targetNodeId)) {
+			selected.add(edge.id);
+		}
+	}
+	return selected;
 }
 
 export function retrieveTopology(
@@ -387,15 +157,19 @@ export function retrieveTopology(
 	}
 
 	const docFreq = new Map<string, number>();
+	const nodeTokensCache = new Map<string, Set<string>>();
 	for (const node of nodes) {
-		for (const t of new Set(tokenize(nodeText(node)))) {
+		const text = nodeText(node);
+		const tokens = new Set(tokenizeCache(text, tokenize));
+		nodeTokensCache.set(node.id, tokens);
+		for (const t of tokens) {
 			docFreq.set(t, (docFreq.get(t) ?? 0) + 1);
 		}
 	}
 	const N = nodes.length;
 
 	const scored: RetrievedNode[] = nodes.map((node) => {
-		const tokenSet = new Set(tokenize(nodeText(node)));
+		const tokenSet = nodeTokensCache.get(node.id)!;
 		let matchScore = 0;
 		const reasons: string[] = [];
 		for (const qt of queryTokens) {

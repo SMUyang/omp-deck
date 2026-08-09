@@ -93,3 +93,21 @@ export function semanticScore(query: string, nodeText: string): number {
 	const n = getCachedEmbedding(nodeText);
 	return Math.max(0, cosineSim(q, n)); // clamp negative to 0
 }
+
+// ── Tokenize cache (performance) ──────────────────────────────────────
+
+const _tokenizeCache = new Map<string, string[]>();
+const TOKENIZE_CACHE_LIMIT = 8000;
+
+/** Cached tokenize — avoids re-splitting the same text on every query. */
+export function tokenizeCache(text: string, tokenizer: (t: string) => string[]): string[] {
+	let tokens = _tokenizeCache.get(text);
+	if (!tokens) {
+		tokens = tokenizer(text);
+		if (_tokenizeCache.size >= TOKENIZE_CACHE_LIMIT) _tokenizeCache.clear();
+		_tokenizeCache.set(text, tokens);
+	}
+	return tokens;
+}
+
+export function clearTokenizeCache(): void { _tokenizeCache.clear(); }
