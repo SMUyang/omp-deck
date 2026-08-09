@@ -26,7 +26,10 @@ apps/web/dist-server
 apps/server/data
 apps/server/data/*.db
 apps/server/data/*.db-shm
-apps/server/data/*.db-wal
+data/*.db
+data/*.db-shm
+data/*.db-wal
+!data/.gitkeep
 apps/server/dist-server
 apps/bridges/*/dist
 
