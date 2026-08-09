@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useStore } from "@/lib/store";
 import { groupChatItems, type ChatRenderItem } from "@/lib/chat-items";
 import type { ChatMessage, QueuedPrompt, ToolCallStream } from "@/lib/types";
@@ -37,6 +38,7 @@ function renderMessage(m: ChatMessage, toolCalls: Record<string, ToolCallStream>
 }
 
 export function Chat() {
+	const { t } = useTranslation();
 	// Narrow per-field selectors: only the streaming message (messages ref)
 	// changes per chunk, so memoized message components skip re-render.
 	const sessionId = useStore((s) => s.sessionsById[s.activeId ?? ""]?.sessionId);
@@ -79,7 +81,7 @@ export function Chat() {
 				<div className="mx-auto flex max-w-[760px] flex-col gap-7 px-6 py-10">
 					{messages.length === 0 ? (
 						<div className="text-center font-mono text-2xs uppercase tracking-meta text-ink-3">
-							Empty session — send a prompt below.
+							{t("core.chat.emptySession")}
 						</div>
 					) : null}
 

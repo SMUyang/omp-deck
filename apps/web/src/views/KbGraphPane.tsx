@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ForceGraphMethods } from "react-force-graph-2d";
 
 // Lazy-load the browser-only graph library so that module evaluation
@@ -26,6 +27,7 @@ export const KbGraphPane = memo(function KbGraphPane({
 	onSelect: (path: string) => void;
 	kbChangeCounter: number;
 }) {
+	const { t } = useTranslation();
 	const [data, setData] = useState<KbGraphResponse | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | undefined>();
@@ -137,20 +139,20 @@ export const KbGraphPane = memo(function KbGraphPane({
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
 			<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
-				<div className="meta">Graph</div>
+				<div className="meta">{t("views.kbGraphPane.graph")}</div>
 				<div className="text-xs text-ink-3">
 					{loading
-						? "loading..."
+						? t("views.kbGraphPane.loading")
 						: data
-							? `${filtered.nodes.length} / ${data.totalNodes} nodes · ${filtered.links.length} edges`
+							? t("views.kbGraphPane.nodesEdges", { nodes: filtered.nodes.length, totalNodes: data.totalNodes, edges: filtered.links.length })
 							: ""}
 				</div>
 				{data?.truncated ? (
 					<span
 						className="inline-flex items-center gap-1 rounded bg-warn/15 px-1.5 py-0.5 font-mono text-2xs text-warn"
-						title="Graph truncated at the v1 cap"
+						title={t("views.kbGraphPane.truncatedTitle")}
 					>
-						<AlertTriangle className="h-3 w-3" /> truncated
+						<AlertTriangle className="h-3 w-3" /> {t("views.kbGraphPane.truncated")}
 					</span>
 				) : null}
 				<div className="flex-1" />
@@ -161,17 +163,17 @@ export const KbGraphPane = memo(function KbGraphPane({
 						"btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs",
 						hideOrphans && "text-accent",
 					)}
-					title="Toggle orphan visibility"
+					title={t("views.kbGraphPane.toggleOrphans")}
 				>
 					<EyeOff className="h-3.5 w-3.5" />
-					orphans
+					{t("views.kbGraphPane.orphans")}
 				</button>
 				<div className="flex items-center gap-2 rounded-md border border-line bg-paper-2 px-2 py-1 text-xs">
 					<Search className="h-3.5 w-3.5 text-ink-3" />
 					<input
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
-						placeholder="Filter by title, path, or tag"
+						placeholder={t("views.kbGraphPane.filterPlaceholder")}
 						className="w-full bg-transparent text-ink placeholder:text-ink-4 focus:outline-none sm:w-56"
 					/>
 				</div>
@@ -186,14 +188,14 @@ export const KbGraphPane = memo(function KbGraphPane({
 			<div ref={containerRef} className="relative min-h-0 flex-1 overflow-hidden bg-paper">
 				{loading && !data ? (
 					<div className="absolute inset-0 flex items-center justify-center text-sm text-ink-3">
-						<Loader2 className="mr-2 h-4 w-4 animate-spin" /> building graph…
+						<Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("views.kbGraphPane.buildingGraph")}
 					</div>
 				) : null}
 				{data ? (
 					<Suspense
 						fallback={
 							<div className="absolute inset-0 flex items-center justify-center text-sm text-ink-3">
-								<Loader2 className="mr-2 h-4 w-4 animate-spin" /> loading graph…
+								<Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("views.kbGraphPane.loadingGraph")}
 							</div>
 						}
 					>
@@ -205,7 +207,7 @@ export const KbGraphPane = memo(function KbGraphPane({
 							nodeId="id"
 							nodeLabel={(n) => {
 								const node = n as DisplayNode;
-								return `${node.title}\n${node.path}\n← ${node.inbound} · ${node.outbound} →`;
+								return t("views.kbGraphPane.nodeLabel", { title: node.title, path: node.path, inbound: node.inbound, outbound: node.outbound });
 							}}
 							nodeColor={(n) => {
 								const node = n as DisplayNode;
@@ -230,7 +232,7 @@ export const KbGraphPane = memo(function KbGraphPane({
 
 				{data && !loading ? (
 					<div className="pointer-events-auto absolute bottom-3 left-3 max-w-[16rem] rounded-md border border-line bg-paper/95 px-3 py-2 shadow-sm backdrop-blur">
-						<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">Sources</div>
+						<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">{t("views.kbGraphPane.sources")}</div>
 						<ul className="mt-1 space-y-0.5 text-xs">
 							{dirs.map((d) => (
 								<li key={d.name}>
@@ -256,13 +258,13 @@ export const KbGraphPane = memo(function KbGraphPane({
 						</ul>
 						{isolatedDir ? (
 							<div className="mt-1.5 text-2xs text-ink-3">
-								Showing only <span className="font-mono">{isolatedDir}</span> ·{" "}
+								{t("views.kbGraphPane.showingOnly", { dir: isolatedDir })}{" "}
 								<button
 									type="button"
 									className="text-accent underline-offset-2 hover:underline"
 									onClick={() => setIsolatedDir(null)}
 								>
-									show all
+									{t("views.kbGraphPane.showAll")}
 								</button>
 							</div>
 						) : null}

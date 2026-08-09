@@ -24,6 +24,7 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Save, X } from "lucide-react";
 
 import { diffIsClean, lineDiff, type DiffLine } from "./yaml-diff";
@@ -48,6 +49,7 @@ export function SavePreviewDialog({
 	onCancel,
 	busy,
 }: SavePreviewDialogProps): JSX.Element {
+	const { t } = useTranslation();
 	const diff = useMemo(() => lineDiff(currentYaml, newYaml), [currentYaml, newYaml]);
 	const clean = diffIsClean(diff);
 
@@ -74,18 +76,18 @@ export function SavePreviewDialog({
 		<div
 			role="dialog"
 			aria-modal="true"
-			aria-label="Confirm routine save"
+			aria-label={t("routines.savePreviewDialog.aria")}
 			data-testid="save-preview-dialog"
 			className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 px-4"
 		>
 			<div className="flex max-h-[90vh] w-[min(820px,100%)] flex-col overflow-hidden rounded-lg border border-line bg-paper shadow-xl">
 				<header className="flex items-center gap-2 border-b border-line bg-paper-2/60 px-3 py-2">
 					<span className="font-mono text-2xs uppercase tracking-meta text-ink-3">
-						Save preview
+						{t("routines.savePreviewDialog.title")}
 					</span>
 					<span className="font-mono text-2xs text-ink-3">
 						{clean ? (
-							<span className="text-ink-4">no changes</span>
+							<span className="text-ink-4">{t("routines.savePreviewDialog.noChanges")}</span>
 						) : (
 							<>
 								<span className="text-success">+{addCount}</span>{" "}
@@ -99,8 +101,8 @@ export function SavePreviewDialog({
 							if (!busy) onCancel();
 						}}
 						className="btn-ghost ml-auto h-7 w-7 p-0 text-ink-3 hover:text-ink"
-						aria-label="Close"
-						title="Close (Esc)"
+						aria-label={t("routines.savePreviewDialog.close")}
+						title={t("routines.savePreviewDialog.closeEsc")}
 						disabled={busy}
 					>
 						<X className="h-3.5 w-3.5" />
@@ -110,7 +112,7 @@ export function SavePreviewDialog({
 				<div className="flex-1 overflow-auto bg-paper-code px-2 py-2">
 					{clean ? (
 						<div className="rounded border border-dashed border-line bg-paper-2 px-3 py-6 text-center font-mono text-2xs text-ink-3">
-							The compiled YAML matches the currently-saved spec. Nothing to commit.
+							{t("routines.savePreviewDialog.nothingToCommit")}
 						</div>
 					) : (
 						<pre className="font-mono text-2xs leading-snug">
@@ -125,7 +127,7 @@ export function SavePreviewDialog({
 
 				<footer className="flex items-center gap-2 border-t border-line bg-paper-2/60 px-3 py-2">
 					<span className="font-mono text-2xs text-ink-3">
-						Reviewing the YAML the canvas will commit.
+						{t("routines.savePreviewDialog.reviewing")}
 					</span>
 					<div className="ml-auto flex items-center gap-1.5">
 						<button
@@ -134,7 +136,7 @@ export function SavePreviewDialog({
 							className="btn-ghost h-7 text-2xs"
 							disabled={busy}
 						>
-							Edit canvas
+							{t("routines.savePreviewDialog.editCanvas")}
 						</button>
 						<button
 							ref={saveBtnRef}
@@ -142,10 +144,10 @@ export function SavePreviewDialog({
 							onClick={() => void onConfirm()}
 							className="btn-primary h-7 text-2xs disabled:opacity-50"
 							disabled={busy || clean}
-							aria-label="Save routine"
+							aria-label={t("routines.savePreviewDialog.saveAria")}
 						>
 							<Save className="h-3.5 w-3.5" />
-							{busy ? "Saving…" : "Save"}
+							{busy ? t("routines.savePreviewDialog.saving") : t("routines.savePreviewDialog.save")}
 						</button>
 					</div>
 				</footer>

@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ExternalLink, Trash2, X } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -73,6 +74,7 @@ export function StepInspector({
 	routineId,
 	selectedRunId,
 }: StepInspectorProps): JSX.Element | null {
+	const { t } = useTranslation();
 	// Esc closes the inspector. Bound at the document level so the canvas
 	// keyboard layer doesn't need to know about it.
 	useEffect(() => {
@@ -91,7 +93,10 @@ export function StepInspector({
 		<aside
 			data-testid="step-inspector"
 			data-mode={mode}
-			aria-label={`${step.type} ${step.id} inspector`}
+			aria-label={t("routines.stepInspector.inspectorAria", {
+				type: step.type,
+				id: step.id || t("routines.stepInspector.noId"),
+			})}
 			className={
 				mode === "inline"
 					? "pointer-events-auto flex h-full w-[360px] flex-col border-l border-line bg-paper"
@@ -105,15 +110,15 @@ export function StepInspector({
 					{step.type}
 				</span>
 				<span className="truncate font-mono text-2xs text-ink-2">
-					{step.id || "(no id)"}
+					{step.id || t("routines.stepInspector.noId")}
 				</span>
 				<div className="ml-auto flex items-center gap-0.5">
 					<button
 						type="button"
 						onClick={onDelete}
 						className="btn-ghost h-7 w-7 p-0 text-ink-4 hover:text-danger"
-						aria-label="Delete step"
-						title="Delete step"
+						aria-label={t("routines.stepInspector.deleteStep")}
+						title={t("routines.stepInspector.deleteStep")}
 					>
 						<Trash2 className="h-3.5 w-3.5" />
 					</button>
@@ -121,8 +126,8 @@ export function StepInspector({
 						type="button"
 						onClick={onClose}
 						className="btn-ghost h-7 w-7 p-0 text-ink-3 hover:text-ink"
-						aria-label="Close inspector"
-						title="Close (Esc)"
+						aria-label={t("routines.stepInspector.closeInspector")}
+						title={t("routines.stepInspector.closeEsc")}
 					>
 						<X className="h-3.5 w-3.5" />
 					</button>
@@ -168,17 +173,18 @@ function BranchConditionForm({
 	step: Extract<RoutineStep, { type: "transform" }>;
 	onChange: (next: RoutineStep) => void;
 }): JSX.Element {
+	const { t } = useTranslation();
 	return (
 		<div className="space-y-2">
 			<div className="rounded border border-line bg-paper-2/40 px-2 py-1.5 font-mono text-2xs leading-snug text-ink-3">
-				Wire this node's <span className="text-success">true</span> and{" "}
-				<span className="text-danger">false</span> handles to downstream
-				steps. The compiler turns each branch edge into a{" "}
-				<code className="text-ink-2">when:</code> gate on its target.
+				{t("routines.stepInspector.branchHintBefore")}{" "}
+				<span className="text-success">true</span> {t("routines.stepInspector.branchHintAnd")}{" "}
+				<span className="text-danger">false</span> {t("routines.stepInspector.branchHintAfter")}{" "}
+				<code className="text-ink-2">when:</code> {t("routines.stepInspector.branchHintTail")}
 			</div>
 			<label className="block space-y-1">
 				<span className="font-mono text-2xs uppercase tracking-meta text-ink-3">
-					condition (returns boolean)
+					{t("routines.stepInspector.conditionLabel")}
 				</span>
 				<textarea
 					value={step.body}
@@ -190,9 +196,8 @@ function BranchConditionForm({
 				/>
 			</label>
 			<div className="font-mono text-2xs text-ink-3">
-				Sandboxed (quickjs, 100ms cap). Same globals as a transform:{" "}
-				<code>run</code>, <code>trigger</code>, <code>steps</code>,{" "}
-				<code>state</code>, <code>env</code>, <code>secrets</code>.
+				{t("routines.stepInspector.sandboxHint")} <code>run</code>, <code>trigger</code>,{" "}
+				<code>steps</code>, <code>state</code>, <code>env</code>, <code>secrets</code>.
 			</div>
 		</div>
 	);
@@ -220,6 +225,7 @@ function LastRunSection({
 	routineId?: string;
 	runId?: string | null;
 }): JSX.Element {
+	const { t } = useTranslation();
 	type Pane = "stdout" | "stderr" | "json" | "error";
 	const tabs: Pane[] = [];
 	if (run.stdoutExcerpt) tabs.push("stdout");
@@ -247,7 +253,7 @@ function LastRunSection({
 		>
 			<header className="flex items-center gap-2 border-b border-line px-2 py-1.5">
 				<span className="font-mono text-2xs uppercase tracking-meta text-ink-3">
-					last run
+					{t("routines.stepInspector.lastRun")}
 				</span>
 				<StatusPill status={run.status} />
 				<span className="font-mono text-2xs text-ink-3">{dur}</span>
@@ -255,34 +261,34 @@ function LastRunSection({
 					<Link
 						to={deepLink}
 						className="ml-auto flex items-center gap-1 font-mono text-2xs text-ink-3 hover:text-ink"
-						title="Open in Run Detail"
+						title={t("routines.stepInspector.openRunDetail")}
 					>
 						<ExternalLink className="h-3 w-3" />
-						run detail
+						{t("routines.stepInspector.runDetail")}
 					</Link>
 				) : null}
 			</header>
 
 			{tabs.length === 0 ? (
 				<div className="px-2 py-2 font-mono text-2xs italic text-ink-4">
-					No captured output for this step.
+					{t("routines.stepInspector.noCapturedOutput")}
 				</div>
 			) : (
 				<>
 					<div className="flex gap-0.5 border-b border-line bg-paper px-1.5 py-1">
-						{tabs.map((t) => (
+						{tabs.map((tabId) => (
 							<button
-								key={t}
+								key={tabId}
 								type="button"
-								onClick={() => setTab(t)}
+								onClick={() => setTab(tabId)}
 								className={cn(
 									"rounded px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta",
-									tab === t
+									tab === tabId
 										? "bg-paper-2 text-ink"
 										: "text-ink-3 hover:text-ink",
 								)}
 							>
-								{t}
+								{tabId}
 							</button>
 						))}
 					</div>
@@ -302,6 +308,7 @@ function PaneBody({
 	pane: "stdout" | "stderr" | "json" | "error" | null;
 	run: RoutineStepRun;
 }): JSX.Element | null {
+	const { t } = useTranslation();
 	if (!pane) return null;
 	const text =
 		pane === "stdout"
@@ -319,12 +326,13 @@ function PaneBody({
 				tone,
 			)}
 		>
-			{text || "(empty)"}
+			{text || t("routines.stepInspector.empty")}
 		</pre>
 	);
 }
 
 function StatusPill({ status }: { status: RoutineStepStatus }): JSX.Element {
+	const { t } = useTranslation();
 	const cls =
 		status === "success"
 			? "bg-success/10 text-success border-success/30"
@@ -344,7 +352,7 @@ function StatusPill({ status }: { status: RoutineStepStatus }): JSX.Element {
 				cls,
 			)}
 		>
-			{status}
+			{t(`routines.stepInspector.status.${status}`)}
 		</span>
 	);
 }

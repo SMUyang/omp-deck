@@ -16,6 +16,7 @@
  * wizard manually from Settings doesn't pester.
  */
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BookOpen, CheckCircle2, ChevronRight, ExternalLink, KeyRound, Loader2, Sparkles, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -32,16 +33,17 @@ import { cn } from "@/lib/utils";
 
 type StepKey = "welcome" | "kb" | "provider" | "topology" | "autostart" | "done";
 
-const STEP_ORDER: ReadonlyArray<{ key: StepKey; title: string }> = [
-	{ key: "welcome", title: "Welcome" },
-	{ key: "kb", title: "Knowledge base" },
-	{ key: "provider", title: "Connect provider" },
-	{ key: "topology", title: "Topology APIs" },
-	{ key: "autostart", title: "Session greeting" },
-	{ key: "done", title: "All set" },
+const STEP_ORDER: ReadonlyArray<{ key: StepKey; titleKey: string }> = [
+	{ key: "welcome", titleKey: "views.onboarding.step.welcome" },
+	{ key: "kb", titleKey: "views.onboarding.step.kb" },
+	{ key: "provider", titleKey: "views.onboarding.step.provider" },
+	{ key: "topology", titleKey: "views.onboarding.step.topology" },
+	{ key: "autostart", titleKey: "views.onboarding.step.autostart" },
+	{ key: "done", titleKey: "views.onboarding.step.done" },
 ];
 
 export function OnboardingView() {
+	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const [state, setState] = useState<OnboardingState | null>(null);
 	const [step, setStep] = useState<StepKey>("welcome");
@@ -80,7 +82,7 @@ export function OnboardingView() {
 		return (
 			<div className="flex h-screen items-center justify-center bg-paper">
 				<div className="max-w-md rounded border border-danger/40 bg-danger/5 p-4 text-sm text-danger">
-					Onboarding failed to load: {error}
+					{t("views.onboarding.failedToLoad", { error })}
 				</div>
 			</div>
 		);
@@ -109,7 +111,7 @@ export function OnboardingView() {
 			{/* Top chrome — progress + escape hatch */}
 			<header className="flex items-center justify-between border-b border-line px-6 py-3">
 				<div className="flex items-center gap-3">
-					<div className="meta text-ink-3">omp·deck onboarding</div>
+					<div className="meta text-ink-3">{t("views.onboarding.header")}</div>
 					<ol className="flex items-center gap-1.5">
 						{STEP_ORDER.map((s, i) => (
 							<li
@@ -135,7 +137,7 @@ export function OnboardingView() {
 								>
 									{i + 1}
 								</span>
-								<span className="hidden sm:inline">{s.title}</span>
+								<span className="hidden sm:inline">{t(s.titleKey)}</span>
 							</li>
 						))}
 					</ol>
@@ -144,9 +146,9 @@ export function OnboardingView() {
 					type="button"
 					onClick={() => void finish(true)}
 					className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink"
-					title="Mark onboarding done and go straight to the deck"
+					title={t("views.onboarding.skipTitle")}
 				>
-					Skip setup <X className="h-3.5 w-3.5" />
+					{t("views.onboarding.skipSetup")} <X className="h-3.5 w-3.5" />
 				</button>
 			</header>
 
@@ -172,39 +174,38 @@ export function OnboardingView() {
 // ─── Step 1: Welcome ────────────────────────────────────────────────────────
 
 function Step1Welcome({ onNext }: { onNext: () => void }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<h1 className="text-2xl font-semibold text-ink">Welcome to omp·deck</h1>
+				<h1 className="text-2xl font-semibold text-ink">{t("views.onboarding.welcome.title")}</h1>
 				<p className="mt-2 text-sm text-ink-2">
-					A local cockpit for your AI coding agent — multi-session chat, kanban,
-					routines, knowledge base, all loopback-only on this machine.
+					{t("views.onboarding.welcome.intro")}
 				</p>
 			</div>
 			<div className="rounded border border-line bg-paper-2 p-4 text-sm text-ink-2">
-				<p>The next few steps will:</p>
+				<p>{t("views.onboarding.welcome.nextSteps")}</p>
 				<ul className="mt-2 space-y-1.5 text-xs text-ink-3">
 					<li className="flex items-start gap-2">
 						<BookOpen className="mt-px h-3.5 w-3.5 shrink-0 text-ink-3" />
-						<span>Scaffold a knowledge base the agent can read from</span>
+						<span>{t("views.onboarding.welcome.itemKb")}</span>
 					</li>
 					<li className="flex items-start gap-2">
 						<KeyRound className="mt-px h-3.5 w-3.5 shrink-0 text-ink-3" />
-						<span>Connect a model provider so chat actually works</span>
+						<span>{t("views.onboarding.welcome.itemProvider")}</span>
 					</li>
 					<li className="flex items-start gap-2">
 						<Sparkles className="mt-px h-3.5 w-3.5 shrink-0 text-ink-3" />
-						<span>Optionally enable an auto-greeting on every new session</span>
+						<span>{t("views.onboarding.welcome.itemGreeting")}</span>
 					</li>
 				</ul>
 				<p className="mt-3 text-2xs text-ink-3">
-					Each step is skippable — you can re-run this wizard any time from
-					Settings → Onboarding.
+					{t("views.onboarding.welcome.skipNote")}
 				</p>
 			</div>
 			<div className="flex justify-end">
 				<Button onClick={onNext}>
-					Get started <ChevronRight className="ml-1 h-4 w-4" />
+					{t("views.onboarding.welcome.getStarted")} <ChevronRight className="ml-1 h-4 w-4" />
 				</Button>
 			</div>
 		</div>
@@ -222,6 +223,7 @@ function Step2Kb({
 	onRefresh: () => Promise<void>;
 	onNext: () => void;
 }) {
+	const { t } = useTranslation();
 	const [busy, setBusy] = useState(false);
 	const [seeded, setSeeded] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -259,16 +261,14 @@ function Step2Kb({
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<h1 className="text-xl font-semibold text-ink">Knowledge base</h1>
+				<h1 className="text-xl font-semibold text-ink">{t("views.onboarding.kb.title")}</h1>
 				<p className="mt-2 text-sm text-ink-2">
-					omp·deck's <code className="font-mono">/kb</code> view is a
-					plaintext-portable wiki the agent reads and writes. Set one up now and
-					the agent has somewhere to put long-term memory.
+					{t("views.onboarding.kb.intro", { kb: "/kb" })}
 				</p>
 			</div>
 
 			<div className="rounded border border-line bg-paper-2 p-4">
-				<div className="meta mb-1.5 text-ink-3">Location</div>
+				<div className="meta mb-1.5 text-ink-3">{t("views.onboarding.kb.location")}</div>
 				{editing ? (
 					<input
 						type="text"
@@ -287,17 +287,17 @@ function Step2Kb({
 							onClick={() => setEditing(true)}
 							className="shrink-0 text-2xs text-ink-3 hover:text-ink"
 						>
-							Change…
+							{t("views.onboarding.kb.change")}
 						</button>
 					</div>
 				)}
 				<div className="mt-2 text-2xs text-ink-3">
 					{alreadyExists && !pathChanged
-						? "Already exists — scaffold will add starter files only if missing."
-						: "Will be created with a README and system/ stubs the agent reads at session start."}
+						? t("views.onboarding.kb.alreadyExists")
+						: t("views.onboarding.kb.willCreate")}
 					{pathChanged ? (
 						<span className="ml-1 text-warn">
-							Path differs from server's resolved root; takes full effect after deck restart.
+							{t("views.onboarding.kb.pathDiffers")}
 						</span>
 					) : null}
 				</div>
@@ -315,21 +315,21 @@ function Step2Kb({
 					onClick={onNext}
 					className="text-xs text-ink-3 hover:text-ink"
 				>
-					Skip this step
+					{t("views.onboarding.kb.skip")}
 				</button>
 				<div className="flex items-center gap-2">
 					{seeded || alreadyExists ? (
 						<span className="flex items-center gap-1 text-xs text-success">
-							<CheckCircle2 className="h-4 w-4" /> Ready
+							<CheckCircle2 className="h-4 w-4" /> {t("views.onboarding.ready")}
 						</span>
 					) : null}
 					{seeded || alreadyExists ? (
 						<Button onClick={onNext}>
-							Continue <ChevronRight className="ml-1 h-4 w-4" />
+							{t("views.onboarding.continue")} <ChevronRight className="ml-1 h-4 w-4" />
 						</Button>
 					) : (
 						<Button onClick={() => void scaffold()} disabled={busy}>
-							{busy ? "Scaffolding…" : "Create knowledge base"}
+							{busy ? t("views.onboarding.scaffolding") : t("views.onboarding.kb.create")}
 						</Button>
 					)}
 				</div>
@@ -349,6 +349,7 @@ function Step3Provider({
 	onRefresh: () => Promise<void>;
 	onNext: () => void;
 }) {
+	const { t } = useTranslation();
 	const [activeOAuth, setActiveOAuth] = useState<{ id: string; name: string } | null>(null);
 	const [apiKeyValue, setApiKeyValue] = useState("");
 	const [savingKey, setSavingKey] = useState(false);
@@ -406,8 +407,8 @@ function Step3Provider({
 			setCustomModelId("");
 			setCustomModelName("");
 			setCustomNote(res.reloadRequired
-				? "Provider saved. Start a new session to use it."
-				: "Provider saved.");
+				? t("views.onboarding.provider.savedReload")
+				: t("views.onboarding.provider.saved"));
 			await onRefresh();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -420,23 +421,21 @@ function Step3Provider({
 		<>
 			<div className="flex flex-col gap-5">
 				<div>
-					<h1 className="text-xl font-semibold text-ink">Connect a provider</h1>
+					<h1 className="text-xl font-semibold text-ink">{t("views.onboarding.provider.title")}</h1>
 					<p className="mt-2 text-sm text-ink-2">
-						Pick how the agent talks to a model. Subscriptions you already pay
-						for (Claude Pro/Max, ChatGPT Plus/Pro) are the easiest — no API key
-						to manage. OpenRouter is a pay-as-you-go alternative.
+						{t("views.onboarding.provider.intro")}
 					</p>
 				</div>
 
 				<ProviderTile
 					name="Claude Pro / Max"
-					subtitle="OAuth subscription via claude.ai"
+					subtitle={t("views.onboarding.provider.claudeSub")}
 					connected={hasProvider("anthropic")}
 					onConnect={() => setActiveOAuth({ id: "anthropic", name: "Claude Pro/Max" })}
 				/>
 				<ProviderTile
 					name="ChatGPT Plus / Pro"
-					subtitle="OAuth subscription via chatgpt.com"
+					subtitle={t("views.onboarding.provider.chatgptSub")}
 					connected={hasProvider("openai-codex")}
 					onConnect={() => setActiveOAuth({ id: "openai-codex", name: "ChatGPT Plus/Pro" })}
 				/>
@@ -446,12 +445,12 @@ function Step3Provider({
 						<div>
 							<div className="text-sm font-medium text-ink">OpenRouter</div>
 							<div className="mt-0.5 text-xs text-ink-3">
-								Pay-as-you-go API key. Single account, hundreds of models.
+								{t("views.onboarding.provider.openrouterHint")}
 							</div>
 						</div>
 						{hasProvider("openrouter") ? (
 							<span className="flex items-center gap-1 text-xs text-success">
-								<CheckCircle2 className="h-4 w-4" /> Connected
+								<CheckCircle2 className="h-4 w-4" /> {t("views.onboarding.provider.connected")}
 							</span>
 						) : null}
 					</div>
@@ -465,7 +464,7 @@ function Step3Provider({
 							autoComplete="off"
 						/>
 						<Button onClick={() => void saveOpenRouterKey()} disabled={savingKey || !apiKeyValue.trim()}>
-							{savingKey ? "Saving…" : "Save key"}
+							{savingKey ? t("views.onboarding.saving") : t("views.onboarding.provider.saveKey")}
 						</Button>
 					</div>
 					<a
@@ -474,7 +473,7 @@ function Step3Provider({
 						rel="noreferrer"
 						className="mt-2 flex items-center gap-1 text-2xs text-ink-3 hover:text-ink"
 					>
-						Get a key <ExternalLink className="h-3 w-3" />
+						{t("views.onboarding.provider.getKey")} <ExternalLink className="h-3 w-3" />
 					</a>
 				</div>
 
@@ -482,10 +481,9 @@ function Step3Provider({
 				<div className="rounded border border-line bg-paper-2 p-4">
 					<div className="flex items-baseline justify-between">
 						<div>
-							<div className="text-sm font-medium text-ink">Custom provider</div>
+							<div className="text-sm font-medium text-ink">{t("views.onboarding.provider.custom")}</div>
 							<div className="mt-0.5 text-xs text-ink-3">
-								Any OpenAI-compatible endpoint. Written to omp's models.yml —
-								syncs to both terminal and deck.
+								{t("views.onboarding.provider.customHint")}
 							</div>
 						</div>
 					</div>
@@ -494,7 +492,7 @@ function Step3Provider({
 						type="text"
 						value={customName}
 						onChange={(e) => setCustomName(e.target.value)}
-						placeholder="Provider name (e.g. my-provider)"
+						placeholder={t("views.onboarding.provider.namePlaceholder")}
 						className="field h-8 px-2 font-mono text-xs"
 						autoComplete="off"
 					/>
@@ -502,7 +500,7 @@ function Step3Provider({
 						type="text"
 						value={customBaseUrl}
 						onChange={(e) => setCustomBaseUrl(e.target.value)}
-						placeholder="Base URL (https://api.example.com/v1)"
+						placeholder={t("views.onboarding.provider.baseUrlPlaceholder")}
 						className="field h-8 px-2 font-mono text-xs"
 						autoComplete="off"
 					/>
@@ -525,7 +523,7 @@ function Step3Provider({
 						type="password"
 						value={customApiKey}
 						onChange={(e) => setCustomApiKey(e.target.value)}
-						placeholder="API key"
+						placeholder={t("views.onboarding.provider.apiKeyPlaceholder")}
 						className="field mt-2 h-8 w-full px-2 font-mono text-xs"
 						autoComplete="off"
 					/>
@@ -536,14 +534,14 @@ function Step3Provider({
 						checked={customAuthNone}
 						onChange={(e) => setCustomAuthNone(e.target.checked)}
 					/>
-					No auth (local endpoint without API key)
+					{t("views.onboarding.provider.noAuth")}
 				</label>
 				<div className="mt-2 flex gap-2">
 					<input
 						type="text"
 						value={customModelId}
 						onChange={(e) => setCustomModelId(e.target.value)}
-						placeholder="Model ID (e.g. gpt-4o)"
+						placeholder={t("views.onboarding.provider.modelIdPlaceholder")}
 						className="field h-8 flex-1 px-2 font-mono text-xs"
 						autoComplete="off"
 					/>
@@ -551,7 +549,7 @@ function Step3Provider({
 						type="text"
 						value={customModelName}
 						onChange={(e) => setCustomModelName(e.target.value)}
-						placeholder="Display name (optional)"
+						placeholder={t("views.onboarding.provider.displayNamePlaceholder")}
 						className="field h-8 w-40 px-2 font-mono text-xs"
 						autoComplete="off"
 					/>
@@ -562,7 +560,7 @@ function Step3Provider({
 						disabled={savingCustom || !customName.trim() || !customBaseUrl.trim() || !customModelId.trim() || (!customAuthNone && !customApiKey.trim())}
 						variant="ghost"
 					>
-						{savingCustom ? "Saving…" : "Add provider"}
+						{savingCustom ? t("views.onboarding.saving") : t("views.onboarding.provider.addProvider")}
 					</Button>
 					{customNote ? (
 						<span className="flex items-center gap-1 text-xs text-success">
@@ -573,7 +571,7 @@ function Step3Provider({
 				</div>
 
 				<p className="text-2xs text-ink-3">
-					For more providers, use the form above or visit
+					{t("views.onboarding.provider.moreProviders")}
 					<a href="/settings" className="underline"> Settings → Providers</a> anytime.
 				</p>
 
@@ -589,10 +587,10 @@ function Step3Provider({
 						onClick={onNext}
 						className="text-xs text-ink-3 hover:text-ink"
 					>
-						Skip — I'll connect later
+						{t("views.onboarding.provider.skip")}
 					</button>
 					<Button onClick={onNext} disabled={!hasAnyProvider}>
-						Continue <ChevronRight className="ml-1 h-4 w-4" />
+						{t("views.onboarding.continue")} <ChevronRight className="ml-1 h-4 w-4" />
 					</Button>
 				</div>
 			</div>
@@ -622,6 +620,7 @@ function ProviderTile({
 	connected: boolean;
 	onConnect: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex items-center justify-between rounded border border-line bg-paper-2 p-4">
 			<div>
@@ -630,11 +629,11 @@ function ProviderTile({
 			</div>
 			{connected ? (
 				<span className="flex items-center gap-1 text-xs text-success">
-					<CheckCircle2 className="h-4 w-4" /> Connected
+					<CheckCircle2 className="h-4 w-4" /> {t("views.onboarding.provider.connected")}
 				</span>
 			) : (
 				<Button variant="ghost" onClick={onConnect}>
-					Sign in
+					{t("views.onboarding.provider.signIn")}
 				</Button>
 			)}
 		</div>
@@ -644,6 +643,7 @@ function ProviderTile({
 // ─── Step 3.5: Topology APIs ────────────────────────────────────────────────
 
 function StepTopology({ onNext }: { onNext: () => void }) {
+	const { t } = useTranslation();
 	const [sfKey, setSfKey] = useState("");
 	const [sfSaved, setSfSaved] = useState(false);
 	const [extUrl, setExtUrl] = useState("https://api.deepseek.com");
@@ -702,11 +702,9 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<h1 className="text-xl font-semibold text-ink">Topology APIs</h1>
+				<h1 className="text-xl font-semibold text-ink">{t("views.onboarding.topology.title")}</h1>
 				<p className="mt-2 text-sm text-ink-2">
-					The deck's session-context topology system uses optional APIs for
-					semantic search and context compression. All are optional — the deck
-					runs fine without them. Configure later via{" "}
+					{t("views.onboarding.topology.intro")}{" "}
 					<a href="/settings" className="underline">Settings &rarr; Env</a>.
 				</p>
 			</div>
@@ -717,13 +715,12 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 					<div>
 						<div className="text-sm font-medium text-ink">SiliconFlow</div>
 						<div className="mt-0.5 text-xs text-ink-3">
-							Embedding (BAAI/bge-large-zh-v1.5) + rerank (BAAI/bge-reranker-v2-m3).
-							One API key covers both.
+							{t("views.onboarding.topology.siliconflowHint")}
 						</div>
 					</div>
 					{sfSaved ? (
 						<span className="flex items-center gap-1 text-xs text-success">
-							<CheckCircle2 className="h-4 w-4" /> Saved
+							<CheckCircle2 className="h-4 w-4" /> {t("views.onboarding.saved")}
 						</span>
 					) : null}
 				</div>
@@ -737,7 +734,7 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 						autoComplete="off"
 					/>
 					<Button onClick={() => void saveSiliconFlow()} disabled={saving || !sfKey.trim()}>
-						{saving ? "Saving…" : "Save"}
+						{saving ? t("views.onboarding.saving") : t("views.onboarding.save")}
 					</Button>
 				</div>
 				<a
@@ -746,7 +743,7 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 					rel="noreferrer"
 					className="mt-2 flex items-center gap-1 text-2xs text-ink-3 hover:text-ink"
 				>
-					Get a key <ExternalLink className="h-3 w-3" />
+					{t("views.onboarding.provider.getKey")} <ExternalLink className="h-3 w-3" />
 				</a>
 			</div>
 
@@ -754,15 +751,14 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 			<div className="rounded border border-line bg-paper-2 p-4">
 				<div className="flex items-baseline justify-between">
 					<div>
-						<div className="text-sm font-medium text-ink">Extraction</div>
+						<div className="text-sm font-medium text-ink">{t("views.onboarding.topology.extraction")}</div>
 						<div className="mt-0.5 text-xs text-ink-3">
-							Fast LLM for topology node extraction. DeepSeek, SiliconFlow,
-							or any OpenAI-compatible endpoint.
+							{t("views.onboarding.topology.extractionHint")}
 						</div>
 					</div>
 					{extSaved ? (
 						<span className="flex items-center gap-1 text-xs text-success">
-							<CheckCircle2 className="h-4 w-4" /> Saved
+							<CheckCircle2 className="h-4 w-4" /> {t("views.onboarding.saved")}
 						</span>
 					) : null}
 				</div>
@@ -779,7 +775,7 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 							type="password"
 							value={extKey}
 							onChange={(e) => setExtKey(e.target.value)}
-							placeholder="API key"
+							placeholder={t("views.onboarding.provider.apiKeyPlaceholder")}
 							className="field h-8 flex-1 px-2 font-mono text-xs"
 							autoComplete="off"
 						/>
@@ -792,7 +788,7 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 						/>
 					</div>
 					<Button onClick={() => void saveExtraction()} disabled={saving || !extKey.trim()} variant="ghost">
-						{saving ? "Saving…" : "Save extraction"}
+						{saving ? t("views.onboarding.saving") : t("views.onboarding.topology.saveExtraction")}
 					</Button>
 				</div>
 			</div>
@@ -809,10 +805,10 @@ function StepTopology({ onNext }: { onNext: () => void }) {
 					onClick={onNext}
 					className="text-xs text-ink-3 hover:text-ink"
 				>
-					Skip — I'll configure later
+					{t("views.onboarding.topology.skip")}
 				</button>
 				<Button onClick={onNext}>
-					Continue <ChevronRight className="ml-1 h-4 w-4" />
+					{t("views.onboarding.continue")} <ChevronRight className="ml-1 h-4 w-4" />
 				</Button>
 			</div>
 		</div>
@@ -830,6 +826,7 @@ function Step4AutoStart({
 	onRefresh: () => Promise<void>;
 	onNext: () => void;
 }) {
+	const { t } = useTranslation();
 	const [busy, setBusy] = useState(false);
 	const [enabled, setEnabled] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -864,17 +861,15 @@ function Step4AutoStart({
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<h1 className="text-xl font-semibold text-ink">Session greeting</h1>
+				<h1 className="text-xl font-semibold text-ink">{t("views.onboarding.autostart.title")}</h1>
 				<p className="mt-2 text-sm text-ink-2">
-					When you start a new chat, the agent can automatically read your
-					knowledge base, query the local API for open tasks / inbox / routines,
-					and summarize where you are. Fires once per session.
+					{t("views.onboarding.autostart.intro")}
 				</p>
 			</div>
 
 			<details className="rounded border border-line bg-paper-2 p-4">
 				<summary className="cursor-pointer text-xs text-ink-2">
-					Preview what the agent will do on each new session
+					{t("views.onboarding.autostart.preview")}
 				</summary>
 				<pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-paper p-2 font-mono text-2xs text-ink-2">
 					{DEFAULT_START_BODY}
@@ -893,21 +888,21 @@ function Step4AutoStart({
 					onClick={onNext}
 					className="text-xs text-ink-3 hover:text-ink"
 				>
-					Skip — empty composer is fine
+					{t("views.onboarding.autostart.skip")}
 				</button>
 				<div className="flex items-center gap-2">
 					{enabled || alreadyExists ? (
 						<span className="flex items-center gap-1 text-xs text-success">
-							<CheckCircle2 className="h-4 w-4" /> Enabled
+							<CheckCircle2 className="h-4 w-4" /> {t("views.onboarding.autostart.enabled")}
 						</span>
 					) : null}
 					{enabled || alreadyExists ? (
 						<Button onClick={onNext}>
-							Continue <ChevronRight className="ml-1 h-4 w-4" />
+							{t("views.onboarding.continue")} <ChevronRight className="ml-1 h-4 w-4" />
 						</Button>
 					) : (
 						<Button onClick={() => void enable()} disabled={busy}>
-							{busy ? "Enabling…" : "Enable auto-greeting"}
+							{busy ? t("views.onboarding.autostart.enabling") : t("views.onboarding.autostart.enable")}
 						</Button>
 					)}
 				</div>
@@ -919,6 +914,7 @@ function Step4AutoStart({
 // ─── Step 5: Done ───────────────────────────────────────────────────────────
 
 function Step5Done({ onFinish }: { onFinish: () => void }) {
+	const { t } = useTranslation();
 	const createSession = useStore((s) => s.createSession);
 	const defaultCwd = useStore((s) => s.defaultCwd);
 
@@ -939,27 +935,26 @@ function Step5Done({ onFinish }: { onFinish: () => void }) {
 	return (
 		<div className="flex flex-col gap-5">
 			<div>
-				<h1 className="text-xl font-semibold text-ink">You're set up</h1>
+				<h1 className="text-xl font-semibold text-ink">{t("views.onboarding.done.title")}</h1>
 				<p className="mt-2 text-sm text-ink-2">
-					Your deck has a <code className="font-mono">T-1 Welcome</code> task in
-					the kanban walking through all the surfaces. Open it any time from the
-					Tasks tab.
+					{t("views.onboarding.done.intro", { task: "T-1 Welcome" })}
 				</p>
 			</div>
 			<div className="rounded border border-line bg-paper-2 p-4 text-xs text-ink-3">
-				<p>What's next:</p>
+				<p>{t("views.onboarding.done.whatsNext")}</p>
 				<ul className="mt-2 list-disc space-y-1 pl-4">
-					<li>Send a prompt in chat to test your provider connection.</li>
-					<li>Tab to <strong>Tasks</strong> and read <strong>T-1</strong> for a deeper tour.</li>
+					<li>{t("views.onboarding.done.itemPrompt")}</li>
+					<li>{t("views.onboarding.done.itemTasks")}</li>
 					<li>
-						Visit <a href="/marketplace" className="underline">Marketplace</a>{" "}
-						to install plugins / skills (recommended: claude-plugins-official).
+						{t("views.onboarding.done.itemMarketplace")}
+						<a href="/marketplace" className="underline">Marketplace</a>{" "}
+						{t("views.onboarding.done.itemMarketplace2")}
 					</li>
 				</ul>
 			</div>
 			<div className="flex justify-end">
 				<Button onClick={openChat}>
-					Open chat <ChevronRight className="ml-1 h-4 w-4" />
+					{t("views.onboarding.done.openChat")} <ChevronRight className="ml-1 h-4 w-4" />
 				</Button>
 			</div>
 		</div>

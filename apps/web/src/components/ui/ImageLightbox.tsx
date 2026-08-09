@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ImagePreviewItem } from "./image-preview";
@@ -15,6 +16,7 @@ const FOCUSABLE_SELECTOR =
 	'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLightboxProps): ReactNode {
+	const { t } = useTranslation();
 	const imageCount = images.length;
 	const clamped = Math.max(0, Math.min(index, imageCount - 1));
 	const current = imageCount > 0 ? images[clamped] : undefined;
@@ -105,7 +107,7 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
 				type="button"
 				className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
 				onClick={onClose}
-				aria-label="Close preview"
+				aria-label={t("settings.imageLightbox.closePreview")}
 			>
 				<X className="h-5 w-5" />
 			</button>
@@ -124,7 +126,7 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
 						e.stopPropagation();
 						onIndexChange(previousImageIndex(clamped, imageCount));
 					}}
-					aria-label="Previous image"
+					aria-label={t("settings.imageLightbox.previousImage")}
 				>
 					<ChevronLeft className="h-6 w-6" />
 				</button>
@@ -145,7 +147,7 @@ export function ImageLightbox({ images, index, onIndexChange, onClose }: ImageLi
 						e.stopPropagation();
 						onIndexChange(nextImageIndex(clamped, imageCount));
 					}}
-					aria-label="Next image"
+					aria-label={t("settings.imageLightbox.nextImage")}
 				>
 					<ChevronRight className="h-6 w-6" />
 				</button>

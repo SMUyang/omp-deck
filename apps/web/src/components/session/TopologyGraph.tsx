@@ -187,7 +187,7 @@ export function TopologyGraph({
 			<svg
 				viewBox={`0 0 ${width} ${height}`}
 				role="img"
-				aria-label="Session context topology graph"
+				aria-label={t("topologyWorkspace.graph.graphAriaLabel")}
 				className="w-full overflow-hidden rounded-md border border-line bg-paper"
 				style={{ height: variant === "mini" ? 220 : Math.min(720, Math.max(320, height)) }}
 			>

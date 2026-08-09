@@ -20,10 +20,12 @@
  */
 import { useEffect, useState } from "react";
 import { ArrowUpCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import type { VersionInfo } from "@omp-deck/protocol";
 
 export function UpdatePill() {
+	const { t } = useTranslation();
 	const [info, setInfo] = useState<VersionInfo | null>(null);
 
 	useEffect(() => {
@@ -52,11 +54,11 @@ export function UpdatePill() {
 				href={info.releaseUrl}
 				target="_blank"
 				rel="noopener noreferrer"
-				title={`Running ${info.current} — ${info.latest} available. Click to view release notes.`}
+				title={t("core.updatePill.title", { current: info.current, latest: info.latest })}
 				className="flex items-center gap-1 text-accent hover:text-accent/80"
 			>
 				<ArrowUpCircle className="h-3 w-3" />
-				<span>{info.latest} available</span>
+				<span>{t("core.updatePill.available", { version: info.latest })}</span>
 			</a>
 		</>
 	);

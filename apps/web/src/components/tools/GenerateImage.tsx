@@ -1,8 +1,10 @@
 import type { ToolRendererProps } from "./ToolCallCard";
 import { ArgRow, extractResultText } from "./shared";
 import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
+import { useTranslation } from "react-i18next";
 
 export function GenerateImageTool({ args, stream }: ToolRendererProps) {
+	const { t } = useTranslation();
 	const subject = String((args.subject as string | undefined) ?? "");
 	const result = stream?.result;
 	const imageData = extractImage(result);
@@ -14,7 +16,7 @@ export function GenerateImageTool({ args, stream }: ToolRendererProps) {
 			{imageData ? (
 				<ImagePreviewGrid
 					images={[{ data: imageData.data, mimeType: imageData.mimeType }]}
-					altPrefix="generated"
+					altPrefix={t("tools.generateImage.generatedAlt")}
 					thumbnailClassName="max-h-96 w-auto rounded border border-line object-contain"
 				/>
 			) : null}

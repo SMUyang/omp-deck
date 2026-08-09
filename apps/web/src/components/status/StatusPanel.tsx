@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type {
 	CpaUsageAggregate,
 	CpaUsageResponse,
@@ -44,8 +46,6 @@ interface StatusPanelViewModel {
 	cpaUsage: CpaUsageViewModel;
 }
 
-const CPA_DESCRIPTION = "CLIProxyAPI request usage, not remaining quota.";
-const CPA_LOADING_LABEL = "Loading CPA usage…";
 const CPA_WINDOW_ORDER: ReadonlyArray<[CpaWindowLabel, "h1" | "h24" | "d7"]> = [
 	["1h", "h1"],
 	["24h", "h24"],
@@ -101,28 +101,48 @@ function formatPercent(value: number): string {
 	return `${(value * 100).toFixed(1)}%`;
 }
 
-function formatContext(session: SessionUi): string {
+function formatContext(session: SessionUi, t?: TFunction): string {
 	const usage = session.contextUsage;
-	if (!usage) return "unavailable";
+	if (!usage) return t ? t("core.statusPanel.contextUnavailable") : "unavailable";
 	if (typeof usage.tokens === "number" && typeof usage.percent === "number") {
 		return `${formatTokens(usage.tokens)} / ${formatTokens(usage.contextWindow)} · ${usage.percent.toFixed(1)}%`;
 	}
-	return `${formatTokens(usage.contextWindow)} window · refresh pending`;
+	return t
+		? t("core.statusPanel.refreshPending", { window: formatTokens(usage.contextWindow) })
+		: `${formatTokens(usage.contextWindow)} window · refresh pending`;
 }
 
-function formatLimitSummary(limit: ProviderUsageLimitWire): string {
+function formatLimitSummary(limit: ProviderUsageLimitWire, t?: TFunction): string {
 	if (typeof limit.usedFraction === "number") {
-		const parts = [`${formatPercent(limit.usedFraction)} used`];
-		if (typeof limit.remainingFraction === "number") parts.push(`${formatPercent(limit.remainingFraction)} left`);
+		const parts = [
+			t
+				? t("core.statusPanel.percentUsed", { percent: formatPercent(limit.usedFraction) })
+				: `${formatPercent(limit.usedFraction)} used`,
+		];
+		if (typeof limit.remainingFraction === "number")
+			parts.push(
+				t
+					? t("core.statusPanel.percentLeft", { percent: formatPercent(limit.remainingFraction) })
+					: `${formatPercent(limit.remainingFraction)} left`,
+			);
 		return parts.join(" · ");
 	}
 	if (typeof limit.used === "number" && typeof limit.limit === "number") {
-		const unit = limit.unit ?? "units";
-		const parts = [`${limit.used.toFixed(2)} / ${limit.limit.toFixed(2)} ${unit}`];
-		if (typeof limit.remaining === "number") parts.push(`${limit.remaining.toFixed(2)} left`);
+		const unit = limit.unit ?? (t ? t("core.statusPanel.units") : "units");
+		const parts = [
+			t
+				? t("core.statusPanel.limitFraction", { used: limit.used.toFixed(2), limit: limit.limit.toFixed(2), unit })
+				: `${limit.used.toFixed(2)} / ${limit.limit.toFixed(2)} ${unit}`,
+		];
+		if (typeof limit.remaining === "number")
+			parts.push(
+				t
+					? t("core.statusPanel.unitsLeft", { remaining: limit.remaining.toFixed(2) })
+					: `${limit.remaining.toFixed(2)} left`,
+			);
 		return parts.join(" · ");
 	}
-	return "usage unavailable";
+	return t ? t("core.statusPanel.usageUnavailable") : "usage unavailable";
 }
 
 function topAggregateLabels(aggregates: CpaUsageAggregate[], label: (a: CpaUsageAggregate) => string): string[] {
@@ -132,55 +152,70 @@ function topAggregateLabels(aggregates: CpaUsageAggregate[], label: (a: CpaUsage
 		.map((a) => `${label(a)} · ${a.n.toLocaleString()}`);
 }
 
-function buildCpaWindows(cpaUsage: CpaUsageResponse): CpaWindowViewModel[] {
+function buildCpaWindows(cpaUsage: CpaUsageResponse, t?: TFunction): CpaWindowViewModel[] {
 	const windows = cpaUsage.windows;
 	if (!windows) return [];
 	const out: CpaWindowViewModel[] = [];
 	for (const [label, key] of CPA_WINDOW_ORDER) {
 		const win: CpaUsageWindow | undefined = windows[key];
 		if (!win) continue;
-		const t = win.totals;
+		const tt = win.totals;
 		out.push({
 			label,
-			requests: `${t.requests.toLocaleString()} requests`,
-			errors: `${t.errors.toLocaleString()} errors · ${formatPercent(t.error_rate)}`,
-			tokens: `${formatTokens(t.total_tokens)} tokens`,
-			topModels: topAggregateLabels(win.per_model, (a) => a.model ?? "unknown"),
-			topApiKeys: topAggregateLabels(win.per_api_key, (a) => a.key_id ?? a.account ?? "key"),
+			requests: t
+				? t("core.statusPanel.requests", { n: tt.requests.toLocaleString() })
+				: `${tt.requests.toLocaleString()} requests`,
+			errors: t
+				? t("core.statusPanel.errors", { n: tt.errors.toLocaleString(), percent: formatPercent(tt.error_rate) })
+				: `${tt.errors.toLocaleString()} errors · ${formatPercent(tt.error_rate)}`,
+			tokens: t
+				? t("core.statusPanel.tokens", { n: formatTokens(tt.total_tokens) })
+				: `${formatTokens(tt.total_tokens)} tokens`,
+			topModels: topAggregateLabels(win.per_model, (a) => a.model ?? (t ? t("core.statusPanel.unknown") : "unknown")),
+			topApiKeys: topAggregateLabels(win.per_api_key, (a) => a.key_id ?? a.account ?? (t ? t("core.statusPanel.keyLabel") : "key")),
 		});
 	}
 	return out;
 }
 
-function buildCpaUsageViewModel(cpaUsage?: CpaUsageResponse): CpaUsageViewModel {
+const CPA_DESCRIPTION_EN = "CLIProxyAPI request usage, not remaining quota.";
+const CPA_LOADING_EN = "Loading CPA usage…";
+const CPA_UNAVAILABLE_EN = "CPA usage unavailable.";
+
+function buildCpaUsageViewModel(cpaUsage: CpaUsageResponse | undefined, t?: TFunction): CpaUsageViewModel {
 	if (!cpaUsage) {
-		return { description: CPA_DESCRIPTION, loadingLabel: CPA_LOADING_LABEL, windows: [] };
+		return {
+			description: t ? t("core.statusPanel.cpaDescription") : CPA_DESCRIPTION_EN,
+			loadingLabel: t ? t("core.statusPanel.cpaLoading") : CPA_LOADING_EN,
+			windows: [],
+		};
 	}
 	if (!cpaUsage.available) {
 		return {
-			description: CPA_DESCRIPTION,
-			error: cpaUsage.error ?? "CPA usage unavailable.",
+			description: t ? t("core.statusPanel.cpaDescription") : CPA_DESCRIPTION_EN,
+			error: cpaUsage.error ?? (t ? t("core.statusPanel.cpaUnavailable") : CPA_UNAVAILABLE_EN),
 			windows: [],
 		};
 	}
 	return {
-		description: CPA_DESCRIPTION,
+		description: t ? t("core.statusPanel.cpaDescription") : CPA_DESCRIPTION_EN,
 		error: cpaUsage.error,
-		windows: buildCpaWindows(cpaUsage),
+		windows: buildCpaWindows(cpaUsage, t),
 	};
 }
 
 export function buildStatusPanelViewModel(
 	session: SessionUi,
-	providerUsage?: ProviderUsageResponse,
-	cpaUsage?: CpaUsageResponse,
+	providerUsage: ProviderUsageResponse | undefined,
+	cpaUsage: CpaUsageResponse | undefined,
+	t?: TFunction,
 ): StatusPanelViewModel {
 	const providerSections = (providerUsage?.reports ?? []).map((report) => ({
 		title: report.provider,
 		notes: report.notes ?? [],
 		limits: report.limits.map((limit) => ({
 			label: limit.label,
-			summary: formatLimitSummary(limit),
+			summary: formatLimitSummary(limit, t),
 			status: limit.status,
 			window: limit.windowLabel,
 		})),
@@ -188,21 +223,30 @@ export function buildStatusPanelViewModel(
 	return {
 		sessionRows: [
 			{ label: "id", value: shortId(session.sessionId), title: session.sessionId },
-			...(session.sessionName ? [{ label: "name", value: session.sessionName }] : []),
-			{ label: "cwd", value: shortPath(session.cwd, 34), title: session.cwd },
-			...(session.model ? [{ label: "model", value: `${session.model.provider}/${session.model.id}` }] : []),
-			{ label: "state", value: session.status },
+			...(session.sessionName ? [{ label: t ? t("core.statusPanel.name") : "name", value: session.sessionName }] : []),
+			{ label: t ? t("core.statusPanel.cwd") : "cwd", value: shortPath(session.cwd, 34), title: session.cwd },
+			...(session.model ? [{ label: t ? t("core.statusPanel.model") : "model", value: `${session.model.provider}/${session.model.id}` }] : []),
+			{ label: t ? t("core.statusPanel.state") : "state", value: session.status },
 		],
-		contextLine: formatContext(session),
-		chatLine: `${formatTokens(session.usage.totalTokens)} tokens · ${session.turnCount} turns`,
-		costLine: `${formatCost(session.usage.cost)} · in ${formatTokens(session.usage.input)} / out ${formatTokens(session.usage.output)}`,
+		contextLine: formatContext(session, t),
+		chatLine: t
+			? t("core.statusPanel.chatLine", { tokens: formatTokens(session.usage.totalTokens), turns: session.turnCount })
+			: `${formatTokens(session.usage.totalTokens)} tokens · ${session.turnCount} turns`,
+		costLine: t
+			? t("core.statusPanel.costLine", {
+					cost: formatCost(session.usage.cost),
+					input: formatTokens(session.usage.input),
+					output: formatTokens(session.usage.output),
+				})
+			: `${formatCost(session.usage.cost)} · in ${formatTokens(session.usage.input)} / out ${formatTokens(session.usage.output)}`,
 		providerSections,
 		providerError: providerUsage?.error,
-		cpaUsage: buildCpaUsageViewModel(cpaUsage),
+		cpaUsage: buildCpaUsageViewModel(cpaUsage, t),
 	};
 }
 
 export function StatusPanel() {
+	const { t } = useTranslation();
 	const session = useStore(selectActiveSession);
 	const [providerUsage, setProviderUsage] = useState<ProviderUsageResponse | undefined>(providerUsageCache);
 	const [loading, setLoading] = useState(providerUsageCache === undefined);
@@ -243,32 +287,32 @@ export function StatusPanel() {
 	}, []);
 
 	const vm = useMemo(
-		() => (session ? buildStatusPanelViewModel(session, providerUsage, cpaUsage) : undefined),
-		[session, providerUsage, cpaUsage],
+		() => (session ? buildStatusPanelViewModel(session, providerUsage, cpaUsage, t) : undefined),
+		[session, providerUsage, cpaUsage, t],
 	);
 	if (!session || !vm) {
-		return <div className="px-4 py-6 font-mono text-2xs uppercase tracking-meta text-ink-3">No session selected</div>;
+		return <div className="px-4 py-6 font-mono text-2xs uppercase tracking-meta text-ink-3">{t("core.statusPanel.noSession")}</div>;
 	}
 	return (
 		<div className="flex flex-col">
-			<PanelSection title="Status">
+			<PanelSection title={t("core.statusPanel.status")}>
 				{vm.sessionRows.map((row) => (
 					<KV key={row.label} k={row.label} v={row.value} title={row.title} />
 				))}
 			</PanelSection>
-			<PanelSection title="Context">
+			<PanelSection title={t("core.statusPanel.context")}>
 				<div className="font-mono text-sm text-ink">{vm.contextLine}</div>
 			</PanelSection>
-			<PanelSection title="Chat usage">
+			<PanelSection title={t("core.statusPanel.chatUsage")}>
 				<div className="font-mono text-sm text-ink">{vm.chatLine}</div>
 				<div className="mt-1 font-mono text-2xs text-ink-3">{vm.costLine}</div>
 			</PanelSection>
-			<PanelSection title="CPA usage">
+			<PanelSection title={t("core.statusPanel.cpaUsage")}>
 				<div className="font-mono text-2xs text-ink-3">{vm.cpaUsage.description}</div>
 				{cpaLoading ? <div className="font-mono text-2xs text-ink-3">{vm.cpaUsage.loadingLabel}</div> : null}
 				{vm.cpaUsage.error ? <div className="text-xs text-danger">{vm.cpaUsage.error}</div> : null}
 				{!cpaLoading && !vm.cpaUsage.error && vm.cpaUsage.windows.length === 0 ? (
-					<div className="font-mono text-2xs text-ink-3">No CPA usage windows reported.</div>
+					<div className="font-mono text-2xs text-ink-3">{t("core.statusPanel.noCpaWindows")}</div>
 				) : null}
 				<div className="space-y-2">
 					{vm.cpaUsage.windows.map((win) => (
@@ -278,20 +322,20 @@ export function StatusPanel() {
 							<div className="font-mono text-2xs text-ink-3">{win.errors}</div>
 							<div className="font-mono text-2xs text-ink-3">{win.tokens}</div>
 							{win.topModels.length > 0 ? (
-								<div className="mt-1 font-mono text-2xs text-ink-3">models: {win.topModels.join(", ")}</div>
+								<div className="mt-1 font-mono text-2xs text-ink-3">{t("core.statusPanel.topModels", { models: win.topModels.join(", ") })}</div>
 							) : null}
 							{win.topApiKeys.length > 0 ? (
-								<div className="font-mono text-2xs text-ink-3">keys: {win.topApiKeys.join(", ")}</div>
+								<div className="font-mono text-2xs text-ink-3">{t("core.statusPanel.topApiKeys", { keys: win.topApiKeys.join(", ") })}</div>
 							) : null}
 						</div>
 					))}
 				</div>
 			</PanelSection>
-			<PanelSection title="Provider usage">
-				{loading ? <div className="font-mono text-2xs text-ink-3">Loading usage…</div> : null}
+			<PanelSection title={t("core.statusPanel.providerUsage")}>
+				{loading ? <div className="font-mono text-2xs text-ink-3">{t("core.statusPanel.loadingUsage")}</div> : null}
 				{vm.providerError ? <div className="text-xs text-danger">{vm.providerError}</div> : null}
 				{!loading && !vm.providerError && vm.providerSections.length === 0 ? (
-					<div className="font-mono text-2xs text-ink-3">No provider usage reported.</div>
+					<div className="font-mono text-2xs text-ink-3">{t("core.statusPanel.noProviderUsage")}</div>
 				) : null}
 				<div className="space-y-3">
 					{vm.providerSections.map((section) => (

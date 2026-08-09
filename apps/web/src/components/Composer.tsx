@@ -666,14 +666,14 @@ export function Composer() {
 						rows={1}
 						placeholder={
 							disabled
-								? "Pick a session first"
+								? t("composer.pickSessionFirst")
 								: planModeEnabled
-									? "Plan mode — agent reads + proposes only"
+									? t("composer.planModeHint")
 									: isBusy
-										? "Streaming… enter to queue"
+										? t("composer.streamingQueueHint")
 										: dragOver
-											? "Drop images here"
-											: "Message omp…"
+											? t("composer.dropImagesHere")
+											: t("composer.messagePlaceholder")
 						}
 						onChange={(e) => {
 							setDraft(e.target.value);
@@ -731,9 +731,9 @@ export function Composer() {
 					) : null}
 					<span>
 						{images.length > 0
-							? `${images.length} image${images.length === 1 ? "" : "s"} · `
+							? `${t("composer.imageCount", { count: images.length })} · `
 							: ""}
-						enter send · shift+enter newline · paste/drop image
+						{t("composer.inputHints")}
 					</span>
 				</div>
 			</div>

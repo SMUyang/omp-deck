@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ export function Modal({
 	dismissOnBackdrop = true,
 	dismissOnEscape = true,
 }: Props) {
+	const { t } = useTranslation();
 	useEffect(() => {
 		if (!open || !dismissOnEscape) return;
 		function onKey(e: KeyboardEvent): void {
@@ -52,7 +54,7 @@ export function Modal({
 		>
 			<button
 				type="button"
-				aria-label="Close"
+				aria-label={t("settings.modal.close")}
 				onClick={dismissOnBackdrop ? onClose : undefined}
 				className="absolute inset-0 bg-ink/30 backdrop-blur-[1px]"
 				tabIndex={-1}

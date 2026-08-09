@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Power, RefreshCcw, Trash2, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Routine, RoutineRun } from "@omp-deck/protocol";
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function EditorInspector({ routine, onChange, onDeleted, onError }: Props) {
+	const { t } = useTranslation();
 	const [runs, setRuns] = useState<RoutineRun[]>([]);
 	const [metrics, setMetrics] = useState<RoutineMetrics | undefined>();
 	const [busy, setBusy] = useState<string | undefined>();
@@ -90,7 +92,7 @@ export function EditorInspector({ routine, onChange, onDeleted, onError }: Props
 
 	async function remove(): Promise<void> {
 		if (!routine) return;
-		if (!confirm(`Delete routine "${routine.name}"?`)) return;
+		if (!confirm(t("routines.editorInspector.confirmDelete", { name: routine.name }))) return;
 		setBusy("delete");
 		try {
 			await routinesApi.remove(routine.id);
@@ -105,9 +107,9 @@ export function EditorInspector({ routine, onChange, onDeleted, onError }: Props
 	if (!routine) {
 		return (
 			<div className="p-3">
-				<div className="meta mb-2">Inspector</div>
+				<div className="meta mb-2">{t("routines.editorInspector.inspector")}</div>
 				<p className="text-xs leading-relaxed text-ink-3">
-					Save this routine to enable run history, quick actions, and metrics.
+					{t("routines.editorInspector.emptyHint")}
 				</p>
 			</div>
 		);
@@ -116,20 +118,20 @@ export function EditorInspector({ routine, onChange, onDeleted, onError }: Props
 	return (
 		<div className="flex h-full flex-col overflow-y-auto">
 			<section className="border-b border-line p-3">
-				<div className="meta mb-2">Status</div>
+				<div className="meta mb-2">{t("routines.editorInspector.status")}</div>
 				<div className="flex items-center justify-between text-sm">
-					<span className="text-ink-2">Enabled</span>
-					<span className="font-mono text-2xs text-ink-3">{routine.enabled ? "yes" : "no"}</span>
+					<span className="text-ink-2">{t("routines.editorInspector.enabled")}</span>
+					<span className="font-mono text-2xs text-ink-3">{routine.enabled ? t("routines.editorInspector.yes") : t("routines.editorInspector.no")}</span>
 				</div>
 				{routine.nextRunAt ? (
 					<div className="mt-1 flex items-center justify-between text-sm">
-						<span className="text-ink-2">Next</span>
+						<span className="text-ink-2">{t("routines.editorInspector.next")}</span>
 						<span className="font-mono text-2xs text-ink-3">{new Date(routine.nextRunAt).toLocaleString()}</span>
 					</div>
 				) : null}
 				{metrics ? (
 					<div className="mt-1 flex items-center justify-between text-sm">
-						<span className="text-ink-2">Success</span>
+						<span className="text-ink-2">{t("routines.editorInspector.successRate")}</span>
 						<span className="font-mono text-2xs text-ink-3">{Math.round(metrics.successRate30d * 100)}%</span>
 					</div>
 				) : null}
@@ -137,14 +139,14 @@ export function EditorInspector({ routine, onChange, onDeleted, onError }: Props
 
 			<section className="border-b border-line p-3">
 				<div className="mb-2 flex items-center justify-between">
-					<div className="meta">Recent runs</div>
-					<button type="button" onClick={() => void refresh()} disabled={busy === "refresh"} className="btn-ghost h-6 w-6 p-0" aria-label="Refresh runs">
+					<div className="meta">{t("routines.editorInspector.recentRuns")}</div>
+					<button type="button" onClick={() => void refresh()} disabled={busy === "refresh"} className="btn-ghost h-6 w-6 p-0" aria-label={t("routines.editorInspector.refreshRuns")}>
 						<RefreshCcw className="h-3 w-3" />
 					</button>
 				</div>
 				<ul className="space-y-1">
 					{runs.length === 0 ? (
-						<li className="font-mono text-2xs text-ink-3">No runs yet.</li>
+						<li className="font-mono text-2xs text-ink-3">{t("routines.editorInspector.noRuns")}</li>
 					) : (
 						runs.map((run) => <RunMini key={run.id} routineId={routine.id} run={run} />)
 					)}
@@ -152,28 +154,28 @@ export function EditorInspector({ routine, onChange, onDeleted, onError }: Props
 			</section>
 
 			<section className="border-b border-line p-3">
-				<div className="meta mb-2">Actions</div>
+				<div className="meta mb-2">{t("routines.editorInspector.actions")}</div>
 				<div className="space-y-1.5">
 					<button type="button" onClick={() => void runNow()} disabled={busy === "run"} className="btn-ghost h-7 w-full justify-start text-xs">
 						<Zap className="h-3.5 w-3.5" />
-						Run now
+						{t("routines.editorInspector.runNow")}
 					</button>
 					<button type="button" onClick={() => void toggle()} disabled={busy === "toggle"} className="btn-ghost h-7 w-full justify-start text-xs">
 						<Power className="h-3.5 w-3.5" />
-						{routine.enabled ? "Disable" : "Enable"}
+						{routine.enabled ? t("routines.editorInspector.disable") : t("routines.editorInspector.enable")}
 					</button>
 					<button type="button" onClick={() => void remove()} disabled={busy === "delete"} className="btn-ghost h-7 w-full justify-start text-xs text-danger">
 						<Trash2 className="h-3.5 w-3.5" />
-						Delete
+						{t("routines.editorInspector.delete")}
 					</button>
 				</div>
 			</section>
 
 			<section className="p-3">
-				<div className="meta mb-2">Reference</div>
+				<div className="meta mb-2">{t("routines.editorInspector.reference")}</div>
 				<div className="space-y-1 font-mono text-2xs text-ink-3">
-					<div>Steps: run / agent / http / write / transform / wait / set_state / mcp</div>
-					<div>Template refs: {"{{ run.date }}"}, {"{{ steps.id.json }}"}, {"{{ state.key }}"}</div>
+					<div>{t("routines.editorInspector.stepsReference")} run / agent / http / write / transform / wait / set_state / mcp</div>
+					<div>{t("routines.editorInspector.templateRefs")} {"{{ run.date }}"}, {"{{ steps.id.json }}"}, {"{{ state.key }}"}</div>
 				</div>
 			</section>
 		</div>

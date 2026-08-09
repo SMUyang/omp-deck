@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileText, Hash, Loader2, Search, Tag, Type, X } from "lucide-react";
 import type { KbSearchResponse, KbSearchResult } from "@omp-deck/protocol";
 
@@ -21,6 +22,7 @@ export function KbCommandPalette({
 	onSelect: (path: string) => void;
 	initialQuery?: string;
 }) {
+	const { t } = useTranslation();
 	const [query, setQuery] = useState(initialQuery ?? "");
 	const [response, setResponse] = useState<KbSearchResponse | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -103,7 +105,7 @@ export function KbCommandPalette({
 	return (
 		<div
 			role="dialog"
-			aria-label="Search knowledge base"
+			aria-label={t("views.kbCommandPalette.searchKb")}
 			className="fixed inset-0 z-50 flex items-start justify-center bg-ink/30 px-4 pt-[10vh] backdrop-blur-sm"
 			onKeyDown={handleKeyDown}
 			// Click backdrop to close
@@ -118,7 +120,7 @@ export function KbCommandPalette({
 						ref={inputRef}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Search by stem, title, tag, or body…"
+						placeholder={t("views.kbCommandPalette.searchPlaceholder")}
 						className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-4 focus:outline-none"
 						spellCheck={false}
 						autoComplete="off"
@@ -127,7 +129,7 @@ export function KbCommandPalette({
 					<button
 						type="button"
 						onClick={onClose}
-						aria-label="Close"
+						aria-label={t("views.kbCommandPalette.close")}
 						className="rounded-md p-1 text-ink-3 transition-colors hover:bg-paper-3 hover:text-ink"
 					>
 						<X className="h-3.5 w-3.5" />
@@ -140,11 +142,11 @@ export function KbCommandPalette({
 				>
 					{query.trim() === "" ? (
 						<li className="px-4 py-6 text-center text-xs text-ink-3">
-							Type to search · ↑↓ to navigate · ↵ to open · Esc to close
+							{t("views.kbCommandPalette.hint")}
 						</li>
 					) : results.length === 0 && !loading ? (
 						<li className="px-4 py-6 text-center text-sm text-ink-3">
-							No matches for <span className="font-mono text-ink-2">{query}</span>
+							{t("views.kbCommandPalette.noMatches", { query })}
 						</li>
 					) : (
 						results.map((r, i) => (
@@ -166,10 +168,10 @@ export function KbCommandPalette({
 				{response ? (
 					<div className="flex items-center gap-3 border-t border-line bg-paper-2 px-3 py-1.5 font-mono text-2xs text-ink-3">
 						<span>
-							{response.totalMatches} match{response.totalMatches === 1 ? "" : "es"}
-							{response.truncated ? <span className="ml-1 text-warn">(top 30)</span> : null}
+							{t("views.kbCommandPalette.matches", { count: response.totalMatches })}
+							{response.truncated ? <span className="ml-1 text-warn">{t("views.kbCommandPalette.top30")}</span> : null}
 						</span>
-						<span className="ml-auto">↵ open · Esc close</span>
+						<span className="ml-auto">{t("views.kbCommandPalette.openCloseHint")}</span>
 					</div>
 				) : null}
 			</div>

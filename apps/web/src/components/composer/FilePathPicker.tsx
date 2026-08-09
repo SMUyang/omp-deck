@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { FileIcon, FolderIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { FilePathMatch } from "@omp-deck/protocol";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ export function FilePathPicker({
 	onPick,
 	onSelectionChange,
 }: Props) {
+	const { t } = useTranslation();
 	const listRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -39,7 +41,7 @@ export function FilePathPicker({
 	return (
 		<div
 			role="listbox"
-			aria-label="File paths"
+			aria-label={t("core.filePathPicker.filePaths")}
 			className={cn(
 				"absolute bottom-full left-0 right-0 mb-1 max-h-[280px] overflow-y-auto",
 				"rounded-md border border-line bg-paper-2 shadow-[0_8px_24px_-8px_rgba(26,24,20,0.25)]",
@@ -89,7 +91,7 @@ export function FilePathPicker({
 				})}
 			</div>
 			<div className="border-t border-line bg-paper px-3 py-1 font-mono text-2xs text-ink-3">
-				↑↓ navigate · enter pick · esc dismiss
+				{t("core.filePathPicker.footer")}
 			</div>
 		</div>
 	);

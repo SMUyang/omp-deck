@@ -1,4 +1,5 @@
 import type { RoutineOnFailure, RoutineRetryPolicy, RoutineStep } from "@omp-deck/protocol";
+import { useTranslation } from "react-i18next";
 
 import { Field, NumInput, TextInput } from "./form-primitives";
 import { validateStepId } from "./routine-validation";
@@ -15,6 +16,7 @@ interface Props {
  * type-specific fields.
  */
 export function StepCommonFields({ step, onChange, existingIds }: Props) {
+	const { t } = useTranslation();
 	function set<K extends keyof RoutineStep>(key: K, value: RoutineStep[K]): void {
 		onChange({ ...step, [key]: value });
 	}
@@ -31,10 +33,10 @@ export function StepCommonFields({ step, onChange, existingIds }: Props) {
 	return (
 		<div className="space-y-2 rounded border border-line bg-paper-2/40 p-2">
 			<div className="grid grid-cols-2 gap-2">
-				<Field label="id" hint={idHint} tone={idHint ? "danger" : undefined}>
+				<Field label={t("routines.stepCommonFields.id")} hint={idCollision ? t("routines.stepCommonFields.duplicate") : idError} tone={idHint ? "danger" : undefined}>
 					<TextInput value={step.id} onChange={(v) => set("id", v)} placeholder="fetch_tasks" mono />
 				</Field>
-				<Field label="on_failure">
+				<Field label={t("routines.stepCommonFields.onFailure")}>
 					<select
 						value={step.on_failure ?? ""}
 						onChange={(e) => {
@@ -44,14 +46,14 @@ export function StepCommonFields({ step, onChange, existingIds }: Props) {
 						}}
 						className="field h-7 w-full px-2 font-mono text-2xs"
 					>
-						<option value="">(default: abort)</option>
-						<option value="abort">abort</option>
-						<option value="continue">continue</option>
-						<option value="retry">retry</option>
+						<option value="">{t("routines.stepCommonFields.defaultAbort")}</option>
+						<option value="abort">{t("routines.stepCommonFields.abort")}</option>
+						<option value="continue">{t("routines.stepCommonFields.continue")}</option>
+						<option value="retry">{t("routines.stepCommonFields.retry")}</option>
 					</select>
 				</Field>
 			</div>
-			<Field label="when (JS, optional)">
+			<Field label={t("routines.stepCommonFields.when")}>
 				<TextInput
 					value={step.when ?? ""}
 					onChange={(v) => (v.trim() === "" ? clear("when") : set("when", v))}
@@ -60,7 +62,7 @@ export function StepCommonFields({ step, onChange, existingIds }: Props) {
 				/>
 			</Field>
 			<div className="grid grid-cols-2 gap-2">
-				<Field label="timeout_secs">
+				<Field label={t("routines.stepCommonFields.timeoutSecs")}>
 					<NumInput
 						value={step.timeout_secs}
 						onChange={(v) => (v === undefined ? clear("timeout_secs") : set("timeout_secs", v))}
@@ -68,7 +70,7 @@ export function StepCommonFields({ step, onChange, existingIds }: Props) {
 					/>
 				</Field>
 				{step.on_failure === "retry" ? (
-					<Field label="retry.times">
+					<Field label={t("routines.stepCommonFields.retryTimes")}>
 						<NumInput
 							value={retry?.times}
 							onChange={(v) => {
@@ -88,7 +90,7 @@ export function StepCommonFields({ step, onChange, existingIds }: Props) {
 			</div>
 			{step.on_failure === "retry" ? (
 				<div className="grid grid-cols-2 gap-2">
-					<Field label="retry.backoff">
+					<Field label={t("routines.stepCommonFields.retryBackoff")}>
 						<select
 							value={retry?.backoff ?? "linear"}
 							onChange={(e) => {
@@ -104,7 +106,7 @@ export function StepCommonFields({ step, onChange, existingIds }: Props) {
 							<option value="exponential">exponential</option>
 						</select>
 					</Field>
-					<Field label="retry.max_delay_secs">
+					<Field label={t("routines.stepCommonFields.retryMaxDelaySecs")}>
 						<NumInput
 							value={retry?.max_delay_secs}
 							onChange={(v) => {

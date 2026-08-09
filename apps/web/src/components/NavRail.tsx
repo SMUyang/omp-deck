@@ -69,7 +69,7 @@ export function NavRail() {
 					changeLang(next);
 				}}
 				title={getCurrentLang() === "zh-CN" ? "切换到 English" : "切换到中文"}
-				aria-label="Toggle language"
+				aria-label={t("nav.toggleLanguage")}
 				className="relative flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-paper-3 hover:text-ink"
 			>
 				<Globe className="h-[18px] w-[18px]" />

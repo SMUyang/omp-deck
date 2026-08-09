@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Search, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ModelInfo } from "@omp-deck/protocol";
 
 import { Badge } from "@/components/ui/Badge";
@@ -26,6 +27,7 @@ interface Props {
  * the server (typically "no auth configured for ...").
  */
 export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) {
+	const { t } = useTranslation();
 	const [showUnauth, setShowUnauth] = useState(false);
 	const [models, setModels] = useState<ModelInfo[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -110,12 +112,12 @@ export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) 
 	return (
 		<Modal open={open} onClose={onClose} widthClass="max-w-2xl">
 			<div className="flex h-11 items-center gap-2 border-b border-line px-3">
-				<div className="meta">Switch model</div>
+				<div className="meta">{t("messages.modelPickerModal.title")}</div>
 				<div className="text-xs text-ink-3">
-					{loading ? "loading..." : `${matchCount} / ${showUnauth ? totalCount : availableCount}`}
+					{loading ? t("messages.modelPickerModal.loadingShort") : `${matchCount} / ${showUnauth ? totalCount : availableCount}`}
 				</div>
 				<div className="flex-1" />
-				<Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+				<Button variant="ghost" size="icon" onClick={onClose} aria-label={t("messages.modelPickerModal.close")}>
 					<X className="h-4 w-4" />
 				</Button>
 			</div>
@@ -128,9 +130,9 @@ export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) 
 							"rounded px-2 py-1 font-mono text-2xs uppercase tracking-meta",
 							!showUnauth ? "bg-accent-soft text-accent" : "text-ink-3 hover:text-ink",
 						)}
-						title="Show only models with configured auth"
+						title={t("messages.modelPickerModal.availableTitle")}
 					>
-						Available {availableCount}
+						{t("messages.modelPickerModal.available", { n: availableCount })}
 					</button>
 					<button
 						type="button"
@@ -139,9 +141,9 @@ export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) 
 							"rounded px-2 py-1 font-mono text-2xs uppercase tracking-meta",
 							showUnauth ? "bg-accent-soft text-accent" : "text-ink-3 hover:text-ink",
 						)}
-						title="Include models without configured auth — picking one will fail with a helpful error"
+						title={t("messages.modelPickerModal.allTitle")}
 					>
-						All {totalCount}
+						{t("messages.modelPickerModal.all", { n: totalCount })}
 					</button>
 				</div>
 				<div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-paper-2 px-2 py-1.5">
@@ -150,7 +152,7 @@ export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) 
 						ref={searchRef}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Filter by name, id, or provider"
+						placeholder={t("messages.modelPickerModal.filterPlaceholder")}
 						className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-ink-4 focus:outline-none"
 					/>
 				</div>
@@ -162,10 +164,10 @@ export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) 
 			) : null}
 			<div className="max-h-[60vh] overflow-y-auto">
 				{loading && models.length === 0 ? (
-					<div className="px-3 py-6 text-center text-sm text-ink-3">Loading models...</div>
+					<div className="px-3 py-6 text-center text-sm text-ink-3">{t("messages.modelPickerModal.loading")}</div>
 				) : null}
 				{grouped.length === 0 && !loading ? (
-					<div className="px-3 py-6 text-center text-sm text-ink-3">No matching models.</div>
+					<div className="px-3 py-6 text-center text-sm text-ink-3">{t("messages.modelPickerModal.noMatches")}</div>
 				) : null}
 				{grouped.map((g) => (
 					<div key={g.provider} className="border-b border-line last:border-b-0">
@@ -199,20 +201,20 @@ export function ModelPickerModal({ open, sessionId, onClose, onPicked }: Props) 
 													>
 														{model.label}
 													</span>
-													{model.isCurrent ? <Badge tone="accent">active</Badge> : null}
+													{model.isCurrent ? <Badge tone="accent">{t("messages.modelPickerModal.active")}</Badge> : null}
 													{model.isSubscription ? (
-														<Badge tone="success" title="Subscription provider — uses OAuth, no API key required">
-															subscription
+														<Badge tone="success" title={t("messages.modelPickerModal.subscriptionTitle")}>
+															{t("messages.modelPickerModal.subscription")}
 														</Badge>
 													) : null}
-													{!model.isAvailable ? <Badge tone="warn">no auth</Badge> : null}
+													{!model.isAvailable ? <Badge tone="warn">{t("messages.modelPickerModal.noAuth")}</Badge> : null}
 												</div>
 												<div className="mt-0.5 flex flex-wrap gap-2 text-2xs text-ink-3">
 													<span className="font-mono">{model.id}</span>
 													{model.contextWindow ? (
 														<span className="font-mono">ctx {formatContext(model.contextWindow)}</span>
 													) : null}
-													{model.inputModes?.includes("image") ? <span>vision</span> : null}
+													{model.inputModes?.includes("image") ? <span>{t("messages.modelPickerModal.vision")}</span> : null}
 												</div>
 											</div>
 											{model.isCurrent ? <Check className="h-4 w-4 shrink-0 text-accent" /> : null}

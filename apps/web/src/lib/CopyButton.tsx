@@ -22,6 +22,7 @@
 
 import { useState, type ButtonHTMLAttributes, type MouseEvent } from "react";
 import { Check, Copy, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "./utils";
 
 type State = "idle" | "ok" | "err";
@@ -33,6 +34,7 @@ interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"
 }
 
 export function CopyButton({ text, className, ...buttonProps }: Props) {
+	const { t } = useTranslation();
 	const [state, setState] = useState<State>("idle");
 
 	async function onCopy(e: MouseEvent<HTMLButtonElement>) {
@@ -51,7 +53,12 @@ export function CopyButton({ text, className, ...buttonProps }: Props) {
 		window.setTimeout(() => setState("idle"), 1200);
 	}
 
-	const label = state === "ok" ? "Copied" : state === "err" ? "Copy failed" : "Copy";
+	const label =
+		state === "ok"
+			? t("core.copyButton.copied")
+			: state === "err"
+				? t("core.copyButton.copyFailed")
+				: t("core.copyButton.copy");
 	const Icon = state === "ok" ? Check : state === "err" ? X : Copy;
 
 	return (

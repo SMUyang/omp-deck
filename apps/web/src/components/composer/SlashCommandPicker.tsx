@@ -1,27 +1,28 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type { SlashCommand, SlashCommandScope } from "@omp-deck/protocol";
 import { cn } from "@/lib/utils";
 
-const SCOPE_STYLE: Record<SlashCommandScope, { className: string; label: string; title: string }> = {
+const SCOPE_STYLE: Record<SlashCommandScope, { className: string; labelKey: string; titleKey: string }> = {
 	deck: {
 		className: "bg-accent/15 text-accent",
-		label: "deck",
-		title: "Deck-native command — operates on the kanban/inbox without a model round-trip",
+		labelKey: "core.slashCommandPicker.scopeDeck",
+		titleKey: "core.slashCommandPicker.scopeDeckTitle",
 	},
 	builtin: {
 		className: "bg-ink/10 text-ink-2",
-		label: "builtin",
-		title: "Built-in omp slash command",
+		labelKey: "core.slashCommandPicker.scopeBuiltin",
+		titleKey: "core.slashCommandPicker.scopeBuiltinTitle",
 	},
 	project: {
 		className: "bg-accent-soft text-accent",
-		label: "project",
-		title: "Project-local override",
+		labelKey: "core.slashCommandPicker.scopeProject",
+		titleKey: "core.slashCommandPicker.scopeProjectTitle",
 	},
 	user: {
 		className: "bg-paper-3 text-ink-3",
-		label: "user",
-		title: "User-global command",
+		labelKey: "core.slashCommandPicker.scopeUser",
+		titleKey: "core.slashCommandPicker.scopeUserTitle",
 	},
 };
 
@@ -47,6 +48,7 @@ export function SlashCommandPicker({
 	onPick,
 	onSelectionChange,
 }: Props) {
+	const { t } = useTranslation();
 	const listRef = useRef<HTMLDivElement>(null);
 
 	// Keep the active row visible when keyboard nav moves it offscreen.
@@ -60,7 +62,7 @@ export function SlashCommandPicker({
 	return (
 		<div
 			role="listbox"
-			aria-label="Slash commands"
+			aria-label={t("core.slashCommandPicker.slashCommands")}
 			className={cn(
 				"absolute bottom-full left-0 right-0 mb-1 max-h-[280px] overflow-y-auto",
 				"rounded-md border border-line bg-paper-2 shadow-[0_8px_24px_-8px_rgba(26,24,20,0.25)]",
@@ -108,16 +110,16 @@ export function SlashCommandPicker({
 									"shrink-0 self-center rounded px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta",
 									SCOPE_STYLE[cmd.scope].className,
 								)}
-								title={SCOPE_STYLE[cmd.scope].title}
+								title={t(SCOPE_STYLE[cmd.scope].titleKey)}
 							>
-								{SCOPE_STYLE[cmd.scope].label}
+								{t(SCOPE_STYLE[cmd.scope].labelKey)}
 							</span>
 						</button>
 					);
 				})}
 			</div>
 			<div className="border-t border-line bg-paper px-3 py-1 font-mono text-2xs text-ink-3">
-				↑↓ navigate · enter pick · esc dismiss
+				{t("core.slashCommandPicker.footer")}
 			</div>
 		</div>
 	);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ContextEvidenceStats } from "@omp-deck/protocol";
 
@@ -14,6 +15,7 @@ import { formatTokens } from "@/lib/utils";
  * window regains focus so a long-lived tab stays current.
  */
 export function ContextSavingsCard() {
+	const { t } = useTranslation();
 	const [stats, setStats] = useState<ContextEvidenceStats | null>(null);
 
 	useEffect(() => {
@@ -40,19 +42,23 @@ export function ContextSavingsCard() {
 	if (!stats || stats.total === 0) return null;
 
 	const mechanismLabel = (m: string): string =>
-		m === "auto_compact" ? "Auto compact" : m === "context_hook" ? "Context hook" : m;
+		m === "auto_compact"
+			? t("settings.contextSavings.autoCompact")
+			: m === "context_hook"
+				? t("settings.contextSavings.contextHook")
+				: m;
 
 	return (
 		<div className="rounded-md border border-line bg-paper-2 p-3">
 			<div className="font-mono text-2xs uppercase tracking-meta text-ink-3">
-				Context savings
+				{t("settings.contextSavings.title")}
 			</div>
 			<div className="mt-1 flex items-baseline gap-2">
 				<span className="text-2xl font-semibold text-accent">
 					{formatTokens(stats.totalSaved)}
 				</span>
 				<span className="text-2xs text-ink-3">
-					saved across {stats.completed}/{stats.total} replacements
+					{t("settings.contextSavings.savedAcross", { completed: stats.completed, total: stats.total })}
 				</span>
 			</div>
 
@@ -75,7 +81,7 @@ export function ContextSavingsCard() {
 			{stats.bySession.length > 0 ? (
 				<div className="mt-3 border-t border-line/60 pt-2">
 					<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">
-						By session
+						{t("settings.contextSavings.bySession")}
 					</div>
 					<div className="mt-1 space-y-1">
 						{stats.bySession.slice(0, 5).map((s) => (

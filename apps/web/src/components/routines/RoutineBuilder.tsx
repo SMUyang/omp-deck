@@ -7,6 +7,7 @@
  * Invalid YAML disables form view with an inline parse-error explanation.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Copy, RefreshCcw } from "lucide-react";
 
 import {
@@ -75,6 +76,7 @@ function pickInitialTab(routine: Routine | undefined, spec: RoutineSpec): Tab {
 }
 
 export function RoutineBuilder({ routine, onSaved, onError }: Props) {
+	const { t } = useTranslation();
 	const initialSpec = useMemo<RoutineSpec>(() => {
 		if (routine?.specYaml) {
 			const parsed = parseSpec(routine.specYaml);
@@ -201,12 +203,12 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 		if (yamlDirty) {
 			const ok = applyYaml();
 			if (!ok) {
-				onError("Spec has validation errors. Fix them on the Spec tab before saving.");
+				onError(t("routines.routineBuilder.saveValidationError"));
 				return;
 			}
 		}
 		if (!specValidation.valid) {
-			onError(`Cannot save: ${specValidationMessages[0]?.message ?? "Spec is invalid"}`);
+			onError(`Cannot save: ${specValidationMessages[0]?.message ?? t("routines.routineBuilder.specInvalid")}`);
 			return;
 		}
 
@@ -216,7 +218,14 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 		const finalCompile = compileGraph(spec);
 		if (finalCompile.errors.length > 0) {
 			const first = finalCompile.errors[0]!;
-			onError(`Cannot save: ${first.message}${finalCompile.errors.length > 1 ? ` (+${finalCompile.errors.length - 1} more)` : ""}`);
+			onError(
+				finalCompile.errors.length > 1
+					? t("routines.routineBuilder.cannotSaveMore", {
+							message: first.message,
+							count: finalCompile.errors.length - 1,
+						})
+					: t("routines.routineBuilder.cannotSave", { message: first.message }),
+			);
 			return;
 		}
 		// Apply the topo-sorted step order so the runtime engine walks the graph
@@ -356,7 +365,7 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 					<div className="space-y-2">
 						{spec.steps.length === 0 ? (
 							<div className="rounded border border-dashed border-line bg-paper-2 p-4 text-center text-2xs text-ink-3">
-								No steps yet. Pick one to start.
+								{t("routines.routineBuilder.noSteps")}
 							</div>
 						) : (
 							spec.steps.map((step, idx) => (
@@ -398,20 +407,20 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 					<div className="space-y-3">
 						<SettingsForm spec={spec} onChange={updateSpec} />
 						{routine ? (
-							<div className="space-y-2 rounded border border-line bg-paper-2/40 p-2">
-								<div className="meta">Webhook secret</div>
+						<div className="space-y-2 rounded border border-line bg-paper-2/40 p-2">
+								<div className="meta">{t("routines.routineBuilder.webhookSecret")}</div>
 								<button
 									type="button"
 									onClick={() => void rotateWebhook()}
 									className="btn-ghost h-7 text-2xs"
 								>
 									<RefreshCcw className="h-3 w-3" />
-									Rotate secret
+									{t("routines.routineBuilder.rotateSecret")}
 								</button>
 								{webhookSecret ? (
 									<div className="space-y-1">
 										<div className="font-mono text-2xs text-warn">
-											Copy now — the secret is shown ONCE.
+											{t("routines.routineBuilder.secretShownOnce")}
 										</div>
 										<div className="flex items-center gap-1">
 											<code className="flex-1 truncate rounded border border-line bg-paper-code px-2 py-1 font-mono text-2xs">
@@ -423,7 +432,7 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 													void navigator.clipboard.writeText(webhookSecret);
 												}}
 												className="btn-ghost h-7 w-7 p-0"
-												aria-label="Copy"
+												aria-label={t("routines.routineBuilder.copy")}
 											>
 												<Copy className="h-3.5 w-3.5" />
 											</button>
@@ -454,20 +463,20 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 								disabled={!yamlDirty}
 								className="btn-ghost h-7 text-2xs disabled:opacity-40"
 							>
-								Apply to form
+								{t("routines.routineBuilder.applyToForm")}
 							</button>
 							{yamlDirty ? (
-								<span className="font-mono text-2xs text-warn">unsaved YAML edits</span>
+								<span className="font-mono text-2xs text-warn">{t("routines.routineBuilder.unsavedYaml")}</span>
 							) : null}
 						</div>
 						{yamlError ? (
 							<div className="rounded border border-danger/40 bg-danger/5 px-2 py-1.5 font-mono text-2xs text-danger">
-								YAML parse: {yamlError}
+								{t("routines.routineBuilder.yamlParse", { error: yamlError })}
 							</div>
 						) : null}
 						{schemaErrors ? (
 							<div className="rounded border border-danger/40 bg-danger/5 px-2 py-1.5">
-								<div className="meta mb-0.5 text-danger">Schema errors</div>
+								<div className="meta mb-0.5 text-danger">{t("routines.routineBuilder.schemaErrors")}</div>
 								<ul className="space-y-0.5 font-mono text-2xs text-danger">
 									{schemaErrors.slice(0, 6).map((e, idx) => (
 										<li key={idx}>
@@ -487,7 +496,7 @@ export function RoutineBuilder({ routine, onSaved, onError }: Props) {
 							onClick={() => setShowRuns((s) => !s)}
 							className="flex w-full items-center gap-1 text-left font-mono text-2xs text-ink-3 hover:text-ink"
 						>
-							<span>Recent runs ({runs.length})</span>
+							<span>{t("routines.routineBuilder.recentRuns", { count: runs.length })}</span>
 							<span className="text-ink-4">{showRuns ? "▾" : "▸"}</span>
 						</button>
 						{showRuns ? <RunList routine={routine} runs={runs} /> : null}
@@ -534,31 +543,32 @@ function TabBar({
 	stepCount: number;
 	triggerCount: number;
 }) {
-	const tabs: ReadonlyArray<{ id: Tab; label: string; badge?: number }> = [
-		{ id: "canvas", label: "Canvas" },
-		{ id: "steps", label: "Steps", badge: stepCount },
-		{ id: "triggers", label: "Triggers", badge: triggerCount },
-		{ id: "settings", label: "Settings" },
-		{ id: "spec", label: "Spec (YAML)" },
+	const { t } = useTranslation();
+	const tabs: ReadonlyArray<{ id: Tab; labelKey: string; badge?: number }> = [
+		{ id: "canvas", labelKey: "routines.routineBuilder.tabs.canvas" },
+		{ id: "steps", labelKey: "routines.routineBuilder.tabs.steps", badge: stepCount },
+		{ id: "triggers", labelKey: "routines.routineBuilder.tabs.triggers", badge: triggerCount },
+		{ id: "settings", labelKey: "routines.routineBuilder.tabs.settings" },
+		{ id: "spec", labelKey: "routines.routineBuilder.tabs.spec" },
 	];
 	return (
 		<div className="flex shrink-0 border-b border-line bg-paper">
-			{tabs.map((t) => (
+			{tabs.map((tb) => (
 				<button
-					key={t.id}
+					key={tb.id}
 					type="button"
-					onClick={() => onChange(t.id)}
+					onClick={() => onChange(tb.id)}
 					className={
 						"relative h-9 px-3 text-2xs uppercase tracking-meta " +
-						(tab === t.id
+						(tab === tb.id
 							? "text-ink after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-accent"
 							: "text-ink-3 hover:text-ink")
 					}
 				>
-					{t.label}
-					{t.badge !== undefined ? (
+					{t(tb.labelKey)}
+					{tb.badge !== undefined ? (
 						<span className="ml-1.5 rounded bg-paper-2 px-1 font-mono text-2xs text-ink-3">
-							{t.badge}
+							{tb.badge}
 						</span>
 					) : null}
 				</button>
@@ -567,9 +577,10 @@ function TabBar({
 	);
 }
 function ValidationSummary({ messages }: { messages: readonly RoutineValidationMessage[] }) {
+	const { t } = useTranslation();
 	return (
 		<div className="border-t border-danger/30 bg-danger/5 px-3 py-2">
-			<div className="meta mb-1 text-danger">Fix before saving</div>
+			<div className="meta mb-1 text-danger">{t("routines.routineBuilder.fixBeforeSaving")}</div>
 			<ul className="space-y-0.5 font-mono text-2xs text-danger">
 				{messages.slice(0, 4).map((message) => (
 					<li key={`${message.path}:${message.message}`}>{message.message}</li>
@@ -596,16 +607,17 @@ function Footer({
 	onSave: () => void;
 	onRunNow: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex shrink-0 items-center gap-2 border-t border-line bg-paper px-3 py-2">
 			<label className="flex items-center gap-2 text-2xs">
 				<input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-				<span>Enabled</span>
+				<span>{t("routines.routineBuilder.enabled")}</span>
 			</label>
 			<div className="ml-auto flex items-center gap-1.5">
 				{routine ? (
 					<button type="button" onClick={onRunNow} className="btn-ghost h-7 px-2 text-2xs">
-						Run now
+						{t("routines.routineBuilder.runNow")}
 					</button>
 				) : null}
 				<button
@@ -614,7 +626,11 @@ function Footer({
 					disabled={!canSave}
 					className="btn-primary h-7 px-2 text-2xs disabled:opacity-50"
 				>
-					{busy ? "Saving..." : routine ? "Save" : "Create"}
+					{busy
+						? t("routines.routineBuilder.saving")
+						: routine
+							? t("routines.routineBuilder.save")
+							: t("routines.routineBuilder.create")}
 				</button>
 			</div>
 		</div>
@@ -622,10 +638,11 @@ function Footer({
 }
 
 function RunList({ routine, runs }: { routine: Routine; runs: RoutineRun[] }) {
+	const { t } = useTranslation();
 	return (
 		<ul className="mt-2 space-y-1">
 			{runs.length === 0 ? (
-				<li className="font-mono text-2xs text-ink-3">No runs yet.</li>
+				<li className="font-mono text-2xs text-ink-3">{t("routines.routineBuilder.noRuns")}</li>
 			) : (
 				runs.map((r) => {
 					const dur =
@@ -649,7 +666,7 @@ function RunList({ routine, runs }: { routine: Routine; runs: RoutineRun[] }) {
 								href={`/routines/${routine.id}/runs/${r.id}`}
 								className="ml-auto text-ink-3 underline-offset-2 hover:text-accent hover:underline"
 							>
-								detail
+								{t("routines.routineBuilder.detail")}
 							</a>
 						</li>
 					);

@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { IrcMsg } from "@/lib/types";
 import { ircGroupSenders } from "@/lib/chat-items";
 import { cn } from "@/lib/utils";
@@ -11,7 +12,7 @@ import { IrcLine } from "./IrcLine";
  * conversation: the header shows count + senders; expanding reveals the
  * individual (still individually collapsed) lines.
  */
-export const IrcGroup = memo(function IrcGroup({ msgs }: { msgs: IrcMsg[] }) { const [open, setOpen] = useState(false);
+export const IrcGroup = memo(function IrcGroup({ msgs }: { msgs: IrcMsg[] }) { const { t } = useTranslation(); const [open, setOpen] = useState(false);
 	const senders = ircGroupSenders(msgs);
 	const shown = senders.slice(0, 3).join(", ");
 	const more = senders.length > 3 ? ` +${senders.length - 3}` : "";
@@ -24,9 +25,7 @@ export const IrcGroup = memo(function IrcGroup({ msgs }: { msgs: IrcMsg[] }) { c
 				className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left font-mono text-2xs uppercase tracking-meta text-ink-3 hover:text-ink-2"
 			>
 				<ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform", open && "rotate-90")} />
-				<span>
-					subagent activity · {msgs.length} message{msgs.length === 1 ? "" : "s"}
-				</span>
+				<span>{t("messages.ircGroup.activity", { count: msgs.length })}</span>
 				{shown ? (
 					<span className="truncate normal-case tracking-normal text-ink-4">
 						{shown}

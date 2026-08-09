@@ -5,6 +5,7 @@
  * renders the type-specific tail.
  */
 import type { RoutineStep } from "@omp-deck/protocol";
+import { useTranslation } from "react-i18next";
 
 import { Field, KeyValueEditor, NumInput, TagInput, TextArea, TextInput } from "./form-primitives";
 
@@ -18,9 +19,10 @@ interface FormProps<T extends RoutineStep["type"]> {
 // ─── run ──────────────────────────────────────────────────────────────────
 
 export function RunStepForm({ step, onChange }: FormProps<"run">) {
+	const { t } = useTranslation();
 	return (
 		<div className="space-y-2">
-			<Field label="command">
+			<Field label={t("routines.stepForms.command")}>
 				<TextArea
 					value={step.command}
 					onChange={(v) => onChange({ ...step, command: v })}
@@ -28,7 +30,7 @@ export function RunStepForm({ step, onChange }: FormProps<"run">) {
 					placeholder="echo hello"
 				/>
 			</Field>
-			<Field label="cwd (optional)">
+			<Field label={t("routines.stepForms.cwd")}>
 				<TextInput
 					value={step.cwd ?? ""}
 					onChange={(v) => {
@@ -48,20 +50,21 @@ export function RunStepForm({ step, onChange }: FormProps<"run">) {
 // ─── agent ────────────────────────────────────────────────────────────────
 
 export function AgentStepForm({ step, onChange }: FormProps<"agent">) {
+	const { t } = useTranslation();
 	function patch(p: Partial<Extract2<"agent">>): void {
 		onChange({ ...step, ...p });
 	}
 	return (
 		<div className="space-y-2">
-			<Field label="prompt">
+			<Field label={t("routines.stepForms.prompt")}>
 				<TextArea
 					value={step.prompt}
 					onChange={(v) => patch({ prompt: v })}
 					rows={6}
-					placeholder="Summarize {{ steps.fetch_tasks.json }} in 2 sentences."
+					placeholder={t("routines.stepForms.promptPlaceholder")}
 				/>
 			</Field>
-			<Field label="model (optional)">
+			<Field label={t("routines.stepForms.model")}>
 				<TextInput
 					value={step.model ?? ""}
 					onChange={(v) => {
@@ -70,12 +73,12 @@ export function AgentStepForm({ step, onChange }: FormProps<"agent">) {
 						else next.model = v;
 						onChange(next);
 					}}
-					placeholder="claude-sonnet-4-5 (defaults to omp's active model)"
+					placeholder={t("routines.stepForms.modelPlaceholder")}
 					mono
 				/>
 			</Field>
 			<div className="grid grid-cols-2 gap-2">
-				<Field label="skills_allowed">
+				<Field label={t("routines.stepForms.skillsAllowed")}>
 					<TagInput
 						values={step.skills_allowed ?? []}
 						onChange={(v) => {
@@ -87,7 +90,7 @@ export function AgentStepForm({ step, onChange }: FormProps<"agent">) {
 						placeholder="skill-name"
 					/>
 				</Field>
-				<Field label="mcp_servers_allowed">
+				<Field label={t("routines.stepForms.mcpServersAllowed")}>
 					<TagInput
 						values={step.mcp_servers_allowed ?? []}
 						onChange={(v) => {
@@ -107,12 +110,13 @@ export function AgentStepForm({ step, onChange }: FormProps<"agent">) {
 // ─── write ────────────────────────────────────────────────────────────────
 
 export function WriteStepForm({ step, onChange }: FormProps<"write">) {
+	const { t } = useTranslation();
 	function patch(p: Partial<Extract2<"write">>): void {
 		onChange({ ...step, ...p });
 	}
 	return (
 		<div className="space-y-2">
-			<Field label="path">
+			<Field label={t("routines.stepForms.path")}>
 				<TextInput
 					value={step.path}
 					onChange={(v) => patch({ path: v })}
@@ -120,7 +124,7 @@ export function WriteStepForm({ step, onChange }: FormProps<"write">) {
 					mono
 				/>
 			</Field>
-			<Field label="content">
+			<Field label={t("routines.stepForms.content")}>
 				<TextArea
 					value={step.content}
 					onChange={(v) => patch({ content: v })}
@@ -139,7 +143,7 @@ export function WriteStepForm({ step, onChange }: FormProps<"write">) {
 						onChange(next);
 					}}
 				/>
-				<span>append (otherwise overwrite)</span>
+				<span>{t("routines.stepForms.append")}</span>
 			</label>
 		</div>
 	);
@@ -156,13 +160,14 @@ const HTTP_METHODS: Array<{ value: Extract2<"http">["method"]; label: string }> 
 ];
 
 export function HttpStepForm({ step, onChange }: FormProps<"http">) {
+	const { t } = useTranslation();
 	function patch(p: Partial<Extract2<"http">>): void {
 		onChange({ ...step, ...p });
 	}
 	return (
 		<div className="space-y-2">
 			<div className="grid grid-cols-[5rem_1fr] gap-2">
-				<Field label="method">
+				<Field label={t("routines.stepForms.method")}>
 					<select
 						value={step.method}
 						onChange={(e) => patch({ method: e.target.value as Extract2<"http">["method"] })}
@@ -175,7 +180,7 @@ export function HttpStepForm({ step, onChange }: FormProps<"http">) {
 						))}
 					</select>
 				</Field>
-				<Field label="url">
+				<Field label={t("routines.stepForms.url")}>
 					<TextInput
 						value={step.url}
 						onChange={(v) => patch({ url: v })}
@@ -184,7 +189,7 @@ export function HttpStepForm({ step, onChange }: FormProps<"http">) {
 					/>
 				</Field>
 			</div>
-			<Field label="headers">
+			<Field label={t("routines.stepForms.headers")}>
 				<KeyValueEditor
 					pairs={(step.headers as Record<string, string>) ?? {}}
 					onChange={(v) => {
@@ -194,10 +199,10 @@ export function HttpStepForm({ step, onChange }: FormProps<"http">) {
 						onChange(next);
 					}}
 					keyPlaceholder="X-Header"
-					valuePlaceholder="value"
+					valuePlaceholder={t("routines.formPrimitives.value")}
 				/>
 			</Field>
-			<Field label="query">
+			<Field label={t("routines.stepForms.query")}>
 				<KeyValueEditor
 					pairs={objToStringMap(step.query)}
 					onChange={(v) => {
@@ -206,12 +211,12 @@ export function HttpStepForm({ step, onChange }: FormProps<"http">) {
 						else next.query = v;
 						onChange(next);
 					}}
-					keyPlaceholder="param"
-					valuePlaceholder="value"
+					keyPlaceholder={t("routines.stepForms.queryKeyPlaceholder")}
+					valuePlaceholder={t("routines.formPrimitives.value")}
 				/>
 			</Field>
 			{step.method !== "GET" && step.method !== "DELETE" ? (
-				<Field label="body (JSON or template)">
+				<Field label={t("routines.stepForms.body")}>
 					<TextArea
 						value={bodyToString(step.body)}
 						onChange={(v) => {
@@ -236,7 +241,7 @@ export function HttpStepForm({ step, onChange }: FormProps<"http">) {
 						onChange(next);
 					}}
 				/>
-				<span>expect JSON response (writes to steps.{step.id}.json)</span>
+				<span>{t("routines.stepForms.expectJson", { stepId: step.id })}</span>
 			</label>
 		</div>
 	);
@@ -267,6 +272,7 @@ function bodyToString(b: unknown): string {
 type DeckStep = Extract2<"deck">;
 
 export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
+	const { t } = useTranslation();
 	function swapAction(action: DeckStep["action"]): void {
 		const common = {
 			id: step.id,
@@ -364,7 +370,7 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 
 	return (
 		<div className="space-y-2">
-			<Field label="action">
+			<Field label={t("routines.stepForms.action")}>
 				<select
 					value={step.action}
 					onChange={(e) => swapAction(e.target.value as DeckStep["action"])}
@@ -382,7 +388,7 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 			</Field>
 			{step.action === "create_inbox_item" ? (
 				<div className="space-y-2">
-					<Field label="kind">
+					<Field label={t("routines.stepForms.kind")}>
 						<select
 							value={step.kind}
 							onChange={(e) => onChange({ ...step, kind: e.target.value as Extract<DeckStep, { action: "create_inbox_item" }>["kind"] })}
@@ -396,53 +402,53 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 							<option value="investigation">investigation</option>
 						</select>
 					</Field>
-					<Field label="title">
-						<TextInput value={step.title} onChange={(v) => onChange({ ...step, title: v })} placeholder="Morning briefing - {{ run.date }}" mono />
+					<Field label={t("routines.stepForms.title")}>
+						<TextInput value={step.title} onChange={(v) => onChange({ ...step, title: v })} placeholder={t("routines.stepForms.titlePlaceholderInbox")} mono />
 					</Field>
-					<Field label="body">
+					<Field label={t("routines.stepForms.body")}>
 						<TextArea value={step.body ?? ""} onChange={(v) => onChange({ ...step, body: v === "" ? undefined : v })} rows={5} placeholder="{{ steps.write_briefing.stdout }}" />
 					</Field>
-					<Field label="source (optional)">
+					<Field label={t("routines.stepForms.source")}>
 						<TextInput value={step.source ?? ""} onChange={(v) => onChange({ ...step, source: v === "" ? undefined : v })} placeholder="routine:daily-briefing" mono />
 					</Field>
 				</div>
 			) : null}
 			{step.action === "create_task" ? (
 				<div className="space-y-2">
-					<Field label="title">
-						<TextInput value={step.title} onChange={(v) => onChange({ ...step, title: v })} placeholder="Follow up on {{ run.date }}" mono />
+					<Field label={t("routines.stepForms.title")}>
+						<TextInput value={step.title} onChange={(v) => onChange({ ...step, title: v })} placeholder={t("routines.stepForms.titlePlaceholderTask")} mono />
 					</Field>
-					<Field label="body (optional)">
+					<Field label={t("routines.stepForms.bodyOptional")}>
 						<TextArea value={step.body ?? ""} onChange={(v) => onChange({ ...step, body: v === "" ? undefined : v })} rows={4} placeholder="{{ steps.digest.stdout }}" />
 					</Field>
-					<Field label="state_ref (optional)">
-						<TextInput value={step.state_ref ?? ""} onChange={(v) => onChange({ ...step, state_ref: v === "" ? undefined : v })} placeholder="backlog or s_backlog" mono />
+					<Field label={t("routines.stepForms.stateRef")}>
+						<TextInput value={step.state_ref ?? ""} onChange={(v) => onChange({ ...step, state_ref: v === "" ? undefined : v })} placeholder={t("routines.stepForms.stateRefPlaceholder")} mono />
 					</Field>
-					<Field label="cwd (optional)">
+					<Field label={t("routines.stepForms.cwdOptional")}>
 						<TextInput value={step.cwd ?? ""} onChange={(v) => onChange({ ...step, cwd: v === "" ? undefined : v })} placeholder="C:/path/to/repo" mono />
 					</Field>
 				</div>
 			) : null}
 			{step.action === "move_task" ? (
 				<div className="space-y-2">
-					<Field label="task_ref">
-						<TextInput value={step.task_ref} onChange={(v) => onChange({ ...step, task_ref: v })} placeholder="T-58 or t_01..." mono />
+					<Field label={t("routines.stepForms.taskRef")}>
+						<TextInput value={step.task_ref} onChange={(v) => onChange({ ...step, task_ref: v })} placeholder={t("routines.stepForms.taskRefPlaceholder")} mono />
 					</Field>
-					<Field label="state_ref">
-						<TextInput value={step.state_ref} onChange={(v) => onChange({ ...step, state_ref: v })} placeholder="done or s_done" mono />
+					<Field label={t("routines.stepForms.stateRefRequired")}>
+						<TextInput value={step.state_ref} onChange={(v) => onChange({ ...step, state_ref: v })} placeholder={t("routines.stepForms.stateRefRequiredPlaceholder")} mono />
 					</Field>
-					<Field label="index (0 = top of destination column)">
+					<Field label={t("routines.stepForms.index")}>
 						<NumInput value={step.index} onChange={(v) => onChange({ ...step, index: v ?? 0 })} placeholder="0" />
 					</Field>
 				</div>
 			) : null}
 			{step.action === "promote_inbox_item_to_task" ? (
 				<div className="space-y-2">
-					<Field label="inbox_ref">
+					<Field label={t("routines.stepForms.inboxRef")}>
 						<TextInput value={step.inbox_ref} onChange={(v) => onChange({ ...step, inbox_ref: v })} placeholder="i_..." mono />
 					</Field>
-					<Field label="state_ref (optional)">
-						<TextInput value={step.state_ref ?? ""} onChange={(v) => onChange({ ...step, state_ref: v === "" ? undefined : v })} placeholder="backlog or s_backlog" mono />
+					<Field label={t("routines.stepForms.stateRef")}>
+						<TextInput value={step.state_ref ?? ""} onChange={(v) => onChange({ ...step, state_ref: v === "" ? undefined : v })} placeholder={t("routines.stepForms.stateRefPlaceholder")} mono />
 					</Field>
 					<label className="flex items-center gap-2 font-mono text-2xs text-ink-2">
 						<input
@@ -455,19 +461,19 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 								onChange(next);
 							}}
 						/>
-						<span>mark inbox item processed after promotion</span>
+						<span>{t("routines.stepForms.markProcessed")}</span>
 					</label>
 				</div>
 			) : null}
 			{step.action === "list_tasks" ? (
 				<div className="space-y-2">
-					<Field label="state_ref (optional — name like 'active' or id like 's_active')">
+					<Field label={t("routines.stepForms.stateRefListTasks")}>
 						<TextInput value={step.state_ref ?? ""} onChange={(v) => onChange({ ...step, state_ref: v === "" ? undefined : v })} placeholder="active" mono />
 					</Field>
-					<Field label="since_hours (optional — only tasks updated in last N hours)">
+					<Field label={t("routines.stepForms.sinceHours")}>
 						<NumInput value={step.since_hours} onChange={(v) => onChange({ ...step, since_hours: v ?? undefined })} placeholder="24" />
 					</Field>
-					<Field label="limit (optional)">
+					<Field label={t("routines.stepForms.limit")}>
 						<NumInput value={step.limit} onChange={(v) => onChange({ ...step, limit: v ?? undefined })} placeholder="50" />
 					</Field>
 					<label className="flex items-center gap-2 font-mono text-2xs text-ink-2">
@@ -481,13 +487,13 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 								onChange(next);
 							}}
 						/>
-						<span>include archived tasks</span>
+						<span>{t("routines.stepForms.includeArchived")}</span>
 					</label>
 				</div>
 			) : null}
 			{step.action === "list_inbox" ? (
 				<div className="space-y-2">
-					<Field label="kind (optional)">
+					<Field label={t("routines.stepForms.kindOptional")}>
 						<select
 							value={step.kind ?? ""}
 							onChange={(e) => {
@@ -499,7 +505,7 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 							}}
 							className="field h-7 w-full px-2 font-mono text-2xs"
 						>
-							<option value="">(any)</option>
+							<option value="">{t("routines.stepForms.any")}</option>
 							<option value="capture">capture</option>
 							<option value="email">email</option>
 							<option value="ticket">ticket</option>
@@ -508,10 +514,10 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 							<option value="investigation">investigation</option>
 						</select>
 					</Field>
-					<Field label="since_hours (optional)">
+					<Field label={t("routines.stepForms.sinceHoursOptional")}>
 						<NumInput value={step.since_hours} onChange={(v) => onChange({ ...step, since_hours: v ?? undefined })} placeholder="24" />
 					</Field>
-					<Field label="limit (optional)">
+					<Field label={t("routines.stepForms.limit")}>
 						<NumInput value={step.limit} onChange={(v) => onChange({ ...step, limit: v ?? undefined })} placeholder="50" />
 					</Field>
 					<label className="flex items-center gap-2 font-mono text-2xs text-ink-2">
@@ -525,20 +531,20 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 								onChange(next);
 							}}
 						/>
-						<span>include already-processed items</span>
+						<span>{t("routines.stepForms.includeProcessed")}</span>
 					</label>
 				</div>
 			) : null}
 			{step.action === "get_task" ? (
 				<div className="space-y-2">
-					<Field label="task_ref">
-						<TextInput value={step.task_ref} onChange={(v) => onChange({ ...step, task_ref: v })} placeholder="T-58 or t_01..." mono />
+					<Field label={t("routines.stepForms.taskRef")}>
+						<TextInput value={step.task_ref} onChange={(v) => onChange({ ...step, task_ref: v })} placeholder={t("routines.stepForms.taskRefPlaceholder")} mono />
 					</Field>
 				</div>
 			) : null}
 			{step.action === "get_inbox_item" ? (
 				<div className="space-y-2">
-					<Field label="inbox_ref">
+					<Field label={t("routines.stepForms.inboxRef")}>
 						<TextInput value={step.inbox_ref} onChange={(v) => onChange({ ...step, inbox_ref: v })} placeholder="i_..." mono />
 					</Field>
 				</div>
@@ -550,17 +556,19 @@ export function DeckStepForm({ step, onChange }: FormProps<"deck">) {
 // ─── mcp ──────────────────────────────────────────────────────────────────
 
 export function McpStepForm({ step, onChange }: FormProps<"mcp">) {
+	const { t } = useTranslation();
 	function patch(p: Partial<Extract2<"mcp">>): void {
 		onChange({ ...step, ...p });
 	}
 	return (
 		<div className="space-y-2">
 			<div className="rounded border border-warn/40 bg-warn/5 px-2 py-1.5 font-mono text-2xs text-warn">
-				The <code>mcp</code> step type is stubbed in V1. Runs will fail with a clear V1.5 pointer.
-				Use an <code>agent</code> step with <code>mcp_servers_allowed</code> for now.
+				{t("routines.stepForms.mcpStubPrefix")} <code>mcp</code> {t("routines.stepForms.mcpStubMiddle")}{" "}
+				<code>agent</code> {t("routines.stepForms.mcpStubSuffix")} <code>mcp_servers_allowed</code>{" "}
+				{t("routines.stepForms.mcpStubEnd")}
 			</div>
 			<div className="grid grid-cols-2 gap-2">
-				<Field label="server">
+				<Field label={t("routines.stepForms.server")}>
 					<TextInput
 						value={step.server}
 						onChange={(v) => patch({ server: v })}
@@ -568,7 +576,7 @@ export function McpStepForm({ step, onChange }: FormProps<"mcp">) {
 						mono
 					/>
 				</Field>
-				<Field label="tool">
+				<Field label={t("routines.stepForms.tool")}>
 					<TextInput
 						value={step.tool}
 						onChange={(v) => patch({ tool: v })}
@@ -577,7 +585,7 @@ export function McpStepForm({ step, onChange }: FormProps<"mcp">) {
 					/>
 				</Field>
 			</div>
-			<Field label="args (JSON)">
+			<Field label={t("routines.stepForms.args")}>
 				<TextArea
 					value={step.args ? JSON.stringify(step.args, null, 2) : "{}"}
 					onChange={(v) => {
@@ -599,9 +607,10 @@ export function McpStepForm({ step, onChange }: FormProps<"mcp">) {
 // ─── transform ────────────────────────────────────────────────────────────
 
 export function TransformStepForm({ step, onChange }: FormProps<"transform">) {
+	const { t } = useTranslation();
 	return (
 		<div className="space-y-2">
-			<Field label="body (JS expression, returns the json output)">
+			<Field label={t("routines.stepForms.transformBody")}>
 				<TextArea
 					value={step.body}
 					onChange={(v) => onChange({ ...step, body: v })}
@@ -610,7 +619,7 @@ export function TransformStepForm({ step, onChange }: FormProps<"transform">) {
 				/>
 			</Field>
 			<div className="font-mono text-2xs text-ink-3">
-				Sandboxed (quickjs, 100ms cap). Globals: <code>run</code>, <code>trigger</code>,{" "}
+				{t("routines.stepForms.sandboxHint")} <code>run</code>, <code>trigger</code>,{" "}
 				<code>steps</code>, <code>state</code>, <code>env</code>, <code>secrets</code>.
 			</div>
 		</div>
@@ -620,8 +629,9 @@ export function TransformStepForm({ step, onChange }: FormProps<"transform">) {
 // ─── wait ─────────────────────────────────────────────────────────────────
 
 export function WaitStepForm({ step, onChange }: FormProps<"wait">) {
+	const { t } = useTranslation();
 	return (
-		<Field label="duration_secs">
+		<Field label={t("routines.stepForms.durationSecs")}>
 			<NumInput
 				value={step.duration_secs}
 				onChange={(v) => onChange({ ...step, duration_secs: v ?? 0 })}
@@ -634,8 +644,9 @@ export function WaitStepForm({ step, onChange }: FormProps<"wait">) {
 // ─── set_state ────────────────────────────────────────────────────────────
 
 export function SetStateStepForm({ step, onChange }: FormProps<"set_state">) {
+	const { t } = useTranslation();
 	return (
-		<Field label="state (keys to upsert, values may use {{ template }})">
+		<Field label={t("routines.stepForms.state")}>
 			<KeyValueEditor
 				pairs={objToStringMap(step.state)}
 				onChange={(v) => onChange({ ...step, state: v })}

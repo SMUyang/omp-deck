@@ -10,6 +10,7 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { RoutineStep, RoutineStepRun, RoutineStepStatus } from "@omp-deck/protocol";
 
@@ -64,6 +65,7 @@ export const StepNode = memo(function StepNode({
 	data,
 	selected,
 }: NodeProps<StepNodeType>) {
+	const { t } = useTranslation();
 	const { step, compileError, isIfNode, stepRun } = data;
 	const summary = summarize(step);
 	const tint = TYPE_TINT[step.type] ?? "bg-paper-2 border-line";
@@ -105,7 +107,7 @@ export const StepNode = memo(function StepNode({
 				{compileError ? (
 					<span
 						className="font-mono text-2xs font-bold text-danger"
-						aria-label="Compile error"
+						aria-label={t("routines.stepNode.compileErrorAria")}
 					>
 						!
 					</span>
@@ -119,7 +121,7 @@ export const StepNode = memo(function StepNode({
 				</div>
 			) : (
 				<div className="px-2 py-1.5 font-mono text-2xs italic text-ink-4">
-					(empty)
+					{t("routines.stepNode.empty")}
 				</div>
 			)}
 			{step.when ? (
@@ -202,11 +204,12 @@ const STATUS_DOT: Record<RoutineStepStatus, string> = {
  * design system.
  */
 function StatusBadge({ run }: { run: RoutineStepRun }): JSX.Element {
+	const { t } = useTranslation();
 	return (
 		<span
 			className={`h-2 w-2 rounded-full ${STATUS_DOT[run.status]}`}
-			aria-label={`status: ${run.status}`}
-			title={`status: ${run.status}`}
+			aria-label={t("routines.stepNode.statusAria", { status: run.status })}
+			title={t("routines.stepNode.statusAria", { status: run.status })}
 		/>
 	);
 }

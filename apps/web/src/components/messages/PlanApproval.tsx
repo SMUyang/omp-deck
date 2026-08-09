@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { useStore } from "@/lib/store";
 import { Markdown } from "@/lib/markdown";
@@ -28,6 +29,7 @@ import { Badge } from "@/components/ui/Badge";
  * proposal on a fresh subscribe, so a stale optimistic clear self-heals.
  */
 export function PlanApproval() {
+	const { t } = useTranslation();
 	const approval = useStore((s) => s.sessionsById[s.activeId ?? ""]?.pendingPlanApproval);
 	const sessionId = useStore((s) => s.sessionsById[s.activeId ?? ""]?.sessionId);
 	const respond = useStore((s) => s.respondToPlanApproval);
@@ -71,19 +73,19 @@ export function PlanApproval() {
 
 	return (
 		<section
-			aria-label="Plan ready for approval"
+			aria-label={t("messages.planApproval.readyAria")}
 			className={cn(
 				"rounded-lg border border-accent-plan/40 bg-accent-plan/[0.04] p-4",
 				"shadow-sm",
 			)}
 		>
 			<header className="mb-3 flex items-center gap-2">
-				<Badge tone="thinking">Plan ready</Badge>
+				<Badge tone="thinking">{t("messages.planApproval.ready")}</Badge>
 				<span className="truncate font-mono text-2xs text-ink-3">→ {finalPath}</span>
 			</header>
 
 			<label className="mb-3 block">
-				<span className="meta mb-1 block">Title</span>
+				<span className="meta mb-1 block">{t("messages.planApproval.title")}</span>
 				<input
 					type="text"
 					value={title}
@@ -95,7 +97,7 @@ export function PlanApproval() {
 					)}
 				/>
 				<span className="meta mt-1 block text-ink-4">
-					Letters, numbers, hyphens, underscores. Spaces become hyphens.
+					{t("messages.planApproval.titleHint")}
 				</span>
 			</label>
 
@@ -108,7 +110,7 @@ export function PlanApproval() {
 						"mb-3 w-full resize-y rounded border border-line bg-paper px-2 py-1.5 font-mono text-xs text-ink",
 						"focus:border-accent-plan/60 focus:outline-none",
 					)}
-					aria-label="Edit plan content"
+					aria-label={t("messages.planApproval.editContentAria")}
 				/>
 			) : (
 				<div className="mb-3 max-h-[480px] overflow-y-auto rounded border border-line bg-paper p-3">
@@ -121,10 +123,10 @@ export function PlanApproval() {
 					type="button"
 					onClick={reject}
 					className="inline-flex items-center gap-1 rounded border border-line bg-paper px-2.5 py-1 text-xs text-ink-2 hover:border-danger/40 hover:text-danger"
-					title="Reject the plan and exit plan mode"
+					title={t("messages.planApproval.rejectTitle")}
 				>
 					<X className="h-3.5 w-3.5" />
-					Reject
+					{t("messages.planApproval.reject")}
 				</button>
 
 				{editing ? (
@@ -133,10 +135,10 @@ export function PlanApproval() {
 							type="button"
 							onClick={() => approve({ withEdits: true })}
 							className="inline-flex items-center gap-1 rounded border border-accent-plan/60 bg-accent-plan/15 px-2.5 py-1 text-xs text-accent-plan hover:bg-accent-plan/25"
-							title="Save edits, approve, and execute"
+							title={t("messages.planApproval.saveApproveTitle")}
 						>
 							<Check className="h-3.5 w-3.5" />
-							Save & approve
+							{t("messages.planApproval.saveApprove")}
 						</button>
 						<button
 							type="button"
@@ -146,7 +148,7 @@ export function PlanApproval() {
 							}}
 							className="ml-1 text-xs text-ink-3 underline-offset-2 hover:underline"
 						>
-							Discard edits
+							{t("messages.planApproval.discardEdits")}
 						</button>
 					</>
 				) : (
@@ -155,19 +157,19 @@ export function PlanApproval() {
 							type="button"
 							onClick={() => setEditing(true)}
 							className="inline-flex items-center gap-1 rounded border border-line bg-paper px-2.5 py-1 text-xs text-ink-2 hover:border-accent-plan/40 hover:text-accent-plan"
-							title="Edit the plan before approving"
+							title={t("messages.planApproval.editTitle")}
 						>
 							<Pencil className="h-3.5 w-3.5" />
-							Edit
+							{t("messages.planApproval.edit")}
 						</button>
 						<button
 							type="button"
 							onClick={() => approve({ withEdits: false })}
 							className="inline-flex items-center gap-1 rounded border border-accent-plan/60 bg-accent-plan/15 px-2.5 py-1 text-xs text-accent-plan hover:bg-accent-plan/25"
-							title="Approve and execute"
+							title={t("messages.planApproval.approveTitle")}
 						>
 							<Check className="h-3.5 w-3.5" />
-							Approve
+							{t("messages.planApproval.approve")}
 						</button>
 					</>
 				)}

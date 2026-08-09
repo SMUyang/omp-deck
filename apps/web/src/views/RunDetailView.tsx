@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, Play, RefreshCcw, X } from "lucide-react";
 import type { Routine, RoutineRun, RoutineStepRun, RoutineStepStatus, ServerFrame } from "@omp-deck/protocol";
@@ -19,6 +20,7 @@ import { cn, formatDurationMs } from "@/lib/utils";
  * and finish frames trigger a refetch so fresh run records land. No polling.
  */
 export function RunDetailView() {
+	const { t } = useTranslation();
 	const { id, runId } = useParams<{ id: string; runId: string }>();
 	const [routine, setRoutine] = useState<Routine | null>(null);
 	const [run, setRun] = useState<RoutineRun | null>(null);
@@ -92,7 +94,7 @@ export function RunDetailView() {
 		});
 	}, [ws, id, runId, refresh]);
 
-	if (!id || !runId) return <div className="p-6 text-ink-3">Missing id/runId.</div>;
+	if (!id || !runId) return <div className="p-6 text-ink-3">{t("views.runDetail.missingId")}</div>;
 
 	const status: RoutineStepStatus | "running" = !run
 		? "pending"
@@ -126,9 +128,9 @@ export function RunDetailView() {
 					<div className="flex h-full min-h-0 flex-col p-3">
 						<Link to="/routines" className="meta mb-2 flex items-center gap-1 text-ink-3 hover:text-ink">
 							<ArrowLeft className="h-3 w-3" />
-							Back to routines
+							{t("views.runDetail.backToRoutines")}
 						</Link>
-						<div className="meta">Routine</div>
+						<div className="meta">{t("views.runDetail.routine")}</div>
 						<div className="mt-1 truncate text-sm font-medium text-ink">{routine?.name ?? "…"}</div>
 						{routine ? (
 							<div className="mt-0.5 font-mono text-2xs text-ink-3">
@@ -137,12 +139,12 @@ export function RunDetailView() {
 						) : null}
 					</div>
 				),
-				label: "Routine Detail",
+				label: t("views.runDetail.routineDetail"),
 			}}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
-						<div className="meta">Run</div>
+						<div className="meta">{t("views.runDetail.run")}</div>
 						<div className="truncate font-mono text-xs text-ink-3">{runId}</div>
 						<StatusPill status={status} />
 						<button
@@ -150,7 +152,7 @@ export function RunDetailView() {
 							onClick={() => void refresh()}
 							disabled={refreshing}
 							className="btn-ghost ml-auto h-7 px-2 text-xs"
-							title="Refresh"
+							title={t("views.runDetail.refresh")}
 						>
 							<RefreshCcw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
 						</button>
@@ -158,10 +160,10 @@ export function RunDetailView() {
 							type="button"
 							onClick={() => void replay()}
 							className="btn-primary h-7 px-2 text-xs"
-							title="Re-run this routine"
+							title={t("views.runDetail.rerunTitle")}
 						>
 							<Play className="h-3.5 w-3.5" />
-							Re-run
+							{t("views.runDetail.rerun")}
 						</button>
 					</div>
 
@@ -172,19 +174,19 @@ export function RunDetailView() {
 					) : null}
 
 					<div className="grid grid-cols-2 gap-3 border-b border-line px-3 py-2 text-xs md:grid-cols-4">
-						<MetaCell label="trigger" value={run?.trigger ?? "—"} />
+						<MetaCell label={t("views.runDetail.trigger")} value={run?.trigger ?? "—"} />
 						<MetaCell
-							label="duration"
+							label={t("views.runDetail.duration")}
 							value={totalDurationMs !== null ? formatDurationMs(totalDurationMs) : "—"}
 						/>
-						<MetaCell label="steps" value={run ? `${run.stepCountTotal} (${run.stepCountFailed} failed)` : "—"} />
-						<MetaCell label="cost (est)" value={`$${totalCostUsd.toFixed(4)} · ${run?.totalLlmTokens ?? 0}tok`} />
+						<MetaCell label={t("views.runDetail.steps")} value={run ? t("views.runDetail.stepsValue", { total: run.stepCountTotal, failed: run.stepCountFailed }) : "—"} />
+						<MetaCell label={t("views.runDetail.costEst")} value={`$${totalCostUsd.toFixed(4)} · ${run?.totalLlmTokens ?? 0}tok`} />
 					</div>
 
 					<div className="flex-1 overflow-y-auto px-3 py-3">
 						{steps.length === 0 ? (
 							<div className="text-sm text-ink-3">
-								{status === "running" ? "Waiting for first step…" : "No step records."}
+								{status === "running" ? t("views.runDetail.waitingFirstStep") : t("views.runDetail.noStepRecords")}
 							</div>
 						) : (
 							<ul className="space-y-2">
@@ -207,6 +209,7 @@ export function RunDetailView() {
 }
 
 function StatusPill({ status }: { status: RoutineStepStatus | "running" }) {
+	const { t } = useTranslation();
 	const cls =
 		status === "success"
 			? "bg-success/10 text-success border-success/30"
@@ -219,7 +222,7 @@ function StatusPill({ status }: { status: RoutineStepStatus | "running" }) {
 						: "bg-paper-3 text-ink-3 border-line";
 	return (
 		<span className={cn("rounded border px-2 py-0.5 font-mono text-2xs uppercase tracking-meta", cls)}>
-			{status}
+			{t(`views.runDetail.status.${status}`)}
 		</span>
 	);
 }
@@ -240,6 +243,7 @@ function StepCard({
 	step: RoutineStepRun;
 	autoExpand?: boolean;
 }) {
+	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const dur =
 		step.durationMs !== undefined && step.durationMs !== null
@@ -304,19 +308,19 @@ function StepCard({
 				<div className="border-t border-line px-3 py-2 space-y-2">
 					{step.error ? (
 						<div>
-							<div className="meta mb-0.5 text-danger">error</div>
+							<div className="meta mb-0.5 text-danger">{t("views.runDetail.error")}</div>
 							<pre className="paper-code overflow-x-auto text-2xs">{step.error}</pre>
 						</div>
 					) : null}
 					{step.outputJson ? (
 						<div>
-							<div className="meta mb-0.5">output (json)</div>
+							<div className="meta mb-0.5">{t("views.runDetail.outputJson")}</div>
 							<pre className="paper-code max-h-[300px] overflow-auto text-2xs">{prettyJson(step.outputJson)}</pre>
 						</div>
 					) : null}
 					{step.stdoutExcerpt ? (
 						<div>
-							<div className="meta mb-0.5">stdout</div>
+							<div className="meta mb-0.5">{t("views.runDetail.stdout")}</div>
 							<pre className="paper-code max-h-[300px] overflow-auto whitespace-pre-wrap text-2xs">
 								{step.stdoutExcerpt}
 							</pre>
@@ -324,7 +328,7 @@ function StepCard({
 					) : null}
 					{step.stderrExcerpt ? (
 						<div>
-							<div className="meta mb-0.5 text-warn">stderr</div>
+							<div className="meta mb-0.5 text-warn">{t("views.runDetail.stderr")}</div>
 							<pre className="paper-code max-h-[200px] overflow-auto whitespace-pre-wrap text-2xs">
 								{step.stderrExcerpt}
 							</pre>
@@ -345,9 +349,10 @@ function prettyJson(raw: string): string {
 }
 
 export function NotFoundRun() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-full items-center justify-center text-ink-3">
-			<X className="mr-2 h-4 w-4" /> Run not found.
+			<X className="mr-2 h-4 w-4" /> {t("views.runDetail.runNotFound")}
 		</div>
 	);
 }

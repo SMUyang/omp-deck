@@ -96,7 +96,7 @@ export function DirectoryPickerDialog({ open, initialCwd, title, onClose, onPick
 						type="text"
 						autoFocus
 						className="h-7 w-40 rounded border border-accent bg-paper px-2 font-mono text-2xs text-ink focus:outline-none"
-						placeholder="Folder name"
+						placeholder={t("sidebar.folderName")}
 						value={newFolderName}
 						onChange={(e) => setNewFolderName(e.target.value)}
 						onKeyDown={async (e) => {

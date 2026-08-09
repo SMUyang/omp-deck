@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 /** Field label wrapper. `tone="danger"` colors the hint red. */
 export function Field({
@@ -130,6 +131,7 @@ export function TagInput({
 	onChange: (next: string[]) => void;
 	placeholder?: string;
 }) {
+	const { t } = useTranslation();
 	function remove(idx: number): void {
 		const next = values.slice();
 		next.splice(idx, 1);
@@ -154,14 +156,14 @@ export function TagInput({
 							type="button"
 							onClick={() => remove(idx)}
 							className="text-ink-4 hover:text-danger"
-							aria-label={`Remove ${v}`}
+							aria-label={t("routines.formPrimitives.removeTag", { value: v })}
 						>
 							×
 						</button>
 					</span>
 				))}
 				<input
-					placeholder={placeholder ?? "add..."}
+					placeholder={placeholder ?? t("routines.formPrimitives.addPlaceholder")}
 					className="min-w-[6ch] flex-1 bg-transparent px-1 py-0 font-mono text-2xs text-ink outline-none placeholder:text-ink-4"
 					onKeyDown={(e) => {
 						if (e.key === "Enter" || e.key === ",") {
@@ -193,6 +195,7 @@ export function KeyValueEditor({
 	keyPlaceholder?: string;
 	valuePlaceholder?: string;
 }) {
+	const { t } = useTranslation();
 	const entries = Object.entries(pairs);
 	function setEntry(idx: number, key: string, value: string): void {
 		const next = entries.slice();
@@ -210,27 +213,27 @@ export function KeyValueEditor({
 	return (
 		<div className="space-y-1">
 			{entries.length === 0 ? (
-				<div className="font-mono text-2xs text-ink-4">none</div>
+				<div className="font-mono text-2xs text-ink-4">{t("routines.formPrimitives.none")}</div>
 			) : (
 				entries.map(([k, v], idx) => (
 					<div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-1">
 						<input
 							value={k}
 							onChange={(e) => setEntry(idx, e.target.value, v)}
-							placeholder={keyPlaceholder ?? "key"}
+							placeholder={keyPlaceholder ?? t("routines.formPrimitives.key")}
 							className="field h-7 w-full px-1.5 font-mono text-2xs"
 						/>
 						<input
 							value={v}
 							onChange={(e) => setEntry(idx, k, e.target.value)}
-							placeholder={valuePlaceholder ?? "value"}
+							placeholder={valuePlaceholder ?? t("routines.formPrimitives.value")}
 							className="field h-7 w-full px-1.5 font-mono text-2xs"
 						/>
 						<button
 							type="button"
 							onClick={() => remove(idx)}
 							className="btn-ghost h-7 w-7 p-0 text-ink-4 hover:text-danger"
-							aria-label="Remove"
+							aria-label={t("routines.formPrimitives.remove")}
 						>
 							×
 						</button>
@@ -242,7 +245,7 @@ export function KeyValueEditor({
 				onClick={add}
 				className="font-mono text-2xs text-ink-3 underline-offset-2 hover:text-ink hover:underline"
 			>
-				+ add row
+				{t("routines.formPrimitives.addRow")}
 			</button>
 		</div>
 	);

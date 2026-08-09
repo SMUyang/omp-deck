@@ -2,8 +2,10 @@ import type { ToolRendererProps } from "./ToolCallCard";
 import { ArgRow, PathChip, Pre, extractResultText } from "./shared";
 import { shortPath } from "@/lib/utils";
 import { CopyButton } from "@/lib/CopyButton";
+import { useTranslation } from "react-i18next";
 
 export function EditTool({ args, stream }: ToolRendererProps) {
+	const { t } = useTranslation();
 	const path = String((args.path as string | undefined) ?? "");
 	const patch = String((args.patch ?? args.input ?? args.edits ?? "") as string);
 	const result = stream?.result ?? stream?.partialResult;
@@ -16,7 +18,7 @@ export function EditTool({ args, stream }: ToolRendererProps) {
 			{text ? (
 				<details open>
 					<summary className="cursor-pointer font-mono text-2xs uppercase tracking-meta text-ink-3 hover:text-ink">
-						result
+						{t("tools.edit.result")}
 					</summary>
 					<div className="mt-1">
 						<Pre>{text}</Pre>

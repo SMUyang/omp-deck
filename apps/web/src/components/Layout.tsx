@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { NavRail } from "./NavRail";
 import { FoldVertical, Menu, PanelRight, UnfoldVertical, X } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function Layout({ sidebar, main, inspector, topBar, toolCardsToggle }: Props) {
+	const { t } = useTranslation();
 	const sidebarOpen = useStore((s) => s.sidebarOpen);
 	const setSidebarOpen = useStore((s) => s.setSidebarOpen);
 	const inspectorOpen = useStore((s) => s.inspectorOpen);
@@ -83,7 +85,7 @@ export function Layout({ sidebar, main, inspector, topBar, toolCardsToggle }: Pr
 					<button
 						type="button"
 						className="absolute inset-0 z-20 bg-ink/20 backdrop-blur-[1px] lg:hidden"
-						aria-label="Close panels"
+						aria-label={t("core.layout.closePanels")}
 						onClick={() => {
 							setSidebarOpen(false);
 							setInspectorOpen(false);
@@ -136,13 +138,14 @@ export function Layout({ sidebar, main, inspector, topBar, toolCardsToggle }: Pr
 }
 
 function MobileCloseBar({ label, onClose }: { label: string; onClose: () => void }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-9 items-center border-b border-line px-2 lg:hidden">
 			<button
 				type="button"
 				className="btn-ghost h-7 w-7 p-0"
 				onClick={onClose}
-				aria-label={`Close ${label}`}
+				aria-label={t("core.layout.closePanel", { label })}
 			>
 				<X className="h-3.5 w-3.5" />
 			</button>
@@ -154,6 +157,7 @@ function MobileCloseBar({ label, onClose }: { label: string; onClose: () => void
 }
 
 function ToolCardsToggle() {
+	const { t } = useTranslation();
 	const allCollapsed = useStore((s) => s.toolView.allCollapsed);
 	const toggle = useStore((s) => s.toggleAllToolCards);
 	const Icon = allCollapsed ? UnfoldVertical : FoldVertical;
@@ -162,8 +166,8 @@ function ToolCardsToggle() {
 			type="button"
 			className={cn("btn-ghost h-7 w-7 p-0", allCollapsed && "lg:bg-paper-3")}
 			onClick={toggle}
-			aria-label={allCollapsed ? "Expand all tool cards" : "Collapse all tool cards"}
-			title={allCollapsed ? "Expand all tool cards" : "Collapse all tool cards"}
+			aria-label={allCollapsed ? t("core.layout.expandToolCards") : t("core.layout.collapseToolCards")}
+			title={allCollapsed ? t("core.layout.expandToolCards") : t("core.layout.collapseToolCards")}
 		>
 			<Icon className="h-4 w-4" />
 		</button>

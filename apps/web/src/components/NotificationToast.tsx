@@ -10,6 +10,7 @@
  */
 
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useStore, type NotificationItem } from "../lib/store";
 
@@ -30,6 +31,7 @@ function levelClass(level: NotificationItem["level"]): string {
 }
 
 export function NotificationToast(): JSX.Element | null {
+	const { t } = useTranslation();
 	const notifications = useStore((s) => s.notifications);
 	const dismissNotification = useStore((s) => s.dismissNotification);
 
@@ -76,7 +78,7 @@ export function NotificationToast(): JSX.Element | null {
 									className="mt-1 inline-block text-xs underline opacity-90 hover:opacity-100"
 									onClick={() => dismissNotification(n.id)}
 								>
-									View
+									{t("core.notificationToast.view")}
 								</a>
 							)}
 						</div>
@@ -84,7 +86,7 @@ export function NotificationToast(): JSX.Element | null {
 							type="button"
 							onClick={() => dismissNotification(n.id)}
 							className="rounded p-0.5 text-xs opacity-60 hover:opacity-100"
-							aria-label="Dismiss notification"
+							aria-label={t("core.notificationToast.dismissNotification")}
 						>
 							&times;
 						</button>

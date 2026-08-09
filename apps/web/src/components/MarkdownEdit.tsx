@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Markdown } from "@/lib/markdown";
 import { uploadImage } from "@/lib/uploads-api";
 import { cn } from "@/lib/utils";
@@ -29,11 +30,13 @@ export function MarkdownEdit({
 	value,
 	onChange,
 	onCommit,
-	placeholder = "Click to add notes…",
+	placeholder,
 	className,
 	textareaClassName,
 	autoEdit,
 }: Props) {
+	const { t } = useTranslation();
+	const placeholderText = placeholder ?? t("core.markdownEdit.addNotes");
 	const [editing, setEditing] = useState(Boolean(autoEdit) || !value);
 	const [draft, setDraft] = useState(value);
 	const [uploadError, setUploadError] = useState<string | undefined>();
@@ -211,7 +214,7 @@ export function MarkdownEdit({
 						e.preventDefault();
 						for (const { blob, name } of images) void uploadAndInsert(blob, name);
 					}}
-					placeholder={placeholder}
+					placeholder={placeholderText}
 					className={cn(
 						"w-full resize-none bg-transparent font-mono text-[13px] leading-relaxed text-ink placeholder:text-ink-4 focus:outline-none",
 						"min-h-[14rem]",
@@ -220,16 +223,16 @@ export function MarkdownEdit({
 				/>
 				{uploadingCount > 0 ? (
 					<div className="pointer-events-none absolute right-2 top-2 rounded bg-paper-3 px-2 py-0.5 font-mono text-2xs text-ink-3">
-						uploading {uploadingCount} image{uploadingCount === 1 ? "" : "s"}…
+						{t("core.markdownEdit.uploading", { count: uploadingCount })}
 					</div>
 				) : null}
 				{uploadError ? (
 					<div className="mt-1 font-mono text-2xs text-danger" role="alert">
-						upload failed: {uploadError}
+						{t("core.markdownEdit.uploadFailed", { error: uploadError })}
 					</div>
 				) : null}
 				<div className="mt-1 font-mono text-2xs text-ink-4">
-					paste or drop an image to embed it · ⌘+enter to save · esc to cancel
+					{t("core.markdownEdit.helpEdit")}
 				</div>
 			</div>
 		);
@@ -245,7 +248,7 @@ export function MarkdownEdit({
 					className,
 				)}
 			>
-				{placeholder}
+				{placeholderText}
 			</button>
 		);
 	}
@@ -254,12 +257,12 @@ export function MarkdownEdit({
 		<button
 			type="button"
 			onClick={() => setEditing(true)}
-			title="Click to edit"
+			title={t("core.markdownEdit.clickToEdit")}
 			className={cn("group block w-full cursor-text text-left", className)}
 		>
 			<Markdown className="text-[14px]">{value}</Markdown>
 			<div className="mt-1 font-mono text-2xs text-ink-4 opacity-0 transition-opacity group-hover:opacity-100">
-				click to edit · paste images while editing · ⌘+enter to save · esc to cancel
+				{t("core.markdownEdit.helpHover")}
 			</div>
 		</button>
 	);

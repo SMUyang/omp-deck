@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn, truncate } from "@/lib/utils";
 import { CopyButton } from "@/lib/CopyButton";
 import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
+import { useTranslation } from "react-i18next";
 
 export function extractResultText(result: unknown): string {
 	if (result == null) return "";
@@ -70,11 +71,12 @@ export function extractResultImages(
  * conversation offscreen — user can click through to the raw data URL.
  */
 export function ResultImages({ result }: { result: unknown }) {
+	const { t } = useTranslation();
 	const images = extractResultImages(result);
 	return (
 		<ImagePreviewGrid
 			images={images}
-			altPrefix="tool output"
+			altPrefix={t("tools.shared.resultImagesAlt")}
 			thumbnailClassName="max-h-96 w-auto rounded border border-line object-contain"
 			containerClassName="space-y-1.5"
 		/>

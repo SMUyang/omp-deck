@@ -4,6 +4,7 @@
  * encodes outcome. Used on the routine list rows and in the editor inspector.
  */
 import type { RoutineMetrics } from "@/lib/routines-api";
+import { useTranslation } from "react-i18next";
 
 type Status = RoutineMetrics["last30"][number]["status"];
 
@@ -22,7 +23,9 @@ interface Props {
 	emptyHint?: string;
 }
 
-export function Sparkline({ bars, maxBars = 30, className, height = "md", emptyHint = "no runs yet" }: Props) {
+export function Sparkline({ bars, maxBars = 30, className, height = "md", emptyHint }: Props) {
+	const { t } = useTranslation();
+	const hint = emptyHint ?? t("routines.sparkline.noRuns");
 	const slice = bars.slice(0, maxBars).reverse(); // newest on the right
 	const maxDur = Math.max(1, ...slice.map((b) => b.durationMs ?? 0));
 	const heightPx = height === "sm" ? 18 : height === "lg" ? 44 : 28;
@@ -32,7 +35,7 @@ export function Sparkline({ bars, maxBars = 30, className, height = "md", emptyH
 			<div
 				className={`flex items-end gap-[2px] ${className ?? ""}`}
 				style={{ height: heightPx }}
-				aria-label={emptyHint}
+				aria-label={hint}
 			>
 				{Array.from({ length: maxBars }).map((_, i) => (
 					<div key={i} className="w-[3px] flex-1 bg-line/40" style={{ height: heightPx * 0.18 }} />
@@ -45,7 +48,7 @@ export function Sparkline({ bars, maxBars = 30, className, height = "md", emptyH
 		<div
 			className={`flex items-end gap-[2px] ${className ?? ""}`}
 			style={{ height: heightPx }}
-			aria-label={`Last ${slice.length} runs`}
+			aria-label={t("routines.sparkline.lastRuns", { count: slice.length })}
 		>
 			{/* Pad with empty bars so the sparkline always shows the same width */}
 			{Array.from({ length: Math.max(0, maxBars - slice.length) }).map((_, i) => (

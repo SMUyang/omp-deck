@@ -1,8 +1,10 @@
 import type { ToolRendererProps } from "./ToolCallCard";
 import { ResultImages, extractResultText } from "./shared";
 import { CodeBlock, MaybeJsonBlock } from "@/lib/code";
+import { useTranslation } from "react-i18next";
 
 export function GenericTool({ args, stream }: ToolRendererProps) {
+	const { t } = useTranslation();
 	const result = stream?.result;
 	const partial = stream?.partialResult;
 	const text = result ? extractResultText(result) : partial ? extractResultText(partial) : "";
@@ -14,7 +16,7 @@ export function GenericTool({ args, stream }: ToolRendererProps) {
 		<div className="space-y-1.5">
 			<details>
 				<summary className="cursor-pointer font-mono text-2xs uppercase tracking-meta text-ink-3 hover:text-ink">
-					args
+					{t("tools.generic.args")}
 				</summary>
 				<div className="mt-1">
 					<CodeBlock code={argsText} language="json" className="max-h-48" />
@@ -26,7 +28,7 @@ export function GenericTool({ args, stream }: ToolRendererProps) {
 			{text ? (
 				<details open={!result}>
 					<summary className="cursor-pointer font-mono text-2xs uppercase tracking-meta text-ink-3 hover:text-ink">
-						{result ? "result" : "partial"}
+						{result ? t("tools.generic.result") : t("tools.generic.partial")}
 					</summary>
 					<div className="mt-1">
 						{/* Tool results are commonly JSON (extractResultText falls back to

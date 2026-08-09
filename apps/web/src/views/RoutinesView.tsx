@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { Clock, Plus, Power, Zap } from "lucide-react";
 import type { Routine } from "@omp-deck/protocol";
@@ -11,6 +12,7 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function RoutinesView() {
+	const { t } = useTranslation();
 	const [params, setParams] = useSearchParams();
 	const editTarget = params.get("edit");
 	const setInspectorOpen = useStore((s) => s.setInspectorOpen);
@@ -120,7 +122,7 @@ export function RoutinesView() {
 			/>
 		) : (
 			<div className="flex h-full items-center justify-center px-6 text-center font-mono text-2xs text-ink-3">
-				Loading routine...
+				{t("views.routines.loadingRoutine")}
 			</div>
 		)
 	) : (
@@ -152,7 +154,7 @@ export function RoutinesView() {
 				}
 			}}
 		/>
-	), label: "Routines" };
+	), label: t("views.routines.title") };
 
 	const inspector = { content: isEditing ? (
 		<EditorInspector
@@ -163,7 +165,7 @@ export function RoutinesView() {
 		/>
 	) : (
 		<IndexInspector routines={routines} metrics={metrics} />
-	), label: "Routine Inspector" };
+	), label: t("views.routines.inspector") };
 
 	return <Layout sidebar={sidebar} main={mainPane} inspector={inspector} topBar={null} />;
 }
@@ -204,6 +206,7 @@ function RoutinesIndex({
 	onToggleEnabled: (r: Routine) => void;
 	onRunNow: (r: Routine) => void;
 }) {
+	const { t } = useTranslation();
 	const sorted = useMemo(() => {
 		const copy = routines.slice();
 		copy.sort((a, b) => {
@@ -217,14 +220,14 @@ function RoutinesIndex({
 		<div className="flex h-full min-h-0 flex-col bg-paper">
 			<header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-3">
 				<div>
-					<div className="meta">Routines</div>
+					<div className="meta">{t("views.routines.title")}</div>
 					<div className="font-mono text-2xs text-ink-3">
-						{routines.length} total · {routines.filter((r) => r.enabled).length} enabled · {routines.filter((r) => r.specVersion === 1).length} pipelines
+						{t("views.routines.summary", { total: routines.length, enabled: routines.filter((r) => r.enabled).length, pipelines: routines.filter((r) => r.specVersion === 1).length })}
 					</div>
 				</div>
 				<button type="button" onClick={onNew} className="btn-primary ml-auto h-7 px-2 text-xs">
 					<Plus className="h-3.5 w-3.5" />
-					New routine
+					{t("views.routines.newRoutine")}
 				</button>
 			</header>
 
@@ -235,15 +238,15 @@ function RoutinesIndex({
 			) : null}
 
 			{loading ? (
-				<div className="flex flex-1 items-center justify-center text-sm text-ink-3">Loading...</div>
+				<div className="flex flex-1 items-center justify-center text-sm text-ink-3">{t("views.routines.loading")}</div>
 			) : routines.length === 0 ? (
 				<div className="flex flex-1 items-center justify-center px-6 text-center">
 					<div className="max-w-sm">
-						<div className="meta mb-1.5">No routines yet</div>
-						<p className="text-sm text-ink-2">Create a pipeline or install the daily briefing template.</p>
+						<div className="meta mb-1.5">{t("views.routines.noRoutines")}</div>
+						<p className="text-sm text-ink-2">{t("views.routines.noRoutinesHint")}</p>
 						<button type="button" onClick={onNew} className="btn-primary mt-3 h-8 px-3 text-sm">
 							<Plus className="h-3.5 w-3.5" />
-							New routine
+							{t("views.routines.newRoutine")}
 						</button>
 					</div>
 				</div>
@@ -280,6 +283,7 @@ function RoutineListItem({
 	onToggleEnabled: (r: Routine) => void;
 	onRunNow: (r: Routine) => void;
 }) {
+	const { t } = useTranslation();
 	const stepCount = countSteps(routine);
 	const okPct = metrics && metrics.total > 0 ? Math.round(metrics.successRate30d * 100) : undefined;
 	return (
@@ -298,17 +302,17 @@ function RoutineListItem({
 				<div className="min-w-0 flex-1">
 					<div className="flex flex-wrap items-baseline gap-2">
 						<span className="truncate text-sm font-medium text-ink">{routine.name}</span>
-						<span className="chip bg-paper-3 text-ink-3">{routine.specVersion === 1 ? "pipeline" : routine.actionKind}</span>
-						{stepCount !== undefined ? <span className="meta">{stepCount} steps</span> : null}
-						{okPct !== undefined ? <span className="meta">{okPct}% ok</span> : null}
+						<span className="chip bg-paper-3 text-ink-3">{routine.specVersion === 1 ? t("views.routines.pipeline") : routine.actionKind}</span>
+						{stepCount !== undefined ? <span className="meta">{t("views.routines.steps", { count: stepCount })}</span> : null}
+						{okPct !== undefined ? <span className="meta">{t("views.routines.okPct", { pct: okPct })}</span> : null}
 					</div>
 					{routine.description ? (
 						<div className="mt-0.5 line-clamp-1 text-xs text-ink-2">{routine.description}</div>
 					) : null}
 					<div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-2xs text-ink-3">
-						{routine.cron ? <span>{routine.cron}</span> : <span>manual</span>}
-						{routine.nextRunAt ? <span>next {new Date(routine.nextRunAt).toLocaleString()}</span> : null}
-						{routine.lastRunAt ? <span>last {new Date(routine.lastRunAt).toLocaleString()}</span> : null}
+						{routine.cron ? <span>{routine.cron}</span> : <span>{t("views.routines.manual")}</span>}
+						{routine.nextRunAt ? <span>{t("views.routines.next", { time: new Date(routine.nextRunAt).toLocaleString() })}</span> : null}
+						{routine.lastRunAt ? <span>{t("views.routines.last", { time: new Date(routine.lastRunAt).toLocaleString() })}</span> : null}
 					</div>
 				</div>
 				<div
@@ -317,18 +321,18 @@ function RoutineListItem({
 					onKeyDown={(e) => e.stopPropagation()}
 					role="group"
 				>
-					<button type="button" onClick={() => onRunNow(routine)} className="btn-ghost h-7 px-2 text-2xs" title="Run now">
+					<button type="button" onClick={() => onRunNow(routine)} className="btn-ghost h-7 px-2 text-2xs" title={t("views.routines.runNow")}>
 						<Zap className="h-3.5 w-3.5" />
-						Run
+						{t("views.routines.run")}
 					</button>
 					<button
 						type="button"
 						onClick={() => onToggleEnabled(routine)}
 						className={cn("btn-ghost h-7 px-2 text-2xs", routine.enabled && "text-success")}
-						title={routine.enabled ? "Disable" : "Enable"}
+						title={routine.enabled ? t("views.routines.disable") : t("views.routines.enable")}
 					>
 						<Power className="h-3.5 w-3.5" />
-						{routine.enabled ? "On" : "Off"}
+						{routine.enabled ? t("views.routines.on") : t("views.routines.off")}
 					</button>
 				</div>
 			</button>
@@ -350,6 +354,7 @@ function RoutinesSidebar({
 	onNew: () => void;
 	onInstallTemplate: (slug: string) => void;
 }) {
+	const { t } = useTranslation();
 	const [templates, setTemplates] = useState<TemplateSummary[] | undefined>();
 	useEffect(() => {
 		void routinesApi.templates
@@ -361,31 +366,31 @@ function RoutinesSidebar({
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-y-auto">
 			<section className="border-b border-line px-3 py-3">
-				<div className="meta mb-1.5">Schedule</div>
+				<div className="meta mb-1.5">{t("views.routines.schedule")}</div>
 				<div className="space-y-1 text-sm">
-					<Stat label="enabled" value={routines.filter((r) => r.enabled).length} />
-					<Stat label="disabled" value={routines.filter((r) => !r.enabled).length} />
-					<Stat label="pipelines" value={routines.filter((r) => r.specVersion === 1).length} />
+					<Stat label={t("views.routines.enabled")} value={routines.filter((r) => r.enabled).length} />
+					<Stat label={t("views.routines.disabled")} value={routines.filter((r) => !r.enabled).length} />
+					<Stat label={t("views.routines.pipelines")} value={routines.filter((r) => r.specVersion === 1).length} />
 				</div>
 			</section>
 			<section className="border-b border-line px-3 py-3">
-				<div className="meta mb-1.5">Templates</div>
+				<div className="meta mb-1.5">{t("views.routines.templates")}</div>
 				{templates === undefined ? (
-					<div className="font-mono text-2xs text-ink-3">Loading...</div>
+					<div className="font-mono text-2xs text-ink-3">{t("views.routines.loading")}</div>
 				) : templates.length === 0 ? (
-					<div className="font-mono text-2xs text-ink-3">No templates.</div>
+					<div className="font-mono text-2xs text-ink-3">{t("views.routines.noTemplates")}</div>
 				) : (
 					<ul className="space-y-1">
-						{templates.map((t) => (
-							<li key={t.slug}>
+						{templates.map((tmpl) => (
+							<li key={tmpl.slug}>
 								<button
 									type="button"
-									onClick={() => onInstallTemplate(t.slug)}
+									onClick={() => onInstallTemplate(tmpl.slug)}
 									className="w-full rounded border border-line bg-paper-2 px-2 py-1.5 text-left hover:bg-paper-3"
 								>
-									<div className="text-sm font-medium text-ink">{t.name}</div>
-									{t.description ? <div className="mt-0.5 line-clamp-2 text-2xs text-ink-3">{t.description}</div> : null}
-									<div className="mt-1 font-mono text-2xs text-ink-4">{t.steps} steps · {t.triggers} triggers</div>
+									<div className="text-sm font-medium text-ink">{tmpl.name}</div>
+									{tmpl.description ? <div className="mt-0.5 line-clamp-2 text-2xs text-ink-3">{tmpl.description}</div> : null}
+									<div className="mt-1 font-mono text-2xs text-ink-4">{t("views.routines.stepsTriggers", { steps: tmpl.steps, triggers: tmpl.triggers })}</div>
 								</button>
 							</li>
 						))}
@@ -395,15 +400,15 @@ function RoutinesSidebar({
 			<section className="border-b border-line px-3 py-3">
 				<button type="button" onClick={onNew} className="btn-ghost h-7 w-full justify-start text-xs">
 					<Plus className="h-3.5 w-3.5" />
-					New routine
+					{t("views.routines.newRoutine")}
 				</button>
 			</section>
 			<section className="px-3 py-3">
-				<div className="meta mb-1.5">Cron format</div>
+				<div className="meta mb-1.5">{t("views.routines.cronFormat")}</div>
 				<div className="space-y-1 font-mono text-2xs text-ink-3">
-					<div>m h dom mon dow</div>
-					<div>0 7 * * * = daily 7am</div>
-					<div>0 9 * * 1-5 = weekdays 9am</div>
+					<div>{t("views.routines.cronFields")}</div>
+					<div>{t("views.routines.cronDaily")}</div>
+					<div>{t("views.routines.cronWeekdays")}</div>
 				</div>
 			</section>
 		</div>
@@ -411,24 +416,25 @@ function RoutinesSidebar({
 }
 
 function EditorSidebar({ onBack, onNew }: { onBack: () => void; onNew: () => void }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-y-auto">
 			<section className="border-b border-line px-3 py-3">
 				<button type="button" onClick={onBack} className="btn-ghost h-7 w-full justify-start text-xs">
-					All routines
+					{t("views.routines.allRoutines")}
 				</button>
 			</section>
 			<section className="border-b border-line px-3 py-3">
-				<div className="meta mb-1.5">Create</div>
+				<div className="meta mb-1.5">{t("views.routines.create")}</div>
 				<button type="button" onClick={onNew} className="btn-ghost h-7 w-full justify-start text-xs">
 					<Plus className="h-3.5 w-3.5" />
-					New routine
+					{t("views.routines.newRoutine")}
 				</button>
 			</section>
 			<section className="px-3 py-3">
-				<div className="meta mb-1.5">Editor</div>
+				<div className="meta mb-1.5">{t("views.routines.editor")}</div>
 				<p className="text-xs leading-relaxed text-ink-3">
-					The builder now uses the main canvas. Use the right inspector for runs and actions.
+					{t("views.routines.editorHint")}
 				</p>
 			</section>
 		</div>
@@ -436,19 +442,20 @@ function EditorSidebar({ onBack, onNew }: { onBack: () => void; onNew: () => voi
 }
 
 function IndexInspector({ routines, metrics }: { routines: Routine[]; metrics: Record<string, RoutineMetrics> }) {
+	const { t } = useTranslation();
 	const next = routines
 		.filter((r) => r.enabled && r.nextRunAt)
 		.sort((a, b) => new Date(a.nextRunAt ?? 0).getTime() - new Date(b.nextRunAt ?? 0).getTime())[0];
 	const totalRuns = Object.values(metrics).reduce((acc, m) => acc + m.total, 0);
 	return (
 		<div className="flex h-full flex-col overflow-y-auto p-3">
-			<div className="meta mb-2">Overview</div>
+			<div className="meta mb-2">{t("views.routines.overview")}</div>
 			<div className="space-y-2 text-xs text-ink-2">
-				<div className="flex items-center justify-between"><span>Total routines</span><span className="font-mono text-ink">{routines.length}</span></div>
-				<div className="flex items-center justify-between"><span>Runs recorded</span><span className="font-mono text-ink">{totalRuns}</span></div>
+				<div className="flex items-center justify-between"><span>{t("views.routines.totalRoutines")}</span><span className="font-mono text-ink">{routines.length}</span></div>
+				<div className="flex items-center justify-between"><span>{t("views.routines.runsRecorded")}</span><span className="font-mono text-ink">{totalRuns}</span></div>
 			</div>
 			<div className="mt-4 border-t border-line pt-3">
-				<div className="meta mb-2">Next fire</div>
+				<div className="meta mb-2">{t("views.routines.nextFire")}</div>
 				{next ? (
 					<div className="rounded border border-line bg-paper-2 px-2 py-1.5">
 						<div className="text-sm font-medium text-ink">{next.name}</div>
@@ -458,7 +465,7 @@ function IndexInspector({ routines, metrics }: { routines: Routine[]; metrics: R
 						</div>
 					</div>
 				) : (
-					<div className="font-mono text-2xs text-ink-3">No enabled scheduled routines.</div>
+					<div className="font-mono text-2xs text-ink-3">{t("views.routines.noEnabledScheduled")}</div>
 				)}
 			</div>
 		</div>

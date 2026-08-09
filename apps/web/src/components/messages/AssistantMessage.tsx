@@ -1,5 +1,6 @@
 import type { AssistantMsg, ToolCallStream } from "@/lib/types";
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import { Markdown } from "@/lib/markdown";
 import { formatCost, formatDurationMs, formatTokens } from "@/lib/utils";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -10,14 +11,14 @@ interface Props {
 	toolCalls: Record<string, ToolCallStream>;
 }
 
-export const AssistantMessage = memo(function AssistantMessage({ msg, toolCalls }: Props) { const lastBlockIdx = msg.blocks.length - 1;
+export const AssistantMessage = memo(function AssistantMessage({ msg, toolCalls }: Props) { const { t } = useTranslation(); const lastBlockIdx = msg.blocks.length - 1;
 
 	return (
 		<div className="space-y-2">
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-2xs uppercase tracking-meta text-ink-3">
 				<span className="text-ink-2">omp</span>
 				{msg.model ? <span className="text-ink-4 normal-case tracking-normal">{msg.model}</span> : null}
-				{msg.isStreaming ? <span className="text-accent">· streaming</span> : null}
+				{msg.isStreaming ? <span className="text-accent">{t("messages.assistantMessage.streaming")}</span> : null}
 				{msg.stopReason && !msg.isStreaming ? (
 					<span className={msg.stopReason === "stop" ? "text-ink-4" : "text-warn"}>
 						· {msg.stopReason}
@@ -60,7 +61,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, toolCalls 
 						return (
 							<ThinkingBlock
 								key={i}
-								text="(redacted thinking)"
+								text={t("messages.assistantMessage.redactedThinking")}
 								streaming={false}
 								redacted
 							/>

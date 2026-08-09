@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import type { SessionContextGraphResponse, SessionContextNode, SessionContextEdge } from "@omp-deck/protocol";
 
 import { cn } from "@/lib/utils";
@@ -101,6 +102,7 @@ export function SessionContextTopologyGraph({
 	onSelectNode,
 	className,
 }: SessionContextTopologyGraphProps) {
+	const { t } = useTranslation();
 	// Memoise layout — only recomputes when graph nodes change.
 	const positions = useMemo(
 		() => (graph ? computeNodePositions(graph.nodes, SVG_WIDTH, SVG_HEIGHT) : new Map<string, Point>()),
@@ -127,9 +129,9 @@ export function SessionContextTopologyGraph({
 			<div
 				className={cn("flex h-[300px] w-full items-center justify-center rounded-md border border-line bg-paper text-sm text-ink-3", className)}
 				role="status"
-				aria-label="Loading session context graph"
+				aria-label={t("settings.sessionTopologyGraph.loadingAria")}
 			>
-				Loading graph…
+				{t("settings.sessionTopologyGraph.loading")}
 			</div>
 		);
 	}
@@ -140,7 +142,7 @@ export function SessionContextTopologyGraph({
 			<div
 				className={cn("flex h-[300px] w-full items-center justify-center rounded-md border border-danger/30 bg-paper text-sm text-danger", className)}
 				role="alert"
-				aria-label={`Graph error: ${error}`}
+				aria-label={t("settings.sessionTopologyGraph.errorAria", { error })}
 			>
 				{error}
 			</div>
@@ -153,9 +155,9 @@ export function SessionContextTopologyGraph({
 			<div
 				className={cn("flex h-[300px] w-full items-center justify-center rounded-md border border-line bg-paper text-sm text-ink-3", className)}
 				role="status"
-				aria-label="No nodes in session context"
+				aria-label={t("settings.sessionTopologyGraph.emptyAria")}
 			>
-				No nodes in this session context.
+				{t("settings.sessionTopologyGraph.empty")}
 			</div>
 		);
 	}
@@ -168,11 +170,11 @@ export function SessionContextTopologyGraph({
 			{/* Graph stats and truncation warning */}
 			<div className="flex items-center justify-between px-1 text-[11px] text-ink-3">
 				<span>
-					{graph.nodes.length} nodes · {graph.edges.length} edges
+					{t("settings.sessionTopologyGraph.stats", { nodes: graph.nodes.length, edges: graph.edges.length })}
 				</span>
 				{graph.truncated && (
 					<span className="text-warn">
-						Showing partial graph of {graph.totalNodes} total nodes
+						{t("settings.sessionTopologyGraph.partialGraph", { total: graph.totalNodes })}
 					</span>
 				)}
 			</div>
@@ -180,7 +182,7 @@ export function SessionContextTopologyGraph({
 			<svg
 				viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
 				role="img"
-				aria-label="Session context topology graph"
+				aria-label={t("settings.sessionTopologyGraph.graphAria")}
 				className="h-[300px] w-full overflow-visible rounded-md border border-line bg-paper"
 			>
 				{/* ── Edges: uniform lines, labeled by relation ── */}
@@ -227,7 +229,7 @@ export function SessionContextTopologyGraph({
 							onClick={() => onSelectNode(selected ? null : node.id)}
 							onKeyDown={handleKeyDown(node.id)}
 							className="cursor-pointer outline-none"
-							aria-label={`${node.kind}: ${node.title}${selected ? " (selected)" : ""}`}
+							aria-label={`${node.kind}: ${node.title}${selected ? t("settings.sessionTopologyGraph.selected") : ""}`}
 						>
 							<title>{`${node.kind}: ${node.title}`}</title>
 							<circle
@@ -257,7 +259,7 @@ export function SessionContextTopologyGraph({
 								className={cn("inline-block h-2 w-2 rounded-full", colors.fill)}
 								aria-hidden="true"
 							/>
-							{kind}
+							{t(`settings.sessionTopologyGraph.kinds.${kind}`)}
 						</span>
 					);
 				})}
@@ -265,7 +267,7 @@ export function SessionContextTopologyGraph({
 
 			{/* ── Selected node detail ── */}
 			{selectedNode && (
-				<div className="rounded-md border border-accent/30 bg-paper-2 p-2 text-xs" aria-label="Selected node details">
+				<div className="rounded-md border border-accent/30 bg-paper-2 p-2 text-xs" aria-label={t("settings.sessionTopologyGraph.selectedNodeAria")}>
 					<div className="flex items-center gap-1.5 text-ink-2">
 						<span
 							className={cn(
@@ -281,7 +283,7 @@ export function SessionContextTopologyGraph({
 						<p className="mt-1 text-ink-3">{selectedNode.compressedBody}</p>
 					)}
 					{selectedNode.sourceTurnIndex != null && (
-						<span className="mt-1 block text-ink-4">Turn {selectedNode.sourceTurnIndex}</span>
+						<span className="mt-1 block text-ink-4">{t("settings.sessionTopologyGraph.turn", { index: selectedNode.sourceTurnIndex })}</span>
 					)}
 				</div>
 			)}

@@ -2,8 +2,10 @@ import type { ToolRendererProps } from "./ToolCallCard";
 import { ArgRow, extractResultText } from "./shared";
 import { MaybeJsonBlock } from "@/lib/code";
 import { ImagePreviewGrid } from "@/components/ui/ImagePreviewGrid";
+import { useTranslation } from "react-i18next";
 
 export function BrowserTool({ args, stream }: ToolRendererProps) {
+	const { t } = useTranslation();
 	const action = String((args.action as string | undefined) ?? "");
 	const url = (args.url as string | undefined) ?? undefined;
 	const name = (args.name as string | undefined) ?? "main";
@@ -14,7 +16,7 @@ export function BrowserTool({ args, stream }: ToolRendererProps) {
 	return (
 		<div className="space-y-1.5">
 			<div className="font-mono text-2xs">
-				<span className="text-accent">{action || "?"}</span>
+				<span className="text-accent">{t(`tools.browser.action.${action}`, { defaultValue: action || "?" })}</span>
 				<span className="text-ink-3"> · </span>
 				<span className="text-ink">{name}</span>
 			</div>
@@ -22,7 +24,7 @@ export function BrowserTool({ args, stream }: ToolRendererProps) {
 			{screenshot ? (
 				<ImagePreviewGrid
 					images={[{ data: screenshot.data, mimeType: screenshot.mimeType }]}
-					altPrefix="screenshot"
+					altPrefix={t("tools.browser.screenshotAlt")}
 					thumbnailClassName="max-h-96 w-auto rounded border border-line object-contain"
 				/>
 			) : null}

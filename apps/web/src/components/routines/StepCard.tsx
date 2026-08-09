@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Trash2 } from "lucide-react";
 
 import type { RoutineStep } from "@omp-deck/protocol";
@@ -30,6 +31,7 @@ export function StepCard({
 	onMoveDown,
 }: Props) {
 	const [open, setOpen] = useState(true);
+	const { t } = useTranslation();
 	const idsExcludingSelf = existingIds.filter((_id, i) => i !== index);
 
 	return (
@@ -39,22 +41,22 @@ export function StepCard({
 					type="button"
 					onClick={() => setOpen((o) => !o)}
 					className="btn-ghost h-6 w-6 p-0"
-					aria-label={open ? "Collapse" : "Expand"}
+					aria-label={open ? t("routines.stepCard.collapse") : t("routines.stepCard.expand")}
 				>
 					{open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
 				</button>
 				<span className={`rounded px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta ${STEP_TYPE_BG[step.type]}`}>
 					{step.type}
 				</span>
-				<span className="font-mono text-2xs text-ink-2">{step.id || "(no id)"}</span>
+				<span className="font-mono text-2xs text-ink-2">{step.id || t("routines.stepCard.noId")}</span>
 				<div className="ml-auto flex items-center gap-0.5">
 					<button
 						type="button"
 						onClick={onMoveUp}
 						disabled={index === 0}
 						className="btn-ghost h-6 w-6 p-0 disabled:opacity-30"
-						aria-label="Move up"
-						title="Move up"
+						aria-label={t("routines.stepCard.moveUp")}
+						title={t("routines.stepCard.moveUp")}
 					>
 						<ChevronsUp className="h-3.5 w-3.5" />
 					</button>
@@ -63,8 +65,8 @@ export function StepCard({
 						onClick={onMoveDown}
 						disabled={index === total - 1}
 						className="btn-ghost h-6 w-6 p-0 disabled:opacity-30"
-						aria-label="Move down"
-						title="Move down"
+						aria-label={t("routines.stepCard.moveDown")}
+						title={t("routines.stepCard.moveDown")}
 					>
 						<ChevronsDown className="h-3.5 w-3.5" />
 					</button>
@@ -72,8 +74,8 @@ export function StepCard({
 						type="button"
 						onClick={onRemove}
 						className="btn-ghost h-6 w-6 p-0 text-ink-4 hover:text-danger"
-						aria-label="Remove step"
-						title="Remove"
+						aria-label={t("routines.stepCard.removeStep")}
+						title={t("routines.stepCard.remove")}
 					>
 						<Trash2 className="h-3.5 w-3.5" />
 					</button>

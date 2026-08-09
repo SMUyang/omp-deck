@@ -280,3 +280,52 @@ function makeNode(
 		metadata: {},
 	};
 }
+
+describe("legacy v1 contract accepts existing kinds/relations", () => {
+	test("positions every legacy kind and degrees every relation without throwing", () => {
+		const kinds: SessionContextNode["kind"][] = [
+			"goal",
+			"user_intent",
+			"decision",
+			"constraint",
+			"action",
+			"resolution",
+			"issue",
+			"evidence",
+			"artifact",
+			"todo_state",
+			"handoff_summary",
+		];
+		const relations: SessionContextEdge["relation"][] = [
+			"caused_by",
+			"fixed_by",
+			"verified_by",
+			"depends_on",
+			"continues",
+			"references_file",
+			"blocks",
+			"contradicts",
+			"supersedes",
+			"summarizes",
+		];
+		const nodes = kinds.map((kind, index) => makeNode(`legacy-${index}`, kind, kind));
+		const edges = relations.map((relation, index) => ({
+			id: `e-${index}`,
+			sessionId: "s",
+			sourceNodeId: nodes[index % nodes.length]!.id,
+			targetNodeId: nodes[(index + 1) % nodes.length]!.id,
+			relation,
+			weight: 1,
+			metadata: {},
+		} satisfies SessionContextEdge));
+		const positions = computeNodePositions(nodes, svgWidth, svgHeight);
+		const degrees = computeNodeDegree(nodes, edges);
+
+		expect(positions.size).toBe(nodes.length);
+		expect(degrees.size).toBeGreaterThanOrEqual(nodes.length);
+		for (const node of nodes) {
+			expect(positions.get(node.id)).toBeDefined();
+			expect(degrees.get(node.id)).toBeDefined();
+		}
+	});
+});

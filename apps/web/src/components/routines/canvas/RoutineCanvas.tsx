@@ -39,6 +39,7 @@ import {
 	type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -144,6 +145,7 @@ function RoutineCanvasInner({
 	onSelectRun,
 	routineId,
 }: RoutineCanvasProps): JSX.Element {
+	const { t } = useTranslation();
 	// Re-derive the React Flow graph whenever the spec's steps or layout change.
 	const imported = useMemo(
 		() => importFromSpec(spec),
@@ -477,9 +479,11 @@ function RoutineCanvasInner({
 				{empty ? (
 					<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
 						<div className="rounded border border-dashed border-line bg-paper-2/80 px-4 py-3 text-center font-mono text-2xs text-ink-3">
-							No steps yet.
+							{t("routines.routineCanvas.noSteps")}
 							<br />
-							Click <span className="font-semibold text-ink-2">+ Add step</span> above to begin.
+							{t("routines.routineCanvas.addStepHintBefore")}{" "}
+							<span className="font-semibold text-ink-2">+ {t("routines.addStepPalette.addStep")}</span>{" "}
+							{t("routines.routineCanvas.addStepHintAfter")}
 						</div>
 					</div>
 				) : null}
@@ -584,6 +588,7 @@ function CompileErrorStrip({
 }: {
 	errors: ReadonlyArray<CompileError>;
 }): JSX.Element {
+	const { t } = useTranslation();
 	const visible = errors.slice(0, 3);
 	const overflow = errors.length - visible.length;
 	return (
@@ -603,7 +608,7 @@ function CompileErrorStrip({
 			))}
 			{overflow > 0 ? (
 				<div className="rounded border border-danger/40 bg-danger/5 px-3 py-1 text-center font-mono text-2xs text-danger">
-					+{overflow} more
+					{t("routines.routineCanvas.more", { count: overflow })}
 				</div>
 			) : null}
 		</div>
@@ -628,20 +633,21 @@ function RunOverlayPicker({
 	selectedRunId: string | null;
 	onSelect: (id: string | null) => void;
 }): JSX.Element {
+	const { t } = useTranslation();
 	return (
 		<div className="pointer-events-auto absolute right-3 top-3 z-20 flex items-center gap-1.5 rounded border border-line bg-paper-2/95 px-2 py-1 shadow-sm">
 			<span className="font-mono text-2xs uppercase tracking-meta text-ink-3">
-				run
+				{t("routines.routineCanvas.run")}
 			</span>
 			<select
 				value={selectedRunId ?? ""}
 				onChange={(e) => onSelect(e.target.value || null)}
 				className="field h-6 max-w-[220px] truncate font-mono text-2xs"
-				aria-label="Select run to overlay"
+				aria-label={t("routines.routineCanvas.selectRunAria")}
 			>
 				{runs.map((r) => (
 					<option key={r.id} value={r.id}>
-						{formatRunLabel(r)}
+						{formatRunLabel(r, t)}
 					</option>
 				))}
 			</select>
@@ -649,14 +655,14 @@ function RunOverlayPicker({
 	);
 }
 
-function formatRunLabel(run: RoutineRun): string {
+function formatRunLabel(run: RoutineRun, t: (key: string, opts?: Record<string, unknown>) => string): string {
 	const status = !run.endedAt
-		? "running"
+		? t("routines.routineCanvas.runStatus.running")
 		: run.abortReason
-			? "aborted"
+			? t("routines.routineCanvas.runStatus.aborted")
 			: run.exitCode === 0
-				? "ok"
-				: "fail";
+				? t("routines.routineCanvas.runStatus.ok")
+				: t("routines.routineCanvas.runStatus.fail");
 	const ts = run.startedAt;
 	// "MM-DD HH:MM" — short enough for a 220px select, precise enough to
 	// disambiguate adjacent runs.

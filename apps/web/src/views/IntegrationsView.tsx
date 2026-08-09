@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Layout } from "@/components/Layout";
 import { ExternalLink, Plug } from "lucide-react";
 
@@ -12,23 +13,24 @@ import { ExternalLink, Plug } from "lucide-react";
  * See `omp-deck/docs/proposals/routines-v1-plan.md` §5 for the design.
  */
 export function IntegrationsView() {
+	const { t } = useTranslation();
 	return (
 		<Layout
 			sidebar={{
 				content: (
 					<div className="p-3">
-						<div className="meta mb-2">Integrations</div>
+						<div className="meta mb-2">{t("views.integrations.title")}</div>
 						<div className="text-sm text-ink-3">
-							V1.5 will surface installed MCP servers and one-click Workspace setup.
+							{t("views.integrations.sidebarHint")}
 						</div>
 					</div>
 				),
-				label: "Integrations",
+				label: t("views.integrations.title"),
 			}}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
-						<div className="meta">Integrations</div>
+						<div className="meta">{t("views.integrations.title")}</div>
 						<span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-2xs uppercase tracking-meta text-accent">
 							V1.5
 						</span>
@@ -37,11 +39,10 @@ export function IntegrationsView() {
 						<div className="max-w-2xl space-y-4">
 							<div className="flex items-center gap-2">
 								<Plug className="h-5 w-5 text-accent" />
-								<h2 className="text-lg font-medium text-ink">Coming in V1.5</h2>
+								<h2 className="text-lg font-medium text-ink">{t("views.integrations.comingSoon")}</h2>
 							</div>
 							<p className="text-sm text-ink-2">
-								The Integrations page will host one-click installs for the curated MCP
-								server catalog —{" "}
+								{t("views.integrations.catalogIntro")}{" "}
 								<a
 									href="https://github.com/taylorwilsdon/google_workspace_mcp"
 									target="_blank"
@@ -50,28 +51,26 @@ export function IntegrationsView() {
 								>
 									Google Workspace
 								</a>{" "}
-								(Gmail + Calendar + Drive + Docs + 8 more), Slack, GitHub, Linear,
-								Notion, Discord. Per-tenant OAuth, automatic refresh, advertised-tools
-								panel.
+								{t("views.integrations.catalogDetail")}
 							</p>
 							<p className="text-sm text-ink-2">
-								<strong className="text-ink">In V1:</strong> install MCP servers from
-								chat with{" "}
+								<strong className="text-ink">{t("views.integrations.inV1")}</strong>{" "}
+								{t("views.integrations.v1Install")}{" "}
 								<code className="paper-code px-1 py-0.5 text-xs">/mcp install &lt;url-or-smithery-id&gt;</code>{" "}
-								or{" "}
+								{t("views.integrations.v1Or")}{" "}
 								<code className="paper-code px-1 py-0.5 text-xs">/mcp smithery-search &lt;query&gt;</code>.
-								Once installed, any routine's <code>agent</code> step can use them via{" "}
+								{t("views.integrations.v1OnceInstalled")} <code>agent</code>{" "}
+								{t("views.integrations.v1Via")}{" "}
 								<code className="paper-code px-1 py-0.5 text-xs">mcp_servers_allowed: [...]</code>.
 							</p>
 							<p className="text-sm text-ink-2">
-								The dedicated <code>mcp</code> step type for deterministic tool calls
-								also lands in V1.5 once the SDK bridge exposes a direct{" "}
+								{t("views.integrations.dedicatedStep")} <code>mcp</code>{" "}
+								{t("views.integrations.dedicatedStep2")}{" "}
 								<code className="paper-code px-1 py-0.5 text-xs">callMcpTool()</code>{" "}
-								surface — the schema accepts the step spec today, only execution is
-								deferred.
+								{t("views.integrations.dedicatedStep3")}
 							</p>
 							<div className="rounded border border-line bg-paper-2 p-3">
-								<div className="meta mb-1.5">Design doc</div>
+								<div className="meta mb-1.5">{t("views.integrations.designDoc")}</div>
 								<a
 									href="https://github.com/bjb2/omp-deck/blob/main/docs/proposals/routines-v1-plan.md#5-integrations-via-mcp-v15"
 									target="_blank"

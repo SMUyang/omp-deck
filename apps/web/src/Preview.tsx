@@ -5,6 +5,7 @@
  * real omp turn. Mounted by App.tsx when `?preview=1` is in the URL.
  */
 
+import { useTranslation } from "react-i18next";
 import type { AssistantContentBlock, ToolCallStream } from "@/lib/types";
 import { AssistantMessage } from "./components/messages/AssistantMessage";
 import { UserMessage } from "./components/messages/UserMessage";
@@ -202,20 +203,17 @@ const toolCalls: Record<string, ToolCallStream> = {
 };
 
 export function PreviewPage() {
+	const { t } = useTranslation();
 	return (
 		<div className="h-full w-full overflow-y-auto bg-paper">
 			<div className="mx-auto max-w-[920px] space-y-10 px-6 py-10">
 				<header className="space-y-2 border-b border-line pb-4">
-					<div className="meta">omp-deck preview</div>
-					<h1 className="font-mono text-lg text-ink">Renderer gallery</h1>
-					<p className="text-sm text-ink-3">
-						Static fixtures for every message + tool renderer. Use this to inspect
-						design tokens, syntax highlighting, and lifecycle states without firing a
-						real omp turn.
-					</p>
+					<div className="meta">{t("core.preview.tagline")}</div>
+					<h1 className="font-mono text-lg text-ink">{t("core.preview.title")}</h1>
+					<p className="text-sm text-ink-3">{t("core.preview.description")}</p>
 				</header>
 
-				<Section title="Messages">
+				<Section title={t("core.preview.sectionMessages")}>
 					<UserMessage
 						msg={{
 							id: "u-1",
@@ -254,19 +252,19 @@ export function PreviewPage() {
 					/>
 				</Section>
 
-				<Section title="Thinking — collapsed by default">
+				<Section title={t("core.preview.sectionThinking")}>
 					<ThinkingBlock
 						text={`Reasoning step by step\n1. Plan\n2. Execute\n3. Report\n\n**Sub-plan:** explore, then act.`}
 					/>
 				</Section>
 
-				<Section title="Notices">
+				<Section title={t("core.preview.sectionNotices")}>
 					<Notice msg={{ id: "n1", role: "notice", level: "info", source: "ttsr", message: "Fallback applied: gpt-4o → claude-opus-4-7 (default)", timestamp: NOW }} />
 					<Notice msg={{ id: "n2", role: "notice", level: "warning", message: "Auto-compaction starting (context > 80%)", timestamp: NOW }} />
 					<Notice msg={{ id: "n3", role: "notice", level: "error", source: "provider", message: "429 rate limit — backing off 4s", timestamp: NOW }} />
 				</Section>
 
-				<Section title="Tools — each in its own assistant frame">
+				<Section title={t("core.preview.sectionTools")}>
 					{(
 						[
 							["tc-read", "read"],

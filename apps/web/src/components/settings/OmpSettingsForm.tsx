@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { settingsApi } from "@/lib/settings-api";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +29,7 @@ interface SchemaTab {
 }
 
 export function OmpSettingsForm() {
+	const { t } = useTranslation();
 	const [config, setConfig] = useState<Record<string, unknown> | null>(null);
 	const [tabs, setTabs] = useState<SchemaTab[]>([]);
 	const [configPath, setConfigPath] = useState("");
@@ -101,7 +103,7 @@ export function OmpSettingsForm() {
 			const resp = await settingsApi.patchOmpConfig(updates);
 			setConfig(resp.config);
 			setRawText(JSON.stringify(resp.config, null, 2));
-			setNote(`Saved: ${path}`);
+			setNote(t("settings.ompSettingsForm.saved", { path }));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -117,13 +119,13 @@ export function OmpSettingsForm() {
 			const resp = await settingsApi.patchOmpConfig(parsed);
 			setConfig(resp.config);
 			setRawText(JSON.stringify(resp.config, null, 2));
-			setNote("Raw config saved.");
+			setNote(t("settings.ompSettingsForm.rawConfigSaved"));
 		} catch (err) {
 			setRawError(err instanceof Error ? err.message : String(err));
 		}
 	}
 
-	if (!loaded) return <div className="font-mono text-2xs text-ink-3">Loading omp settings…</div>;
+	if (!loaded) return <div className="font-mono text-2xs text-ink-3">{t("settings.ompSettingsForm.loading")}</div>;
 
 	const field = (s: SchemaSetting) => {
 		const value = get(s.path);
@@ -173,7 +175,7 @@ export function OmpSettingsForm() {
 							step="any"
 							className="field h-7 px-1.5 font-mono text-2xs"
 							defaultValue={typeof effective === "number" ? String(effective) : ""}
-							placeholder={hasValue ? "" : "default"}
+							placeholder={hasValue ? "" : t("settings.ompSettingsForm.defaultPlaceholder")}
 							onBlur={(e) => {
 								if (e.target.value !== "" && Number.isFinite(Number(e.target.value))) {
 									void saveField(path, Number(e.target.value));
@@ -192,7 +194,7 @@ export function OmpSettingsForm() {
 							type="text"
 							className="field h-7 px-1.5 font-mono text-2xs"
 							defaultValue={typeof effective === "string" ? effective : ""}
-							placeholder={hasValue ? "" : "default"}
+							placeholder={hasValue ? "" : t("settings.ompSettingsForm.defaultPlaceholder")}
 							onBlur={(e) => {
 								if (e.target.value !== (hasValue ? effective : "")) {
 									void saveField(path, e.target.value);
@@ -208,7 +210,7 @@ export function OmpSettingsForm() {
 				return (
 					<label className="flex flex-col gap-1 rounded border border-line bg-paper-2/40 px-2 py-1.5">
 						<span className="font-mono text-2xs text-ink">{s.label}</span>
-						<span className="font-mono text-2xs text-ink-4">{path} (JSON)</span>
+						<span className="font-mono text-2xs text-ink-4">{t("settings.ompSettingsForm.jsonLabel", { path })}</span>
 						<textarea
 							className="field h-20 resize-y px-1.5 py-1 font-mono text-2xs"
 							value={draft ?? JSON.stringify(effective ?? (s.type === "array" ? [] : {}), null, 2)}
@@ -225,7 +227,7 @@ export function OmpSettingsForm() {
 									});
 									void saveField(path, parsed);
 								} catch {
-									setError(`Invalid JSON for ${path}`);
+									setError(t("settings.ompSettingsForm.invalidJson", { path }));
 								}
 							}}
 							spellCheck={false}
@@ -241,15 +243,17 @@ export function OmpSettingsForm() {
 	return (
 		<div className="flex flex-col gap-6">
 			<div>
-				<h2 className="meta">OMP Native Settings</h2>
+				<h2 className="meta">{t("settings.ompSettingsForm.title")}</h2>
 				<p className="mt-1 text-xs text-ink-3">
-					Read/write <code className="text-2xs">{configPath || "~/.omp/agent/config.yml"}</code>. Changes take effect on next session or restart.
+					{t("settings.ompSettingsForm.readWriteBefore")}{" "}
+					<code className="text-2xs">{configPath || "~/.omp/agent/config.yml"}</code>
+					{t("settings.ompSettingsForm.readWriteAfter")}
 				</p>
 			</div>
 
 			{schemaUnavailable ? (
 				<div className="rounded border border-warn/40 bg-warn/5 p-3 text-xs text-ink-2">
-					Schema form unavailable (server too old for /settings/omp-schema) — use the raw config.yml editor below. Restart the deck server to enable the form.
+					{t("settings.ompSettingsForm.schemaUnavailable")}
 				</div>
 			) : null}
 
@@ -269,11 +273,11 @@ export function OmpSettingsForm() {
 				);
 			})}
 
-			{savingField ? <div className="text-2xs text-ink-3">Saving {savingField}…</div> : null}
+			{savingField ? <div className="text-2xs text-ink-3">{t("settings.ompSettingsForm.saving", { field: savingField })}</div> : null}
 
 			<div>
 				<button type="button" onClick={() => setShowRaw((v) => !v)} className="btn-secondary h-7 text-2xs">
-					{showRaw ? "Hide" : "Show"} raw config.yml
+					{showRaw ? t("settings.ompSettingsForm.hideRaw") : t("settings.ompSettingsForm.showRaw")}
 				</button>
 				{showRaw ? (
 					<div className="mt-2">
@@ -284,8 +288,8 @@ export function OmpSettingsForm() {
 							spellCheck={false}
 						/>
 						<div className="mt-2 flex items-center gap-3">
-							<Button onClick={() => void saveRaw()} variant="ghost">Save raw config</Button>
-							<Button onClick={() => void refresh()} variant="ghost">Reset</Button>
+							<Button onClick={() => void saveRaw()} variant="ghost">{t("settings.ompSettingsForm.saveRawConfig")}</Button>
+							<Button onClick={() => void refresh()} variant="ghost">{t("settings.ompSettingsForm.reset")}</Button>
 							{rawError ? <span className="text-xs text-danger">{rawError}</span> : null}
 						</div>
 					</div>

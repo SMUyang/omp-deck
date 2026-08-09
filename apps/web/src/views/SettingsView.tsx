@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { Download, Play, RotateCcw, Save, Square, X } from "lucide-react";
 import type {
@@ -45,22 +46,23 @@ import {
 } from "./model-roles";
 
 const SECTIONS = [
-	{ id: "env", label: "Env", description: "Process and deck-managed variables" },
-	{ id: "providers", label: "Providers", description: "OAuth, custom API providers" },
-	{ id: "cpa", label: "CPA", description: "CLIProxyAPI connection and usage" },
-	{ id: "messaging", label: "Messaging", description: "Telegram and future chat bridges" },
-	{ id: "orientation", label: "Orientation", description: "Prelude, /start, maintenance gate" },
-	{ id: "model-roles", label: "Model Roles", description: "OMP model role bindings" },
-	{ id: "omp-config", label: "OMP Config", description: "All omp native settings" },
-	{ id: "appearance", label: "Appearance", description: "Themes, colors, fonts" },
-	{ id: "workspaces", label: "Workspaces", description: "Pinned roots and display names" },
-	{ id: "notifications", label: "Notifications", description: "Idle alerts and quiet hours" },
-	{ id: "about", label: "About", description: "Version, paths, diagnostics" },
+	{ id: "env", labelKey: "views.settings.section.env", descriptionKey: "views.settings.section.envDesc" },
+	{ id: "providers", labelKey: "views.settings.section.providers", descriptionKey: "views.settings.section.providersDesc" },
+	{ id: "cpa", labelKey: "views.settings.section.cpa", descriptionKey: "views.settings.section.cpaDesc" },
+	{ id: "messaging", labelKey: "views.settings.section.messaging", descriptionKey: "views.settings.section.messagingDesc" },
+	{ id: "orientation", labelKey: "views.settings.section.orientation", descriptionKey: "views.settings.section.orientationDesc" },
+	{ id: "model-roles", labelKey: "views.settings.section.modelRoles", descriptionKey: "views.settings.section.modelRolesDesc" },
+	{ id: "omp-config", labelKey: "views.settings.section.ompConfig", descriptionKey: "views.settings.section.ompConfigDesc" },
+	{ id: "appearance", labelKey: "views.settings.section.appearance", descriptionKey: "views.settings.section.appearanceDesc" },
+	{ id: "workspaces", labelKey: "views.settings.section.workspaces", descriptionKey: "views.settings.section.workspacesDesc" },
+	{ id: "notifications", labelKey: "views.settings.section.notifications", descriptionKey: "views.settings.section.notificationsDesc" },
+	{ id: "about", labelKey: "views.settings.section.about", descriptionKey: "views.settings.section.aboutDesc" },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 export function SettingsView() {
+	const { t } = useTranslation();
 	const [params, setParams] = useSearchParams();
 	const selected = normalizeSection(params.get("section"));
 
@@ -72,13 +74,13 @@ export function SettingsView() {
 
 	return (
 		<Layout
-			sidebar={{ content: <SettingsSideRail />, label: "Settings Nav" }}
-			inspector={{ content: <SettingsInspector />, label: "Settings Detail" }}
+			sidebar={{ content: <SettingsSideRail />, label: t("views.settings.nav") }}
+			inspector={{ content: <SettingsInspector />, label: t("views.settings.detail") }}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
 					<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
-						<div className="meta">Settings</div>
-						<div className="text-xs text-ink-3">Configure this local deck instance</div>
+						<div className="meta">{t("views.settings.title")}</div>
+						<div className="text-xs text-ink-3">{t("views.settings.subtitle")}</div>
 					</div>
 					<div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] overflow-hidden">
 						<nav className="border-r border-line bg-paper-2/40 p-2">
@@ -93,9 +95,9 @@ export function SettingsView() {
 									)}
 								>
 									<div className="font-mono text-xs font-medium uppercase tracking-meta">
-										{section.label}
+										{t(section.labelKey)}
 									</div>
-									<div className="mt-0.5 text-xs text-ink-3">{section.description}</div>
+									<div className="mt-0.5 text-xs text-ink-3">{t(section.descriptionKey)}</div>
 								</button>
 							))}
 						</nav>
@@ -135,6 +137,7 @@ export function SettingsView() {
 }
 
 function EnvSection() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<ListEnvSettingsResponse | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | undefined>();
@@ -176,7 +179,7 @@ function EnvSection() {
 	async function restart(): Promise<void> {
 		try {
 			const resp = await settingsApi.restartServer();
-			setRestartMessage(resp.message || "Restart scheduled");
+			setRestartMessage(resp.message || t("views.settings.env.restartScheduled"));
 		} catch (e) {
 			setError(String(e));
 		}
@@ -185,21 +188,20 @@ function EnvSection() {
 	return (
 		<div className="mx-auto max-w-6xl space-y-4">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">Environment variables</h1>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.env.title")}</h1>
 				<p className="mt-1 max-w-3xl text-sm text-ink-3">
-					Edits write to the deck-managed env file only. Variables from the launching process stay
-					higher priority until you remove them from that shell/profile.
+					{t("views.settings.env.intro")}
 				</p>
 			</div>
 
 			{data?.restartRequired ? (
 				<div className="flex items-center gap-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
 					<div className="min-w-0 flex-1">
-						Restart server to apply one or more restart-required values from the managed .env.
+						{t("views.settings.env.restartRequired")}
 					</div>
 					<Button variant="outline" size="sm" onClick={() => void restart()}>
 						<RotateCcw className="h-3.5 w-3.5" />
-						Restart
+						{t("views.settings.env.restart")}
 					</Button>
 				</div>
 			) : null}
@@ -219,12 +221,12 @@ function EnvSection() {
 				<div>envFile: {data?.envFilePath ?? "..."}</div>
 			</div>
 
-			{loading ? <div className="text-sm text-ink-3">Loading...</div> : null}
+			{loading ? <div className="text-sm text-ink-3">{t("views.settings.loading")}</div> : null}
 			{data ? (
 				<>
-					<EnvTable title="omp-deck" entries={grouped.deck} onEdit={setEditing} />
-					<EnvTable title="messaging bridges" entries={grouped.messaging} onEdit={setEditing} />
-					<EnvTable title="omp SDK / providers" entries={grouped.sdk} onEdit={setEditing} />
+					<EnvTable title={t("views.settings.env.deckTable")} entries={grouped.deck} onEdit={setEditing} />
+					<EnvTable title={t("views.settings.env.messagingTable")} entries={grouped.messaging} onEdit={setEditing} />
+					<EnvTable title={t("views.settings.env.sdkTable")} entries={grouped.sdk} onEdit={setEditing} />
 				</>
 			) : null}
 
@@ -241,6 +243,7 @@ function EnvSection() {
 }
 
 function MessagingSection() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<ListEnvSettingsResponse | null>(null);
 	const [bridges, setBridges] = useState<BridgeInfo[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -295,10 +298,9 @@ function MessagingSection() {
 	return (
 		<div className="mx-auto max-w-5xl space-y-4">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">Messaging bridges</h1>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.messaging.title")}</h1>
 				<p className="mt-1 max-w-3xl text-sm text-ink-3">
-					Save credentials, then start the bridge. The deck supervises the process; saving a
-					token alone does not bring the integration online.
+					{t("views.settings.messaging.intro")}
 				</p>
 			</div>
 
@@ -307,16 +309,16 @@ function MessagingSection() {
 					{error}
 				</div>
 			) : null}
-			{loading ? <div className="text-sm text-ink-3">Loading...</div> : null}
+			{loading ? <div className="text-sm text-ink-3">{t("views.settings.loading")}</div> : null}
 
 			<BridgeCard
 				title="Telegram"
-				description="DM-only long-poll bridge to local omp-deck."
+				description={t("views.settings.messaging.telegramDesc")}
 				info={telegramInfo}
 				credentialRows={[
-					{ label: "Bot token", entry: telegramToken },
-					{ label: "Allowed users", entry: telegramAllowed },
-					{ label: "Mapping DB path", entry: telegramDb },
+					{ label: t("views.settings.messaging.botToken"), entry: telegramToken },
+					{ label: t("views.settings.messaging.allowedUsers"), entry: telegramAllowed },
+					{ label: t("views.settings.messaging.mappingDbPath"), entry: telegramDb },
 				]}
 				onEdit={setEditing}
 				onApplyBridge={applyBridge}
@@ -326,7 +328,7 @@ function MessagingSection() {
 			<div className="rounded-md border border-dashed border-line bg-paper-2 p-4">
 				<div className="meta">Slack</div>
 				<p className="mt-1 text-sm text-ink-3">
-					Reserved for the same pattern: product-level setup here, shared managed-env storage underneath.
+					{t("views.settings.messaging.slackHint")}
 				</p>
 			</div>
 
@@ -360,6 +362,7 @@ function BridgeCard({
 	onApplyBridge: (next: BridgeInfo) => void;
 	onError: (message: string | undefined) => void;
 }) {
+	const { t } = useTranslation();
 	const [busy, setBusy] = useState<"start" | "stop" | "restart" | undefined>();
 
 	async function run(action: "start" | "stop" | "restart", name: BridgeName): Promise<void> {
@@ -389,14 +392,13 @@ function BridgeCard({
 					<div className="mt-0.5 text-xs text-ink-3">{description}</div>
 				</div>
 				<div className="flex items-center gap-2">
-					<Badge tone={bridgeStatusTone(status)}>{bridgeStatusLabel(status, info)}</Badge>
+					<Badge tone={bridgeStatusTone(status)}>{bridgeStatusLabel(status, info, t)}</Badge>
 				</div>
 			</div>
 			<div className="space-y-3 p-3">
 				{missing.length > 0 ? (
 					<div className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
-						Missing required env: <span className="font-mono">{missing.join(", ")}</span>. Set
-						these below before starting the bridge.
+						{t("views.settings.bridge.missingEnv", { names: missing.join(", ") })}
 					</div>
 				) : null}
 				{info?.lastError ? (
@@ -412,7 +414,7 @@ function BridgeCard({
 						onClick={() => info && void run("start", info.name)}
 					>
 						<Play className="h-3.5 w-3.5" />
-						{busy === "start" ? "Starting..." : "Start"}
+						{busy === "start" ? t("views.settings.bridge.starting") : t("views.settings.bridge.start")}
 					</Button>
 					<Button
 						variant="outline"
@@ -421,7 +423,7 @@ function BridgeCard({
 						onClick={() => info && void run("stop", info.name)}
 					>
 						<Square className="h-3.5 w-3.5" />
-						{busy === "stop" ? "Stopping..." : "Stop"}
+						{busy === "stop" ? t("views.settings.bridge.stopping") : t("views.settings.bridge.stop")}
 					</Button>
 					<Button
 						variant="outline"
@@ -430,7 +432,7 @@ function BridgeCard({
 						onClick={() => info && void run("restart", info.name)}
 					>
 						<RotateCcw className="h-3.5 w-3.5" />
-						{busy === "restart" ? "Restarting..." : "Restart"}
+						{busy === "restart" ? t("views.settings.bridge.restarting") : t("views.settings.bridge.restart")}
 					</Button>
 					{info ? <BridgeMeta info={info} /> : null}
 				</div>
@@ -446,18 +448,20 @@ function BridgeCard({
 }
 
 function BridgeMeta({ info }: { info: BridgeInfo }) {
+	const { t } = useTranslation();
 	const parts: string[] = [];
 	if (info.status === "running") {
-		if (info.pid !== undefined) parts.push(`pid ${info.pid}`);
-		if (info.startedAt) parts.push(`up ${formatUptime(info.startedAt)}`);
+		if (info.pid !== undefined) parts.push(t("views.settings.bridge.pid", { pid: info.pid }));
+		if (info.startedAt) parts.push(t("views.settings.bridge.up", { uptime: formatUptime(info.startedAt) }));
 	} else if (info.exitCode !== undefined) {
-		parts.push(`exit ${info.exitCode}`);
+		parts.push(t("views.settings.bridge.exit", { code: info.exitCode }));
 	}
-	if (info.crashCount > 0) parts.push(`crashes ${info.crashCount}`);
+	if (info.crashCount > 0) parts.push(t("views.settings.bridge.crashes", { count: info.crashCount }));
 	if (parts.length === 0) return null;
 	return <div className="font-mono text-2xs text-ink-3">{parts.join(" · ")}</div>;
 }
 function BridgeLogsPanel({ name }: { name: BridgeName }) {
+	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const [lines, setLines] = useState<Array<{ stream: string; text: string; timestamp: string }>>([]);
 	const [fetching, setFetching] = useState(false);
@@ -493,13 +497,13 @@ function BridgeLogsPanel({ name }: { name: BridgeName }) {
 				className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-ink-2 hover:bg-paper-3"
 				onClick={() => setOpen((v) => !v)}
 			>
-				<span>Bridge logs</span>
-				<span className="font-mono text-2xs text-ink-3">{open ? "hide" : "show"}</span>
+				<span>{t("views.settings.bridge.logs")}</span>
+				<span className="font-mono text-2xs text-ink-3">{open ? t("views.settings.bridge.hide") : t("views.settings.bridge.show")}</span>
 			</button>
 			{open ? (
 				<div className="max-h-64 overflow-auto border-t border-line bg-paper p-2 font-mono text-2xs">
-					{fetching && lines.length === 0 ? <div className="text-ink-3">Loading...</div> : null}
-					{!fetching && lines.length === 0 ? <div className="text-ink-3">No log lines yet.</div> : null}
+					{fetching && lines.length === 0 ? <div className="text-ink-3">{t("views.settings.loading")}</div> : null}
+					{!fetching && lines.length === 0 ? <div className="text-ink-3">{t("views.settings.bridge.noLogLines")}</div> : null}
 					{lines.map((line, idx) => (
 						<div
 							key={`${line.timestamp}-${idx}`}
@@ -523,22 +527,23 @@ function MessagingCredentialRow({
 	entry: EnvEntry | undefined;
 	onEdit: (entry: EnvEntry) => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="grid grid-cols-[160px_1fr_120px] items-center gap-3 px-3 py-2 text-sm">
 			<div>
 				<div className="font-medium text-ink">{label}</div>
-				<div className="font-mono text-2xs text-ink-4">{entry?.key ?? "missing schema"}</div>
+				<div className="font-mono text-2xs text-ink-4">{entry?.key ?? t("views.settings.env.missingSchema")}</div>
 			</div>
 			<div className="min-w-0">
-				<div className="truncate font-mono text-xs text-ink-2">{entry?.masked ?? "unavailable"}</div>
+				<div className="truncate font-mono text-xs text-ink-2">{entry?.masked ?? t("views.settings.env.unavailable")}</div>
 				<div className="mt-0.5 flex flex-wrap gap-1">
-					{entry ? <Badge tone={sourceTone(entry.source)}>{sourceLabel(entry.source)}</Badge> : null}
-					{entry ? envApplyBadge(entry) : null}
+					{entry ? <Badge tone={sourceTone(entry.source)}>{sourceLabel(entry.source, t)}</Badge> : null}
+					{entry ? envApplyBadge(entry, t) : null}
 				</div>
 			</div>
 			<div className="flex justify-end">
 				<Button variant="outline" size="sm" disabled={!entry} onClick={() => entry && onEdit(entry)}>
-					Replace
+					{t("views.settings.env.replace")}
 				</Button>
 			</div>
 		</div>
@@ -554,6 +559,7 @@ function EnvTable({
 	entries: EnvEntry[];
 	onEdit: (entry: EnvEntry) => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
@@ -571,12 +577,12 @@ function EnvTable({
 							<div className="mt-0.5 truncate text-xs text-ink-3">{entry.description}</div>
 						</div>
 						<div className="flex flex-col items-start gap-1">
-							<Badge tone={sourceTone(entry.source)}>{sourceLabel(entry.source)}</Badge>
-							{envApplyBadge(entry)}
+							<Badge tone={sourceTone(entry.source)}>{sourceLabel(entry.source, t)}</Badge>
+							{envApplyBadge(entry, t)}
 						</div>
 						<div className="flex justify-end">
 							<Button variant="outline" size="sm" onClick={() => onEdit(entry)}>
-								Replace
+								{t("views.settings.env.replace")}
 							</Button>
 						</div>
 					</div>
@@ -595,6 +601,7 @@ function EditEnvModal({
 	onClose: () => void;
 	onSaved: (next: ListEnvSettingsResponse) => void;
 }) {
+	const { t } = useTranslation();
 	const [value, setValue] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | undefined>();
@@ -625,37 +632,36 @@ function EditEnvModal({
 			<div className="flex h-11 items-center gap-2 border-b border-line px-3">
 				<div className="min-w-0 flex-1">
 					<div className="truncate font-mono text-xs font-semibold text-ink">{entry.key}</div>
-					<div className="text-xs text-ink-3">Writes to managed .env only</div>
+					<div className="text-xs text-ink-3">{t("views.settings.env.writesToEnv")}</div>
 				</div>
-				<Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+				<Button variant="ghost" size="icon" onClick={onClose} aria-label={t("views.settings.close")}>
 					<X className="h-4 w-4" />
 				</Button>
 			</div>
 			<div className="space-y-3 overflow-auto p-4">
 				<div className="flex flex-wrap gap-1.5">
-					<Badge tone={sourceTone(entry.source)}>{sourceLabel(entry.source)}</Badge>
-					{entry.sensitive ? <Badge tone="danger">secret</Badge> : null}
-					{entry.restartRequired ? <Badge tone="warn">restart required</Badge> : <Badge tone="success">hot apply</Badge>}
+					<Badge tone={sourceTone(entry.source)}>{sourceLabel(entry.source, t)}</Badge>
+					{entry.sensitive ? <Badge tone="danger">{t("views.settings.env.secret")}</Badge> : null}
+					{entry.restartRequired ? <Badge tone="warn">{t("views.settings.env.restartRequired")}</Badge> : <Badge tone="success">{t("views.settings.env.hotApply")}</Badge>}
 				</div>
 				<p className="text-sm text-ink-3">{entry.description}</p>
 				{entry.source === "process-env" ? (
 					<div className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
-						This key is currently supplied by the launching process. Replacing it here writes the
-						managed env file, but process env remains higher priority until removed upstream.
+						{t("views.settings.env.processEnvWarning")}
 					</div>
 				) : null}
 				<label className="block">
-					<div className="meta mb-1">New value</div>
+					<div className="meta mb-1">{t("views.settings.env.newValue")}</div>
 					<input
 						className="field h-9 w-full px-2 font-mono text-sm"
 						type={entry.sensitive ? "password" : "text"}
 						value={value}
 						onChange={(e) => setValue(e.target.value)}
-						placeholder={entry.sensitive ? "Paste replacement value" : entry.defaultValue ?? "Unset"}
+						placeholder={entry.sensitive ? t("views.settings.env.pasteValue") : entry.defaultValue ?? t("views.settings.env.unset")}
 					/>
 				</label>
 				{entry.options ? (
-					<div className="text-xs text-ink-3">Allowed: {entry.options.join(", ")}</div>
+					<div className="text-xs text-ink-3">{t("views.settings.env.allowed", { list: entry.options.join(", ") })}</div>
 				) : null}
 				{error ? (
 					<div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
@@ -665,15 +671,15 @@ function EditEnvModal({
 			</div>
 			<div className="flex items-center justify-between gap-2 border-t border-line px-3 py-3">
 				<Button variant="danger" size="sm" disabled={saving} onClick={() => void save(null)}>
-					Unset
+					{t("views.settings.env.unset")}
 				</Button>
 				<div className="flex gap-2">
 					<Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
-						Cancel
+						{t("views.settings.cancel")}
 					</Button>
 					<Button variant="primary" size="sm" onClick={() => void save(value)} disabled={saving}>
 						<Save className="h-3.5 w-3.5" />
-						Save
+						{t("views.settings.save")}
 					</Button>
 				</div>
 			</div>
@@ -682,14 +688,14 @@ function EditEnvModal({
 }
 
 function AppearanceSection() {
+	const { t } = useTranslation();
 	const theme = useTheme();
 	return (
 		<div className="mx-auto max-w-5xl space-y-4">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">Appearance</h1>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.appearance.title")}</h1>
 				<p className="mt-1 max-w-3xl text-sm text-ink-3">
-					Themes swap the entire palette and font stack at runtime. Your choice is stored in this
-					browser; clearing it falls back to the system color preference.
+					{t("views.settings.appearance.intro")}
 				</p>
 			</div>
 
@@ -707,11 +713,11 @@ function AppearanceSection() {
 
 			<div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-paper-2 px-3 py-2 text-sm">
 				<div className="min-w-0">
-					<div className="meta">System preference</div>
+					<div className="meta">{t("views.settings.appearance.systemPreference")}</div>
 					<div className="mt-0.5 text-xs text-ink-3">
 						{theme.usingSystem
-							? `Following the OS: ${theme.systemPreferred}.`
-							: `Pinned to ${theme.stored}. The OS currently prefers ${theme.systemPreferred}.`}
+							? t("views.settings.appearance.followingOs", { os: theme.systemPreferred })
+							: t("views.settings.appearance.pinnedTo", { stored: theme.stored, os: theme.systemPreferred })}
 					</div>
 				</div>
 				<Button
@@ -720,24 +726,24 @@ function AppearanceSection() {
 					disabled={theme.usingSystem}
 					onClick={() => theme.clear()}
 				>
-					Match system
+					{t("views.settings.appearance.matchSystem")}
 				</Button>
 			</div>
 
 			<div className="overflow-hidden rounded-md border border-line bg-paper">
 				<div className="border-b border-line bg-paper-2 px-3 py-2">
-					<div className="meta">Font preview</div>
-					<div className="mt-0.5 text-xs text-ink-3">Driven by the active theme. v1 ships one font set.</div>
+					<div className="meta">{t("views.settings.appearance.fontPreview")}</div>
+					<div className="mt-0.5 text-xs text-ink-3">{t("views.settings.appearance.fontPreviewHint")}</div>
 				</div>
 				<div className="space-y-3 p-4">
 					<div>
-						<div className="meta mb-1">Sans</div>
+						<div className="meta mb-1">{t("views.settings.appearance.sans")}</div>
 						<div className="font-sans text-base text-ink">
-							The agent finished compaction and routed the next prompt back to the original session.
+							{t("views.settings.appearance.sansSample")}
 						</div>
 					</div>
 					<div>
-						<div className="meta mb-1">Mono</div>
+						<div className="meta mb-1">{t("views.settings.appearance.mono")}</div>
 						<div className="rounded-md border border-line bg-paper-code px-3 py-2 font-mono text-xs text-ink-2">
 							{"const status = await bridgesApi.start(\"telegram\");"}
 						</div>
@@ -755,6 +761,7 @@ function AppearanceSection() {
  * pulled from the heartbeat frame, and a tail of the in-app notification log.
  */
 function NotificationsSection() {
+	const { t } = useTranslation();
 	const {
 		permission,
 		requestPermission,
@@ -788,10 +795,9 @@ function NotificationsSection() {
 	return (
 		<div className="mx-auto max-w-3xl space-y-4">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">Notifications</h1>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.notifications.title")}</h1>
 				<p className="mt-1 text-sm text-ink-3">
-					Browser notifications and audio cues for routine failures, agent activity,
-					and other server-emitted events. Settings live in this browser only.
+					{t("views.settings.notifications.intro")}
 				</p>
 			</div>
 
@@ -838,6 +844,7 @@ function PermissionCard({
 	permission: ReturnType<typeof useNotificationPermission>["permission"];
 	onRequest: () => void;
 }) {
+	const { t } = useTranslation();
 	const tone =
 		permission === "granted"
 			? "success"
@@ -848,48 +855,39 @@ function PermissionCard({
 					: "warn";
 	const label =
 		permission === "granted"
-			? "Granted"
+			? t("views.settings.notifications.granted")
 			: permission === "denied"
-				? "Denied"
+				? t("views.settings.notifications.denied")
 				: permission === "unsupported"
-					? "Unsupported"
-					: "Not requested";
+					? t("views.settings.notifications.unsupported")
+					: t("views.settings.notifications.notRequested");
 
 	return (
 		<div className="rounded-md border border-line bg-paper-2 p-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div className="min-w-0">
-					<div className="meta">Browser permission</div>
+					<div className="meta">{t("views.settings.notifications.browserPermission")}</div>
 					<div className="mt-0.5 text-sm text-ink">
-						OS-level notifications when the deck tab is in the background.
+						{t("views.settings.notifications.browserPermissionDesc")}
 					</div>
 				</div>
 				<Badge tone={tone}>{label}</Badge>
 			</div>
 			<div className="mt-3 text-xs text-ink-3">
 				{permission === "default" ? (
-					<>
-						Permission has not been requested yet. The deck will only emit OS notifications
-						after you grant access.
-					</>
+					<>{t("views.settings.notifications.permDefault")}</>
 				) : permission === "granted" ? (
-					<>
-						OS notifications will fire for items the server marks important
-						(routine failures, long-running steps, agent task completions).
-					</>
+					<>{t("views.settings.notifications.permGranted")}</>
 				) : permission === "denied" ? (
-					<>
-						The browser is blocking notifications for this site. Re-enable from the site
-						settings — usually the lock icon next to the address bar — then reload.
-					</>
+					<>{t("views.settings.notifications.permDenied")}</>
 				) : (
-					<>This browser doesn't expose the Notifications API.</>
+					<>{t("views.settings.notifications.permUnsupported")}</>
 				)}
 			</div>
 			{permission === "default" ? (
 				<div className="mt-3">
 					<Button size="sm" variant="primary" onClick={onRequest}>
-						Enable browser notifications
+						{t("views.settings.notifications.enable")}
 					</Button>
 				</div>
 			) : null}
@@ -904,15 +902,15 @@ function AudioCard({
 	audioEnabled: boolean;
 	onToggle: (enabled: boolean) => void;
 }) {
+	const { t } = useTranslation();
 	const levels: NotificationLevel[] = ["info", "warn", "error", "critical"];
 	return (
 		<div className="rounded-md border border-line bg-paper-2 p-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div className="min-w-0">
-					<div className="meta">Audio cues</div>
+					<div className="meta">{t("views.settings.notifications.audioCues")}</div>
 					<div className="mt-0.5 text-sm text-ink">
-						Synthesized tones layered on top of OS notifications. Each level has
-						a distinct sequence — info is short, critical is loud.
+						{t("views.settings.notifications.audioCuesDesc")}
 					</div>
 				</div>
 				<label className="flex items-center gap-2 text-xs text-ink-2">
@@ -921,7 +919,7 @@ function AudioCard({
 						checked={audioEnabled}
 						onChange={(e) => onToggle(e.target.checked)}
 					/>
-					<span>{audioEnabled ? "Enabled" : "Muted"}</span>
+					<span>{audioEnabled ? t("views.settings.notifications.enabled") : t("views.settings.notifications.muted")}</span>
 				</label>
 			</div>
 			<div className="mt-3 flex flex-wrap gap-2">
@@ -939,7 +937,7 @@ function AudioCard({
 				))}
 			</div>
 			{!audioEnabled ? (
-				<div className="mt-2 text-xs text-ink-3">Enable audio to preview tones.</div>
+				<div className="mt-2 text-xs text-ink-3">{t("views.settings.notifications.enableAudioHint")}</div>
 			) : null}
 		</div>
 	);
@@ -954,6 +952,7 @@ function BannerResetCard({
 	permission: ReturnType<typeof useNotificationPermission>["permission"];
 	onReset: () => void;
 }) {
+	const { t } = useTranslation();
 	// Banner only ever shows when permission is "default" AND not dismissed,
 	// so the reset is only meaningful in that combination.
 	const canReset = bannerDismissed && permission === "default";
@@ -961,16 +960,16 @@ function BannerResetCard({
 		<div className="rounded-md border border-line bg-paper-2 p-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div className="min-w-0">
-					<div className="meta">Permission banner</div>
+					<div className="meta">{t("views.settings.notifications.permissionBanner")}</div>
 					<div className="mt-0.5 text-sm text-ink">
-						The top-of-page nudge that asks you to enable notifications.
+						{t("views.settings.notifications.permissionBannerDesc")}
 					</div>
 					<div className="mt-1 text-xs text-ink-3">
 						{permission !== "default"
-							? "Banner is suppressed because permission is already decided."
+							? t("views.settings.notifications.bannerSuppressed")
 							: bannerDismissed
-								? "You dismissed the banner. Reset to bring it back."
-								: "Banner is currently visible."}
+								? t("views.settings.notifications.bannerDismissed")
+								: t("views.settings.notifications.bannerVisible")}
 					</div>
 				</div>
 				<Button
@@ -980,7 +979,7 @@ function BannerResetCard({
 					onClick={onReset}
 				>
 					<RotateCcw className="mr-1 h-3 w-3" />
-					Reset banner
+					{t("views.settings.notifications.resetBanner")}
 				</Button>
 			</div>
 		</div>
@@ -1003,35 +1002,36 @@ function ServerIdentityCard({
 		| null;
 	nowMs: number;
 }) {
+	const { t } = useTranslation();
 	if (!heartbeat) {
 		return (
 			<div className="rounded-md border border-line bg-paper-2 p-4 text-xs text-ink-3">
-				<div className="meta mb-1">Server identity</div>
-				Waiting for the first heartbeat…
+				<div className="meta mb-1">{t("views.settings.serverIdentity")}</div>
+				{t("views.settings.notifications.waitingHeartbeat")}
 			</div>
 		);
 	}
 	const ageMs = Math.max(0, nowMs - heartbeat.lastReceivedAtMs);
 	const ageTone: "success" | "warn" | "danger" =
 		ageMs < 10_000 ? "success" : ageMs < 30_000 ? "warn" : "danger";
-	const ageLabel = ageMs < 1_000 ? "just now" : `${Math.round(ageMs / 1000)}s ago`;
-	const shortSha = heartbeat.buildSha ? heartbeat.buildSha.slice(0, 7) : "unknown";
+	const ageLabel = ageMs < 1_000 ? t("views.settings.notifications.justNow") : t("views.settings.notifications.secondsAgo", { seconds: Math.round(ageMs / 1000) });
+	const shortSha = heartbeat.buildSha ? heartbeat.buildSha.slice(0, 7) : t("views.settings.notifications.unknown");
 	return (
 		<div className="rounded-md border border-line bg-paper-2 p-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
-				<div className="meta">Server identity</div>
-				<Badge tone={ageTone}>last heartbeat {ageLabel}</Badge>
+				<div className="meta">{t("views.settings.serverIdentity")}</div>
+				<Badge tone={ageTone}>{t("views.settings.notifications.lastHeartbeat", { label: ageLabel })}</Badge>
 			</div>
 			<dl className="mt-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 font-mono text-xs text-ink-2">
-				<dt className="text-ink-3">pid</dt>
+				<dt className="text-ink-3">{t("views.settings.notifications.pid")}</dt>
 				<dd>{heartbeat.pid}</dd>
-				<dt className="text-ink-3">version</dt>
+				<dt className="text-ink-3">{t("views.settings.notifications.version")}</dt>
 				<dd>{heartbeat.version}</dd>
-				<dt className="text-ink-3">build</dt>
+				<dt className="text-ink-3">{t("views.settings.notifications.build")}</dt>
 				<dd>{shortSha}</dd>
-				<dt className="text-ink-3">started</dt>
+				<dt className="text-ink-3">{t("views.settings.notifications.started")}</dt>
 				<dd>{new Date(heartbeat.serverStartedAt).toLocaleString()}</dd>
-				<dt className="text-ink-3">uptime</dt>
+				<dt className="text-ink-3">{t("views.settings.notifications.uptime")}</dt>
 				<dd>{formatUptime(heartbeat.serverStartedAt)}</dd>
 			</dl>
 		</div>
@@ -1045,18 +1045,18 @@ function RecentNotificationsCard({
 	items: ReadonlyArray<NotificationItem>;
 	onDismiss: (id: string) => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
-				<div className="meta">Recent activity</div>
+				<div className="meta">{t("views.settings.notifications.recentActivity")}</div>
 				<div className="mt-0.5 text-xs text-ink-3">
-					Latest server-emitted notifications. Capped at 50 in memory; this list
-					shows the freshest 20.
+					{t("views.settings.notifications.recentActivityDesc")}
 				</div>
 			</div>
 			{items.length === 0 ? (
 				<div className="px-3 py-6 text-center text-xs text-ink-3">
-					No notifications yet.
+					{t("views.settings.notifications.noNotifications")}
 				</div>
 			) : (
 				<ul className="divide-y divide-line">
@@ -1084,8 +1084,8 @@ function RecentNotificationsCard({
 									size="sm"
 									variant="ghost"
 									onClick={() => onDismiss(item.id)}
-									aria-label="Dismiss"
-									title="Dismiss"
+									aria-label={t("views.settings.dismiss")}
+									title={t("views.settings.dismiss")}
 								>
 									<X className="h-3 w-3" />
 								</Button>
@@ -1126,6 +1126,7 @@ function ThemeCard({
 	isPinned: boolean;
 	onPick: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<button
 			type="button"
@@ -1143,8 +1144,8 @@ function ThemeCard({
 					<div className="mt-0.5 text-xs text-ink-3">{definition.description}</div>
 				</div>
 				<div className="flex shrink-0 flex-col items-end gap-1">
-					{isActive ? <Badge tone="accent">active</Badge> : null}
-					{!isActive && isPinned ? <Badge tone="muted">pinned</Badge> : null}
+					{isActive ? <Badge tone="accent">{t("views.settings.appearance.active")}</Badge> : null}
+					{!isActive && isPinned ? <Badge tone="muted">{t("views.settings.appearance.pinned")}</Badge> : null}
 				</div>
 			</div>
 			<ThemeSwatchStrip definition={definition} />
@@ -1182,17 +1183,15 @@ function ThemeSwatchStrip({ definition }: { definition: (typeof THEMES)[number] 
  * for the prelude-vs-orchestrator architecture that motivated this surface.
  */
 function OrientationSection() {
+	const { t } = useTranslation();
 	return (
 		<div className="mx-auto max-w-5xl space-y-6">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">Orientation</h1>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.orientation.title")}</h1>
 				<p className="mt-1 max-w-3xl text-sm text-ink-3">
-					Three artifacts shape every deck session: the system-prompt prelude,
-					the <code className="font-mono text-xs">/start</code> orchestrator
-					fired on boot, and the maintenance-gate extension that nudges the
-					agent to capture work mid-session. Edit each in place; changes
-					take effect on the next session create (prelude) or the next slash
-					invocation (start) or the next gate evaluation (maintenance).
+					{t("views.settings.orientation.intro1")}{" "}
+					<code className="font-mono text-xs">/start</code>{" "}
+					{t("views.settings.orientation.intro2")}
 				</p>
 			</div>
 			<PreludeCard />
@@ -1206,6 +1205,7 @@ function OrientationSection() {
 }
 
 function PreludeCard() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<PreludeResponse | null>(null);
 	const [draft, setDraft] = useState("");
 	const [loading, setLoading] = useState(true);
@@ -1239,7 +1239,7 @@ function PreludeCard() {
 			const next = await orientationApi.putPrelude({ value: draft });
 			setData(next);
 			setDraft(next.override ?? next.default);
-			setStatus("Saved. New sessions will use this prelude.");
+			setStatus(t("views.settings.orientation.preludeSaved"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -1255,7 +1255,7 @@ function PreludeCard() {
 			const next = await orientationApi.putPrelude({ value: null });
 			setData(next);
 			setDraft(next.default);
-			setStatus("Override cleared. New sessions will use the bundled default.");
+			setStatus(t("views.settings.orientation.overrideCleared"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -1269,14 +1269,13 @@ function PreludeCard() {
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">Prelude</div>
-					{usingOverride ? <Badge tone="accent">override</Badge> : <Badge tone="muted">default</Badge>}
+					<div className="meta">{t("views.settings.orientation.prelude")}</div>
+					{usingOverride ? <Badge tone="accent">{t("views.settings.orientation.override")}</Badge> : <Badge tone="muted">{t("views.settings.orientation.default")}</Badge>}
 				</div>
 				<p className="mt-1 text-xs text-ink-3">
-					Prepended to every session&rsquo;s system prompt at{" "}
-					<code className="font-mono">createAgentSession</code>. Imperatives belong
-					in <code className="font-mono">/start</code>, not here&mdash; the prelude
-					is reference material that the orchestrator can rely on.
+					{t("views.settings.orientation.preludeDesc", { hook: "createAgentSession" })}{" "}
+					<code className="font-mono">/start</code>
+					{t("views.settings.orientation.preludeDesc2")}
 				</p>
 				<div className="mt-1 font-mono text-2xs text-ink-3">
 					{data?.path ?? "..."}
@@ -1294,7 +1293,7 @@ function PreludeCard() {
 					</div>
 				) : null}
 				{loading ? (
-					<div className="text-sm text-ink-3">Loading...</div>
+					<div className="text-sm text-ink-3">{t("views.settings.loading")}</div>
 				) : (
 					<>
 						<textarea
@@ -1306,7 +1305,7 @@ function PreludeCard() {
 						<div className="flex flex-wrap items-center gap-2">
 							<Button size="sm" onClick={() => void save()} disabled={saving || !dirty}>
 								<Save className="h-3.5 w-3.5" />
-								Save
+								{t("views.settings.save")}
 							</Button>
 							<Button
 								size="sm"
@@ -1315,10 +1314,10 @@ function PreludeCard() {
 								disabled={saving || !usingOverride}
 							>
 								<RotateCcw className="h-3.5 w-3.5" />
-								Reset to default
+								{t("views.settings.orientation.resetToDefault")}
 							</Button>
 							{dirty ? (
-								<span className="font-mono text-2xs text-warn">Unsaved changes</span>
+								<span className="font-mono text-2xs text-warn">{t("views.settings.unsavedChanges")}</span>
 							) : null}
 						</div>
 					</>
@@ -1329,6 +1328,7 @@ function PreludeCard() {
 }
 
 function StartCommandCard() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<StartCommand | null>(null);
 	const [description, setDescription] = useState("");
 	const [body, setBody] = useState("");
@@ -1364,7 +1364,7 @@ function StartCommandCard() {
 			setData(next);
 			setDescription(next.description);
 			setBody(next.body);
-			setStatus("Saved. Next /start invocation will use this body.");
+			setStatus(t("views.settings.orientation.startSaved"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -1378,14 +1378,11 @@ function StartCommandCard() {
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">/start orchestrator</div>
-					{data?.exists ? <Badge tone="default">on disk</Badge> : <Badge tone="warn">missing</Badge>}
+					<div className="meta">{t("views.settings.orientation.startOrchestrator")}</div>
+					{data?.exists ? <Badge tone="default">{t("views.settings.orientation.onDisk")}</Badge> : <Badge tone="warn">{t("views.settings.orientation.missing")}</Badge>}
 				</div>
 				<p className="mt-1 text-xs text-ink-3">
-					First user message fired on session boot. Re-read every invocation,
-					so saves take effect immediately. Numbered procedures here outrank
-					prelude imperatives by recency&mdash; put DO-THIS instructions in this
-					body, not in the prelude above.
+					{t("views.settings.orientation.startDesc")}
 				</p>
 				<div className="mt-1 font-mono text-2xs text-ink-3">
 					{data?.path ?? "..."}
@@ -1403,21 +1400,21 @@ function StartCommandCard() {
 					</div>
 				) : null}
 				{loading ? (
-					<div className="text-sm text-ink-3">Loading...</div>
+					<div className="text-sm text-ink-3">{t("views.settings.loading")}</div>
 				) : (
 					<>
 						<label className="block space-y-1">
-							<span className="meta">description</span>
+							<span className="meta">{t("views.settings.orientation.description")}</span>
 							<input
 								type="text"
 								value={description}
 								onChange={(e) => setDescription(e.target.value)}
-								placeholder="One-line summary (frontmatter description:)"
+								placeholder={t("views.settings.orientation.descriptionPlaceholder")}
 								className="block w-full rounded-md border border-line bg-paper-2 px-3 py-2 font-mono text-xs text-ink"
 							/>
 						</label>
 						<label className="block space-y-1">
-							<span className="meta">body</span>
+							<span className="meta">{t("views.settings.orientation.body")}</span>
 							<textarea
 								value={body}
 								onChange={(e) => setBody(e.target.value)}
@@ -1428,10 +1425,10 @@ function StartCommandCard() {
 						<div className="flex flex-wrap items-center gap-2">
 							<Button size="sm" onClick={() => void save()} disabled={saving || !dirty}>
 								<Save className="h-3.5 w-3.5" />
-								Save
+								{t("views.settings.save")}
 							</Button>
 							{dirty ? (
-								<span className="font-mono text-2xs text-warn">Unsaved changes</span>
+								<span className="font-mono text-2xs text-warn">{t("views.settings.unsavedChanges")}</span>
 							) : null}
 						</div>
 					</>
@@ -1442,6 +1439,7 @@ function StartCommandCard() {
 }
 
 function MaintenanceGateCard() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<MaintenanceGateState | null>(null);
 	const [draft, setDraft] = useState<{
 		enabled: boolean;
@@ -1490,7 +1488,7 @@ function MaintenanceGateCard() {
 		const parsedRel = parseKnob(draft.minReleaseAgeMs);
 		const parsedFire = parseKnob(draft.fireFloorMs);
 		if (Number.isNaN(parsedOp) || Number.isNaN(parsedRel) || Number.isNaN(parsedFire)) {
-			setError("Each knob must be a positive integer or empty (to clear override).");
+			setError(t("views.settings.orientation.gateKnobError"));
 			return;
 		}
 		setSaving(true);
@@ -1508,7 +1506,7 @@ function MaintenanceGateCard() {
 				minReleaseAgeMs: String(next.knobs.minReleaseAgeMs.rawValue ?? ""),
 				fireFloorMs: String(next.knobs.fireFloorMs.rawValue ?? ""),
 			});
-			setStatus("Saved. Gate will use these values on the next evaluation.");
+			setStatus(t("views.settings.orientation.gateSaved"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -1530,22 +1528,18 @@ function MaintenanceGateCard() {
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">Maintenance gate</div>
-					{profile === "deck" ? <Badge tone="accent">deck profile</Badge> : null}
-					{profile === "flat-file" ? <Badge tone="default">flat-file profile</Badge> : null}
-					{profile === "inactive" ? <Badge tone="muted">inactive</Badge> : null}
+					<div className="meta">{t("views.settings.orientation.maintenanceGate")}</div>
+					{profile === "deck" ? <Badge tone="accent">{t("views.settings.orientation.deckProfile")}</Badge> : null}
+					{profile === "flat-file" ? <Badge tone="default">{t("views.settings.orientation.flatFileProfile")}</Badge> : null}
+					{profile === "inactive" ? <Badge tone="muted">{t("views.settings.orientation.inactive")}</Badge> : null}
 				</div>
 				<p className="mt-1 text-xs text-ink-3">
-					Nudges the agent at <code className="font-mono">turn_end</code> to capture
-					insights / decisions / tasks into the appropriate destination. Fires at
-					most once per release segment, gated by three floors. Disabling here
-					skips org-root detection so even an unaltered installed extension
-					stays silent.
+					{t("views.settings.orientation.gateDesc", { hook: "turn_end" })}
 				</p>
 				<div className="mt-1 space-y-0.5 font-mono text-2xs text-ink-3">
-					<div>extension: {data?.installedExtensionPath ?? "..."}</div>
-					<div>installed: {data ? (data.installedExtensionPresent ? "yes" : "missing") : "..."}</div>
-					<div>OMP_DECK_ORG_ROOT: {data?.orgRoot ?? "(unset)"} ({data?.orgRootSource ?? ""})</div>
+					<div>{t("views.settings.orientation.gateExtension", { path: data?.installedExtensionPath ?? "..." })}</div>
+					<div>{t("views.settings.orientation.gateInstalled", { value: data ? (data.installedExtensionPresent ? t("views.settings.orientation.yes") : t("views.settings.orientation.missing")) : "..." })}</div>
+					<div>OMP_DECK_ORG_ROOT: {data?.orgRoot ?? t("views.settings.orientation.unset")} ({data?.orgRootSource ?? ""})</div>
 				</div>
 			</div>
 			<div className="space-y-4 p-4">
@@ -1569,30 +1563,30 @@ function MaintenanceGateCard() {
 								checked={draft.enabled}
 								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
 							/>
-							<span>Enabled</span>
+							<span>{t("views.settings.orientation.enabled")}</span>
 							<span className="ml-2 font-mono text-2xs text-ink-3">
-								OMP_DECK_MAINTENANCE_GATE_DISABLED = {data.disabledRaw ?? "(unset)"} ({data.disabledSource})
+								OMP_DECK_MAINTENANCE_GATE_DISABLED = {data.disabledRaw ?? t("views.settings.orientation.unset")} ({data.disabledSource})
 							</span>
 						</label>
 
 						<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 							<GateKnobInput
 								label="minOpMsgs"
-								help="Operator messages since last release"
+								help={t("views.settings.orientation.minOpMsgsHelp")}
 								knob={data.knobs.minOpMsgs}
 								value={draft.minOpMsgs}
 								onChange={(v) => setDraft({ ...draft, minOpMsgs: v })}
 							/>
 							<GateKnobInput
 								label="minReleaseAgeMs"
-								help="Wall-clock ms since last release"
+								help={t("views.settings.orientation.minReleaseAgeMsHelp")}
 								knob={data.knobs.minReleaseAgeMs}
 								value={draft.minReleaseAgeMs}
 								onChange={(v) => setDraft({ ...draft, minReleaseAgeMs: v })}
 							/>
 							<GateKnobInput
 								label="fireFloorMs"
-								help="Wall-clock ms between fires (cross-session)"
+								help={t("views.settings.orientation.fireFloorMsHelp")}
 								knob={data.knobs.fireFloorMs}
 								value={draft.fireFloorMs}
 								onChange={(v) => setDraft({ ...draft, fireFloorMs: v })}
@@ -1602,37 +1596,36 @@ function MaintenanceGateCard() {
 						<div className="flex flex-wrap items-center gap-2">
 							<Button size="sm" onClick={() => void save()} disabled={saving}>
 								<Save className="h-3.5 w-3.5" />
-								Save
+								{t("views.settings.save")}
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
 								<RotateCcw className="h-3.5 w-3.5" />
-								Reload
+								{t("views.settings.reload")}
 							</Button>
 							{!data.installedExtensionPresent ? (
 								<span className="font-mono text-2xs text-warn">
-									Extension not installed at expected path; knob changes won&rsquo;t take effect until
-									it&rsquo;s restored.
+									{t("views.settings.orientation.extensionMissing")}
 								</span>
 							) : null}
 						</div>
 
 						<div className="overflow-hidden rounded-md border border-line bg-paper-2">
 							<div className="flex items-center gap-2 border-b border-line px-3 py-2">
-								<div className="meta">Reminder preview</div>
+								<div className="meta">{t("views.settings.orientation.reminderPreview")}</div>
 								<div className="ml-auto flex items-center gap-1">
 									<Button
 										size="sm"
 										variant={previewMode === "deck" ? "primary" : "outline"}
 										onClick={() => setPreviewMode("deck")}
 									>
-										deck
+										{t("views.settings.orientation.deck")}
 									</Button>
 									<Button
 										size="sm"
 										variant={previewMode === "flat-file" ? "primary" : "outline"}
 										onClick={() => setPreviewMode("flat-file")}
 									>
-										flat-file
+										{t("views.settings.orientation.flatFile")}
 									</Button>
 								</div>
 							</div>
@@ -1668,6 +1661,7 @@ function parseFloatRange(value: string, min: number, max: number): number {
 }
 
 function TopologyContextCard() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<TopologyContextInjectionState | null>(null);
 	const [draft, setDraft] = useState<{
 		enabled: boolean;
@@ -1710,7 +1704,7 @@ function TopologyContextCard() {
 		const maxFocusChars = parsePositiveIntegerOrNull(draft.maxFocusChars);
 		const timeoutMs = parsePositiveIntegerOrNull(draft.timeoutMs);
 		if (Number.isNaN(maxFocusChars) || Number.isNaN(timeoutMs)) {
-			setError("maxFocusChars and timeoutMs must be positive integers or empty.");
+			setError(t("views.settings.orientation.ctxIntError"));
 			return;
 		}
 		setSaving(true);
@@ -1722,7 +1716,7 @@ function TopologyContextCard() {
 				timeoutMs,
 			});
 			applyState(next);
-			setStatus("Saved.");
+			setStatus(t("views.settings.saved"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -1736,18 +1730,17 @@ function TopologyContextCard() {
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">Topology context injection</div>
-					{data?.active ? <Badge tone="accent">active</Badge> : (data?.enabled ? <Badge tone="default">inactive</Badge> : <Badge tone="muted">disabled</Badge>)}
-					{data?.installStatus !== "current" && data?.installStatus === "user-owned-or-outdated" ? <Badge tone="warn">user-owned</Badge> : null}
+					<div className="meta">{t("views.settings.orientation.ctxInjection")}</div>
+					{data?.active ? <Badge tone="accent">{t("views.settings.orientation.active")}</Badge> : (data?.enabled ? <Badge tone="default">{t("views.settings.orientation.inactive")}</Badge> : <Badge tone="muted">{t("views.settings.orientation.disabled")}</Badge>)}
+					{data?.installStatus !== "current" && data?.installStatus === "user-owned-or-outdated" ? <Badge tone="warn">{t("views.settings.orientation.userOwned")}</Badge> : null}
 				</div>
 				<p className="mt-1 text-xs text-ink-3">
-					Default-off OMP starter extension that fetches a clean, query-aware topology
-					focus from the deck over loopback HTTP and appends it as hidden custom context.
+					{t("views.settings.orientation.ctxDesc")}
 				</p>
 				<div className="mt-1 space-y-0.5 font-mono text-2xs text-ink-3">
-					<div>installed: {data?.installedExtensionPath ?? "..."}</div>
-					<div>bundled: {data?.bundledExtensionPath ?? "..."}</div>
-					<div>api base: {data?.apiBase.value ?? "..."} ({data?.apiBase.source ?? ""})</div>
+					<div>{t("views.settings.orientation.ctxInstalled", { path: data?.installedExtensionPath ?? "..." })}</div>
+					<div>{t("views.settings.orientation.ctxBundled", { path: data?.bundledExtensionPath ?? "..." })}</div>
+					<div>{t("views.settings.orientation.ctxApiBase", { value: data?.apiBase.value ?? "...", source: data?.apiBase.source ?? "" })}</div>
 				</div>
 			</div>
 			<div className="space-y-4 p-4">
@@ -1771,9 +1764,9 @@ function TopologyContextCard() {
 								checked={draft.enabled}
 								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
 							/>
-							<span>Enabled</span>
+							<span>{t("views.settings.orientation.enabled")}</span>
 							<span className="ml-2 font-mono text-2xs text-ink-3">
-								OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = {data.enabledRaw ?? "(unset)"} ({data.enabledSource})
+								OMP_DECK_TOPOLOGY_CONTEXT_ENABLED = {data.enabledRaw ?? t("views.settings.orientation.unset")} ({data.enabledSource})
 							</span>
 						</label>
 
@@ -1788,19 +1781,19 @@ function TopologyContextCard() {
 									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
 								/>
 								<div className="font-mono text-2xs text-ink-3">
-									effective {data.apiBase.value} · source {data.apiBase.source}. Leave empty to keep the default display without activating the extension.
+									{t("views.settings.orientation.ctxApiBaseHint", { value: data.apiBase.value, source: data.apiBase.source })}
 								</div>
 							</label>
 							<GateKnobInput
 								label="maxFocusChars"
-								help="Maximum injected focus characters"
+								help={t("views.settings.orientation.maxFocusCharsHelp")}
 								knob={data.maxFocusChars}
 								value={draft.maxFocusChars}
 								onChange={(v) => setDraft({ ...draft, maxFocusChars: v })}
 							/>
 							<GateKnobInput
 								label="timeoutMs"
-								help="Loopback HTTP fetch timeout"
+								help={t("views.settings.orientation.timeoutMsHelp")}
 								knob={data.timeoutMs}
 								value={draft.timeoutMs}
 								onChange={(v) => setDraft({ ...draft, timeoutMs: v })}
@@ -1810,15 +1803,15 @@ function TopologyContextCard() {
 						<div className="flex flex-wrap items-center gap-2">
 							<Button size="sm" onClick={() => void save()} disabled={saving}>
 								<Save className="h-3.5 w-3.5" />
-								Save
+								{t("views.settings.save")}
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
 								<RotateCcw className="h-3.5 w-3.5" />
-								Reload
+								{t("views.settings.reload")}
 							</Button>
 							{!data.installedExtensionPresent ? (
 								<span className="font-mono text-2xs text-warn">
-									Installed extension missing; settings will not affect prompts until it is restored.
+									{t("views.settings.orientation.ctxExtMissing")}
 								</span>
 							) : null}
 						</div>
@@ -1830,6 +1823,7 @@ function TopologyContextCard() {
 }
 
 function TopologyRerankCard() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<TopologyRerankConfig | null>(null);
 	const [draft, setDraft] = useState<{
 		enabled: boolean;
@@ -1907,19 +1901,19 @@ function TopologyRerankCard() {
 		const httpConfidence = parseFloatRange(draft.http.confidenceThreshold, 0, 1);
 		const httpMinContextPercent = parseNonNegativeNumberOrNull(draft.http.minContextPercent);
 		if (Number.isNaN(minCandidateNodes) || Number.isNaN(timeoutMs) || Number.isNaN(httpTimeoutMs) || Number.isNaN(httpMinCandidateNodes)) {
-			setError("Integer knobs must be positive integers or empty.");
+			setError(t("views.settings.orientation.intKnobError"));
 			return;
 		}
 		if (Number.isNaN(minContextPercent) || Number.isNaN(httpMinContextPercent)) {
-			setError("Percent knobs must be a non-negative number or empty.");
+			setError(t("views.settings.orientation.percentKnobError"));
 			return;
 		}
 		if (Number.isNaN(confidence) && draft.localConfidenceBelow.trim() !== "") {
-			setError("localConfidenceBelow must be a number 0\u20131 or empty.");
+			setError(t("views.settings.orientation.confidenceError"));
 			return;
 		}
 		if (Number.isNaN(httpConfidence) && draft.http.confidenceThreshold.trim() !== "") {
-			setError("http.confidenceThreshold must be a number 0\u20131 or empty.");
+			setError(t("views.settings.orientation.httpConfidenceError"));
 			return;
 		}
 		setSaving(true);
@@ -1945,7 +1939,7 @@ function TopologyRerankCard() {
 				},
 			});
 			applyState(next);
-			setStatus("Saved.");
+			setStatus(t("views.settings.saved"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -1959,15 +1953,14 @@ function TopologyRerankCard() {
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">Topology rerank</div>
-					{data?.enabled ? <Badge tone="accent">enabled</Badge> : <Badge tone="muted">disabled</Badge>}
+					<div className="meta">{t("views.settings.orientation.topologyRerank")}</div>
+					{data?.enabled ? <Badge tone="accent">{t("views.settings.orientation.enabled")}</Badge> : <Badge tone="muted">{t("views.settings.orientation.disabled")}</Badge>}
 				</div>
 				<p className="mt-1 text-xs text-ink-3">
-					When local query-aware topology confidence is low, delegates to either an OMP model role
-					or a third-party HTTP rerank service.
+					{t("views.settings.orientation.rerankDesc")}
 				</p>
 				<div className="mt-1 font-mono text-2xs text-ink-3">
-					model role: {data?.rerankModelRole ?? "..."} ({data?.rerankModelRoleSource ?? ""}) \u00b7 provider {data?.provider.value ?? "..."} ({data?.provider.source ?? ""})
+					{t("views.settings.orientation.rerankModelRoleLine", { role: data?.rerankModelRole ?? "...", roleSource: data?.rerankModelRoleSource ?? "", provider: data?.provider.value ?? "...", providerSource: data?.provider.source ?? "" })}
 				</div>
 			</div>
 			<div className="space-y-4 p-4">
@@ -1991,14 +1984,14 @@ function TopologyRerankCard() {
 								checked={draft.enabled}
 								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
 							/>
-							<span>Enabled</span>
+							<span>{t("views.settings.orientation.enabled")}</span>
 							<span className="ml-2 font-mono text-2xs text-ink-3">
-								OMP_DECK_TOPOLOGY_RERANK_ENABLED = {data.enabledRaw ?? "(unset)"} ({data.enabledSource})
+								OMP_DECK_TOPOLOGY_RERANK_ENABLED = {data.enabledRaw ?? t("views.settings.orientation.unset")} ({data.enabledSource})
 							</span>
 						</label>
 
 						<div className="space-y-1">
-							<span className="meta">Provider</span>
+							<span className="meta">{t("views.settings.orientation.provider")}</span>
 							<div className="flex flex-wrap items-center gap-3 text-sm">
 								<label className="flex items-center gap-1">
 									<input
@@ -2007,7 +2000,7 @@ function TopologyRerankCard() {
 										checked={draft.provider === "model_role"}
 										onChange={() => setDraft({ ...draft, provider: "model_role" })}
 									/>
-									<span>model_role (OMP)</span>
+									<span>{t("views.settings.orientation.modelRoleProvider")}</span>
 								</label>
 								<label className="flex items-center gap-1">
 									<input
@@ -2016,11 +2009,11 @@ function TopologyRerankCard() {
 										checked={draft.provider === "http"}
 										onChange={() => setDraft({ ...draft, provider: "http" })}
 									/>
-									<span>http (third-party service)</span>
+									<span>{t("views.settings.orientation.httpProvider")}</span>
 								</label>
 							</div>
 							<div className="font-mono text-2xs text-ink-3">
-								effective {data.provider.value} \u00b7 source {data.provider.source}
+								{t("views.settings.orientation.effectiveSource", { value: data.provider.value, source: data.provider.source })}
 							</div>
 						</div>
 
@@ -2034,28 +2027,28 @@ function TopologyRerankCard() {
 								className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
 							/>
 							<div className="font-mono text-2xs text-ink-3">
-								effective {data.rerankModelRole} \u00b7 source {data.rerankModelRoleSource} \u00b7 empty restores default
+								{t("views.settings.orientation.effectiveSourceEmpty", { value: data.rerankModelRole, source: data.rerankModelRoleSource })}
 							</div>
 						</label>
 
 						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 							<GateKnobInput
 								label="minContextPercent"
-								help="Minimum context % to trigger"
+								help={t("views.settings.orientation.minContextPercentHelp")}
 								knob={data.minContextPercent}
 								value={draft.minContextPercent}
 								onChange={(v) => setDraft({ ...draft, minContextPercent: v })}
 							/>
 							<GateKnobInput
 								label="minCandidateNodes"
-								help="Minimum candidates to trigger"
+								help={t("views.settings.orientation.minCandidateNodesHelp")}
 								knob={data.minCandidateNodes}
 								value={draft.minCandidateNodes}
 								onChange={(v) => setDraft({ ...draft, minCandidateNodes: v })}
 							/>
 							<GateKnobInput
 								label="timeoutMs"
-								help="Rerank API timeout"
+								help={t("views.settings.orientation.rerankTimeoutHelp")}
 								knob={data.timeoutMs}
 								value={draft.timeoutMs}
 								onChange={(v) => setDraft({ ...draft, timeoutMs: v })}
@@ -2070,19 +2063,16 @@ function TopologyRerankCard() {
 									className="block w-full rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
 								/>
 								<div className="font-mono text-2xs text-ink-3">
-									effective {data.localConfidenceBelow.value} \u00b7 default {data.localConfidenceBelow.default} \u00b7 source {data.localConfidenceBelow.source}
+									{t("views.settings.orientation.effectiveDefaultSource", { value: data.localConfidenceBelow.value, default: data.localConfidenceBelow.default, source: data.localConfidenceBelow.source })}
 								</div>
 							</label>
 						</div>
 
 						{draft.provider === "http" ? (
 							<div className="space-y-3 rounded-md border border-line bg-paper-2 p-3">
-								<div className="meta">HTTP rerank endpoint</div>
+								<div className="meta">{t("views.settings.orientation.httpEndpoint")}</div>
 								<p className="text-xs text-ink-3">
-									POST <span className="font-mono">baseUrl + endpointPath</span> with the
-									deck-internal <span className="font-mono">query_rerank</span> request
-									body. The service must respond with a <span className="font-mono">RerankPatch</span> JSON.
-									API key is set in <span className="font-mono">Settings \u2192 Env</span> (masked).
+									{t("views.settings.orientation.httpEndpointDesc", { patch: "RerankPatch" })}
 								</p>
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<label className="block space-y-1 sm:col-span-2">
@@ -2095,7 +2085,7 @@ function TopologyRerankCard() {
 											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
 										/>
 										<div className="font-mono text-2xs text-ink-3">
-											effective {data.http.baseUrl.value || "(unset)"} \u00b7 default {data.http.baseUrl.default} \u00b7 source {data.http.baseUrl.source}
+											{t("views.settings.orientation.effectiveDefaultSource", { value: data.http.baseUrl.value || t("views.settings.orientation.unset"), default: data.http.baseUrl.default, source: data.http.baseUrl.source })}
 										</div>
 									</label>
 									<label className="block space-y-1">
@@ -2108,7 +2098,7 @@ function TopologyRerankCard() {
 											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
 										/>
 										<div className="font-mono text-2xs text-ink-3">
-											effective {data.http.endpointPath.value} \u00b7 default {data.http.endpointPath.default} \u00b7 source {data.http.endpointPath.source}
+											{t("views.settings.orientation.effectiveDefaultSource", { value: data.http.endpointPath.value, default: data.http.endpointPath.default, source: data.http.endpointPath.source })}
 										</div>
 									</label>
 									<label className="block space-y-1">
@@ -2122,7 +2112,7 @@ function TopologyRerankCard() {
 											<option value="siliconflow-rerank">siliconflow-rerank</option>
 										</select>
 										<div className="font-mono text-2xs text-ink-3">
-											effective {data.http.protocol.value} \u00b7 default {data.http.protocol.default} \u00b7 source {data.http.protocol.source}
+											{t("views.settings.orientation.effectiveDefaultSource", { value: data.http.protocol.value, default: data.http.protocol.default, source: data.http.protocol.source })}
 										</div>
 									</label>
 									<label className="block space-y-1">
@@ -2135,7 +2125,7 @@ function TopologyRerankCard() {
 											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
 										/>
 										<div className="font-mono text-2xs text-ink-3">
-											effective {data.http.authHeaderName.value} \u00b7 default {data.http.authHeaderName.default} \u00b7 source {data.http.authHeaderName.source}
+											{t("views.settings.orientation.effectiveDefaultSource", { value: data.http.authHeaderName.value, default: data.http.authHeaderName.default, source: data.http.authHeaderName.source })}
 										</div>
 									</label>
 									<label className="block space-y-1">
@@ -2148,19 +2138,19 @@ function TopologyRerankCard() {
 											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
 										/>
 										<div className="font-mono text-2xs text-ink-3">
-											effective {data.http.model.value} · default {data.http.model.default} · source {data.http.model.source}
+											{t("views.settings.orientation.effectiveDefaultSource", { value: data.http.model.value, default: data.http.model.default, source: data.http.model.source })}
 										</div>
 									</label>
 									<GateKnobInput
 										label="http.timeoutMs"
-										help="HTTP rerank timeout"
+										help={t("views.settings.orientation.httpTimeoutHelp")}
 										knob={data.http.timeoutMs}
 										value={draft.http.timeoutMs}
 										onChange={(v) => setDraft({ ...draft, http: { ...draft.http, timeoutMs: v } })}
 									/>
 									<GateKnobInput
 										label="http.minCandidateNodes"
-										help="HTTP min candidates"
+										help={t("views.settings.orientation.httpMinCandidatesHelp")}
 										knob={data.http.minCandidateNodes}
 										value={draft.http.minCandidateNodes}
 										onChange={(v) => setDraft({ ...draft, http: { ...draft.http, minCandidateNodes: v } })}
@@ -2175,12 +2165,12 @@ function TopologyRerankCard() {
 											className="block w-full rounded-md border border-line bg-paper px-2 py-1 font-mono text-xs text-ink"
 										/>
 										<div className="font-mono text-2xs text-ink-3">
-											effective {data.http.confidenceThreshold.value} \u00b7 default {data.http.confidenceThreshold.default} \u00b7 source {data.http.confidenceThreshold.source}
+											{t("views.settings.orientation.effectiveDefaultSource", { value: data.http.confidenceThreshold.value, default: data.http.confidenceThreshold.default, source: data.http.confidenceThreshold.source })}
 										</div>
 									</label>
 									<GateKnobInput
 										label="http.minContextPercent"
-										help="HTTP min context %"
+										help={t("views.settings.orientation.httpMinContextHelp")}
 										knob={data.http.minContextPercent}
 										value={draft.http.minContextPercent}
 										onChange={(v) => setDraft({ ...draft, http: { ...draft.http, minContextPercent: v } })}
@@ -2192,11 +2182,11 @@ function TopologyRerankCard() {
 						<div className="flex flex-wrap items-center gap-2">
 							<Button size="sm" onClick={() => void save()} disabled={saving}>
 								<Save className="h-3.5 w-3.5" />
-								Save
+								{t("views.settings.save")}
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
 								<RotateCcw className="h-3.5 w-3.5" />
-								Reload
+								{t("views.settings.reload")}
 							</Button>
 						</div>
 					</>
@@ -2207,6 +2197,7 @@ function TopologyRerankCard() {
 }
 
 function TopologyEmbeddingCard() {
+	const { t } = useTranslation();
 	type Draft = {
 		enabled: boolean;
 		model: string;
@@ -2254,7 +2245,7 @@ function TopologyEmbeddingCard() {
 		if (!draft) return;
 		const timeoutMs = parsePositiveIntegerOrNull(draft.timeoutMs);
 		if (Number.isNaN(timeoutMs)) {
-			setError("timeoutMs must be a positive integer or empty.");
+			setError(t("views.settings.orientation.timeoutIntError"));
 			return;
 		}
 		setSaving(true);
@@ -2266,7 +2257,7 @@ function TopologyEmbeddingCard() {
 				OMP_DECK_TOPOLOGY_EMBEDDING_ENDPOINT_PATH: draft.endpointPath.trim() || null,
 				OMP_DECK_TOPOLOGY_EMBEDDING_TIMEOUT_MS: timeoutMs !== null ? String(timeoutMs) : null,
 			});
-			setStatus("Saved.");
+			setStatus(t("views.settings.saved"));
 			setError(undefined);
 			window.setTimeout(() => setStatus(undefined), 3000);
 		} catch (e) {
@@ -2280,12 +2271,11 @@ function TopologyEmbeddingCard() {
 		<div className="overflow-hidden rounded-md border border-line bg-paper">
 			<div className="border-b border-line bg-paper-2 px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">Topology embedding</div>
-					{draft?.enabled ? <Badge tone="accent">enabled</Badge> : <Badge tone="muted">disabled</Badge>}
+					<div className="meta">{t("views.settings.orientation.topologyEmbedding")}</div>
+					{draft?.enabled ? <Badge tone="accent">{t("views.settings.orientation.enabled")}</Badge> : <Badge tone="muted">{t("views.settings.orientation.disabled")}</Badge>}
 				</div>
 				<p className="mt-1 text-xs text-ink-3">
-					Enable embedding-based semantic retrieval for topology query focus. Uses SiliconFlow embedding API.
-					API key is set in <span className="font-mono">Settings → Env</span> (masked).
+					{t("views.settings.orientation.embeddingDesc")}
 				</p>
 			</div>
 			<div className="space-y-4 p-4">
@@ -2309,7 +2299,7 @@ function TopologyEmbeddingCard() {
 								checked={draft.enabled}
 								onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
 							/>
-							<span>Enabled</span>
+							<span>{t("views.settings.orientation.enabled")}</span>
 							<span className="ml-2 font-mono text-2xs text-ink-3">
 								OMP_DECK_TOPOLOGY_EMBEDDING_ENABLED
 							</span>
@@ -2373,11 +2363,11 @@ function TopologyEmbeddingCard() {
 						<div className="flex flex-wrap items-center gap-2">
 							<Button size="sm" onClick={() => void save()} disabled={saving}>
 								<Save className="h-3.5 w-3.5" />
-								Save
+								{t("views.settings.save")}
 							</Button>
 							<Button size="sm" variant="outline" onClick={() => void refresh()} disabled={saving}>
 								<RotateCcw className="h-3.5 w-3.5" />
-								Reload
+								{t("views.settings.reload")}
 							</Button>
 						</div>
 					</>
@@ -2400,6 +2390,7 @@ function GateKnobInput({
 	value: string;
 	onChange: (v: string) => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<label className="block space-y-1">
 			<span className="meta">{label}</span>
@@ -2415,13 +2406,14 @@ function GateKnobInput({
 				{help}
 			</div>
 			<div className="font-mono text-2xs text-ink-3">
-				effective {knob.value} · default {knob.default} · source {knob.source}
+				{t("views.settings.orientation.effectiveDefaultSource", { value: knob.value, default: knob.default, source: knob.source })}
 			</div>
 		</label>
 	);
 }
 
 function ModelRolesSection() {
+	const { t } = useTranslation();
 	const [data, setData] = useState<ModelRolesResponse | null>(null);
 	const [draft, setDraft] = useState<Record<string, string>>({});
 	const [newRole, setNewRole] = useState("");
@@ -2530,9 +2522,9 @@ function ModelRolesSection() {
 	return (
 		<div className="mx-auto max-w-5xl space-y-4">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">OMP model roles</h1>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.modelRoles.title")}</h1>
 				<p className="mt-1 max-w-3xl text-sm text-ink-3">
-					These bindings write to OMP's native modelRoles config. Role names are dynamic, so custom roles such as advisor or adviser are preserved.
+					{t("views.settings.modelRoles.intro")}
 				</p>
 			</div>
 			{error ? <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">{error}</div> : null}
@@ -2541,9 +2533,9 @@ function ModelRolesSection() {
 			<div className="rounded-md border border-line bg-paper p-3">
 				<div className="flex items-center justify-between gap-2">
 					<div>
-						<div className="meta">Auto-configure roles</div>
+						<div className="meta">{t("views.settings.modelRoles.autoConfigure")}</div>
 						<div className="mt-0.5 text-2xs text-ink-3">
-							Scan the effective model pool and propose a role mapping (default/reviewer/plan/task/smol/explore). Preview first, then apply.
+							{t("views.settings.modelRoles.autoConfigureDesc")}
 						</div>
 					</div>
 					<button
@@ -2552,13 +2544,13 @@ function ModelRolesSection() {
 						onClick={() => void autoConfigure()}
 						disabled={autoLoading}
 					>
-						{autoLoading ? "Scanning…" : "Scan model pool"}
+						{autoLoading ? t("views.settings.modelRoles.scanning") : t("views.settings.modelRoles.scanPool")}
 					</button>
 				</div>
 				{autoPreview ? (
 					<div className="mt-3 border-t border-line pt-3">
 						{autoPreview.matched.length === 0 ? (
-							<div className="text-2xs text-ink-3">No matching models found in the pool — nothing to propose.</div>
+							<div className="text-2xs text-ink-3">{t("views.settings.modelRoles.noMatches")}</div>
 						) : (
 							<div className="space-y-1">
 								{autoPreview.matched.map((m) => (
@@ -2576,14 +2568,14 @@ function ModelRolesSection() {
 								onClick={() => void applyAutoConfigure()}
 								disabled={saving || autoPreview.matched.length === 0}
 							>
-								{saving ? "Applying…" : "Apply recommendations"}
+								{saving ? t("views.settings.modelRoles.applying") : t("views.settings.modelRoles.apply")}
 							</button>
 							<button
 								type="button"
 								className="btn-secondary h-7 px-3 text-2xs"
 								onClick={() => setAutoPreview(null)}
 							>
-								Cancel
+								{t("views.settings.cancel")}
 							</button>
 						</div>
 					</div>
@@ -2591,7 +2583,7 @@ function ModelRolesSection() {
 			</div>
 			<div className="overflow-hidden rounded-md border border-line bg-paper">
 				<div className="border-b border-line px-3 py-2">
-					<div className="meta">Configured roles</div>
+					<div className="meta">{t("views.settings.modelRoles.configured")}</div>
 				</div>
 				<div className="divide-y divide-line">
 				{entries.map((entry) => {
@@ -2614,11 +2606,11 @@ function ModelRolesSection() {
 						/>
 					);
 				})}
-					{entries.length === 0 ? <div className="px-3 py-4 text-sm text-ink-3">No model roles configured yet.</div> : null}
+					{entries.length === 0 ? <div className="px-3 py-4 text-sm text-ink-3">{t("views.settings.modelRoles.none")}</div> : null}
 				</div>
 			</div>
 			<div className="rounded-md border border-line bg-paper p-3">
-				<div className="meta">Add custom role</div>
+				<div className="meta">{t("views.settings.modelRoles.addRole")}</div>
 				<div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
 					<input
 						type="text"
@@ -2632,12 +2624,12 @@ function ModelRolesSection() {
 						onChange={(e) => setNewModel(e.target.value)}
 						className="rounded-md border border-line bg-paper-2 px-2 py-1 font-mono text-xs text-ink"
 					>
-						<option value="">Choose model...</option>
+						<option value="">{t("views.settings.modelRoles.chooseModel")}</option>
 						{modelOptions.map((model) => (
 							<option key={model.value} value={model.value}>{model.label}</option>
 						))}
 					</select>
-					<Button size="sm" onClick={addDraftRole} disabled={!newRole.trim() || !newModel}>Add</Button>
+					<Button size="sm" onClick={addDraftRole} disabled={!newRole.trim() || !newModel}>{t("views.settings.add")}</Button>
 				</div>
 			</div>
 		</div>
@@ -2663,12 +2655,13 @@ function ModelRoleRow({
 	onSave: () => void;
 	onRemove: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="grid gap-3 px-3 py-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-center">
 			<div>
 				<div className="font-mono text-sm text-ink">{entry.name}</div>
 				<div className="mt-1 flex items-center gap-1">
-					{entry.dynamic ? <Badge tone="muted">custom</Badge> : <Badge tone="accent">built-in</Badge>}
+					{entry.dynamic ? <Badge tone="muted">{t("views.settings.modelRoles.custom")}</Badge> : <Badge tone="accent">{t("views.settings.modelRoles.builtIn")}</Badge>}
 					{thinking ? <Badge tone="default">:{thinking}</Badge> : null}
 				</div>
 			</div>
@@ -2681,8 +2674,8 @@ function ModelRoleRow({
 				))}
 			</select>
 			<div className="flex gap-2">
-				<Button size="sm" onClick={onSave} disabled={saving || !selectValue}>Save</Button>
-				{entry.dynamic ? <Button size="sm" variant="ghost" onClick={onRemove} disabled={saving}><X className="h-3.5 w-3.5" />Remove</Button> : null}
+				<Button size="sm" onClick={onSave} disabled={saving || !selectValue}>{t("views.settings.save")}</Button>
+				{entry.dynamic ? <Button size="sm" variant="ghost" onClick={onRemove} disabled={saving}><X className="h-3.5 w-3.5" />{t("views.settings.remove")}</Button> : null}
 			</div>
 		</div>
 	);
@@ -2698,25 +2691,28 @@ function normalizeModelOptions(models: unknown[]): Array<{ value: string; label:
 }
 
 function StubSection({ section }: { section: Exclude<SectionId, "env" | "messaging" | "appearance" | "notifications"> }) {
+	const { t } = useTranslation();
 	const spec = SECTIONS.find((s) => s.id === section)!;
 	return (
 		<div className="mx-auto max-w-3xl rounded-md border border-dashed border-line bg-paper-2 p-6">
-			<div className="meta">{spec.label}</div>
-			<h1 className="mt-2 text-xl font-semibold">Not built yet</h1>
-			<p className="mt-1 text-sm text-ink-3">This section is reserved so the settings layout is stable.</p>
+			<div className="meta">{t(spec.labelKey)}</div>
+			<h1 className="mt-2 text-xl font-semibold">{t("views.settings.notBuilt")}</h1>
+			<p className="mt-1 text-sm text-ink-3">{t("views.settings.notBuiltHint")}</p>
 		</div>
 	);
 }
 
 function SettingsSideRail() {
-	return <div className="p-3 text-xs text-ink-3">Settings</div>;
+	const { t } = useTranslation();
+	return <div className="p-3 text-xs text-ink-3">{t("views.settings.title")}</div>;
 }
 
 function SettingsInspector() {
+	const { t } = useTranslation();
 	return (
 		<div className="space-y-2 p-3 text-xs text-ink-3">
-			<div className="meta">Settings notes</div>
-			<p>Secrets are masked in list responses. Replace values here; do not reveal unless using the loopback API directly.</p>
+			<div className="meta">{t("views.settings.notes")}</div>
+			<p>{t("views.settings.notesHint")}</p>
 		</div>
 	);
 }
@@ -2725,9 +2721,9 @@ function normalizeSection(raw: string | null): SectionId {
 	return SECTIONS.some((s) => s.id === raw) ? (raw as SectionId) : "env";
 }
 
-function sourceLabel(source: EnvEntry["source"]): string {
-	if (source === "process-env") return "process env";
-	if (source === "env-file") return ".env file";
+function sourceLabel(source: EnvEntry["source"], t: (key: string) => string): string {
+	if (source === "process-env") return t("views.settings.source.processEnv");
+	if (source === "env-file") return t("views.settings.source.envFile");
 	return source;
 }
 
@@ -2737,11 +2733,11 @@ function sourceTone(source: EnvEntry["source"]): "accent" | "default" | "muted" 
 	return "muted";
 }
 
-function envApplyBadge(entry: EnvEntry) {
-	if (entry.hotApply) return <Badge tone="success">hot</Badge>;
-	if (entry.restartTarget === "telegram-bridge") return <Badge tone="warn">bridge restart</Badge>;
-	if (entry.restartRequired) return <Badge tone="warn">server restart</Badge>;
-	return <Badge tone="muted">manual</Badge>;
+function envApplyBadge(entry: EnvEntry, t: (key: string) => string) {
+	if (entry.hotApply) return <Badge tone="success">{t("views.settings.envApply.hot")}</Badge>;
+	if (entry.restartTarget === "telegram-bridge") return <Badge tone="warn">{t("views.settings.envApply.bridgeRestart")}</Badge>;
+	if (entry.restartRequired) return <Badge tone="warn">{t("views.settings.envApply.serverRestart")}</Badge>;
+	return <Badge tone="muted">{t("views.settings.envApply.manual")}</Badge>;
 }
 
 function bridgeStatusTone(status: BridgeInfo["status"]): "success" | "muted" | "warn" | "danger" {
@@ -2751,12 +2747,12 @@ function bridgeStatusTone(status: BridgeInfo["status"]): "success" | "muted" | "
 	return "muted";
 }
 
-function bridgeStatusLabel(status: BridgeInfo["status"], info: BridgeInfo | undefined): string {
-	if (status === "running") return "running";
-	if (status === "starting") return "starting";
-	if (status === "crashed") return info?.exitSignal ? `crashed (${info.exitSignal})` : "crashed";
-	if (info && info.missingEnv.length > 0) return "missing credentials";
-	return "stopped";
+function bridgeStatusLabel(status: BridgeInfo["status"], info: BridgeInfo | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
+	if (status === "running") return t("views.settings.bridge.statusRunning");
+	if (status === "starting") return t("views.settings.bridge.statusStarting");
+	if (status === "crashed") return info?.exitSignal ? t("views.settings.bridge.statusCrashedSignal", { signal: info.exitSignal }) : t("views.settings.bridge.statusCrashed");
+	if (info && info.missingEnv.length > 0) return t("views.settings.bridge.statusMissingCredentials");
+	return t("views.settings.bridge.statusStopped");
 }
 
 function formatUptime(startedIso: string): string {
@@ -2782,6 +2778,7 @@ function OmpConfigSection() {
  * Reads/writes ~/.config/pi-cliproxyapi/config.json and CPA_USAGE_* env vars.
  */
 function CpaSection() {
+	const { t } = useTranslation();
 	const [config, setConfig] = useState<{
 		proxy?: { endpoint: string; hasKey: boolean; providerPrefix?: string };
 		builtinProviders?: Record<string, { enabled: boolean; apiOverride?: string; models?: string[] }>;
@@ -2845,13 +2842,13 @@ function CpaSection() {
 		setSavingConn(true);
 		setNote(undefined);
 		setError(undefined);
-		try {
+			try {
 			const proxy: Record<string, string> = { endpoint: endpoint.trim() };
 			if (apiKey.trim()) proxy.apiKey = apiKey.trim();
 			if (providerPrefix.trim()) proxy.providerPrefix = providerPrefix.trim();
 			await api.updateCpaConfig({ proxy });
 			setApiKey("");
-			setNote("CPA connection saved.");
+			setNote(t("views.settings.cpa.connectionSaved"));
 			await refresh();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -2869,12 +2866,12 @@ function CpaSection() {
 			if (apiKey.trim()) body.apiKey = apiKey.trim();
 			const res = await api.testCpaConnection(body);
 			if (res.ok) {
-				setTestResult(`Connected — ${res.modelCount ?? 0} models available.`);
+				setTestResult(t("views.settings.cpa.connected", { count: res.modelCount ?? 0 }));
 			} else {
-				setTestResult(`Failed: ${res.error ?? "unknown error"}`);
+				setTestResult(t("views.settings.cpa.failed", { error: res.error ?? t("views.settings.cpa.unknownError") }));
 			}
 		} catch (err) {
-			setTestResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
+			setTestResult(t("views.settings.cpa.error", { error: err instanceof Error ? err.message : String(err) }));
 		} finally {
 			setTesting(false);
 		}
@@ -2893,7 +2890,7 @@ function CpaSection() {
 			if (usagePass.trim()) updates.CPA_USAGE_PASSWORD = usagePass.trim();
 			await settingsApi.patchEnv(updates);
 			setUsagePass("");
-			setNote("Usage monitoring saved.");
+			setNote(t("views.settings.cpa.usageSaved"));
 			await refreshUsage();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -2906,7 +2903,7 @@ function CpaSection() {
 		setClearing(true);
 		try {
 			const res = await api.clearCpaCache();
-			setNote(res.existed ? "Discovery cache cleared." : "No cache file found.");
+			setNote(res.existed ? t("views.settings.cpa.cacheCleared") : t("views.settings.cpa.noCache"));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -2914,28 +2911,28 @@ function CpaSection() {
 		}
 	}
 
-	if (!loaded) return <div className="font-mono text-2xs text-ink-3">Loading CPA config…</div>;
+	if (!loaded) return <div className="font-mono text-2xs text-ink-3">{t("views.settings.cpa.loading")}</div>;
 
 	return (
 		<div className="flex flex-col gap-6">
 			{/* CPA Connection */}
 			<div>
-				<h2 className="meta">CLIProxyAPI Connection</h2>
+				<h2 className="meta">{t("views.settings.cpa.connection")}</h2>
 				<p className="mt-1 text-xs text-ink-3">
-					The proxy endpoint that omp connects to. Config: <code className="text-2xs">{configPath || "not found"}</code>
+					{t("views.settings.cpa.connectionDesc", { path: configPath || t("views.settings.cpa.notFound") })}
 				</p>
 				<div className="mt-3 rounded border border-line bg-paper-2 p-4">
 					<div className="grid grid-cols-2 gap-2">
-						<input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="Proxy endpoint (https://api.example.com/v1)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
-						<input type="text" value={providerPrefix} onChange={(e) => setProviderPrefix(e.target.value)} placeholder="Provider prefix (optional)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder={t("views.settings.cpa.endpointPlaceholder")} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="text" value={providerPrefix} onChange={(e) => setProviderPrefix(e.target.value)} placeholder={t("views.settings.cpa.prefixPlaceholder")} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
 					</div>
-					<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config?.proxy?.hasKey ? "API key set — enter new to replace" : "API key"} className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={config?.proxy?.hasKey ? t("views.settings.cpa.apiKeyReplace") : t("views.settings.cpa.apiKey")} className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
 					<div className="mt-2 flex items-center gap-3">
 						<Button onClick={() => void saveConnection()} disabled={savingConn || !endpoint.trim()} variant="ghost">
-							{savingConn ? "Saving…" : "Save connection"}
+							{savingConn ? t("views.settings.saving") : t("views.settings.cpa.saveConnection")}
 						</Button>
 						<Button onClick={() => void testConnection()} disabled={testing || !endpoint.trim()} variant="ghost">
-							{testing ? "Testing…" : "Test connection"}
+							{testing ? t("views.settings.testing") : t("views.settings.cpa.testConnection")}
 						</Button>
 						{testResult ? <span className="text-xs text-ink-2">{testResult}</span> : null}
 					</div>
@@ -2943,18 +2940,18 @@ function CpaSection() {
 			</div>
 			{/* CPA Usage Monitoring */}
 			<div>
-				<h2 className="meta">Usage Monitoring</h2>
-				<p className="mt-1 text-xs text-ink-3">Collector credentials for the Status panel usage stats.</p>
+				<h2 className="meta">{t("views.settings.cpa.usageMonitoring")}</h2>
+				<p className="mt-1 text-xs text-ink-3">{t("views.settings.cpa.usageDesc")}</p>
 				<div className="mt-3 rounded border border-line bg-paper-2 p-4">
-					<input type="text" value={usageUrl} onChange={(e) => setUsageUrl(e.target.value)} placeholder="Collector base URL" className="field h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={usageUrl} onChange={(e) => setUsageUrl(e.target.value)} placeholder={t("views.settings.cpa.collectorUrl")} className="field h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
 					<div className="mt-2 grid grid-cols-2 gap-2">
-						<input type="text" value={usageUser} onChange={(e) => setUsageUser(e.target.value)} placeholder="Username" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
-						<input type="password" value={usagePass} onChange={(e) => setUsagePass(e.target.value)} placeholder={usagePassSet ? "Currently set — enter new to replace" : "Password"} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="text" value={usageUser} onChange={(e) => setUsageUser(e.target.value)} placeholder={t("views.settings.cpa.username")} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+						<input type="password" value={usagePass} onChange={(e) => setUsagePass(e.target.value)} placeholder={usagePassSet ? t("views.settings.cpa.passReplace") : t("views.settings.cpa.password")} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
 					</div>
-					<input type="text" value={usageTimeout} onChange={(e) => setUsageTimeout(e.target.value)} placeholder="Timeout (ms)" className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={usageTimeout} onChange={(e) => setUsageTimeout(e.target.value)} placeholder={t("views.settings.cpa.timeoutMs")} className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
 					<div className="mt-2 flex items-center gap-3">
 						<Button onClick={() => void saveUsage()} disabled={savingUsage} variant="ghost">
-							{savingUsage ? "Saving…" : "Save monitoring"}
+							{savingUsage ? t("views.settings.saving") : t("views.settings.cpa.saveMonitoring")}
 						</Button>
 					</div>
 				</div>
@@ -2962,18 +2959,18 @@ function CpaSection() {
 			{/* CPA Custom Providers */}
 			{config?.customProviders && Object.keys(config.customProviders).length > 0 ? (
 				<div>
-					<h2 className="meta">CPA Custom Providers</h2>
-					<p className="mt-1 text-xs text-ink-3">Model metadata registered in CPA config.json.</p>
+					<h2 className="meta">{t("views.settings.cpa.customProviders")}</h2>
+					<p className="mt-1 text-xs text-ink-3">{t("views.settings.cpa.customProvidersDesc")}</p>
 					<div className="mt-3 grid grid-cols-1 gap-2">
 						{Object.entries(config.customProviders).map(([name, prov]) => (
 							<div key={name} className="rounded border border-line bg-paper-2/30 p-3">
 								<div className="text-sm font-medium text-ink">{name}</div>
-								<div className="mt-0.5 text-2xs text-ink-3">{prov.api} · {prov.models.length} model{prov.models.length !== 1 ? "s" : ""}</div>
+								<div className="mt-0.5 text-2xs text-ink-3">{prov.api} · {t("views.settings.cpa.modelCount", { count: prov.models.length })}</div>
 								<div className="mt-1 flex flex-wrap gap-1">
 									{prov.models.slice(0, 8).map((m) => (
 										<span key={m.id} className="rounded bg-paper-3 px-1.5 py-0.5 font-mono text-2xs text-ink-2">{m.id}</span>
 									))}
-									{prov.models.length > 8 ? <span className="text-2xs text-ink-3">+{prov.models.length - 8} more</span> : null}
+									{prov.models.length > 8 ? <span className="text-2xs text-ink-3">{t("views.settings.cpa.more", { count: prov.models.length - 8 })}</span> : null}
 								</div>
 							</div>
 						))}
@@ -2983,22 +2980,22 @@ function CpaSection() {
 			{/* CPA Built-in Providers */}
 			{config?.builtinProviders && Object.keys(config.builtinProviders).length > 0 ? (
 				<div>
-					<h2 className="meta">Built-in Providers</h2>
-					<p className="mt-1 text-xs text-ink-3">Providers proxied through CPA with discovery.</p>
+					<h2 className="meta">{t("views.settings.cpa.builtinProviders")}</h2>
+					<p className="mt-1 text-xs text-ink-3">{t("views.settings.cpa.builtinProvidersDesc")}</p>
 					<div className="mt-3 grid grid-cols-1 gap-2">
 						{Object.entries(config.builtinProviders).map(([name, prov]) => (
 							<div key={name} className="rounded border border-line bg-paper-2/30 p-3">
 								<div className="flex items-center justify-between">
 									<div className="text-sm font-medium text-ink">{name}</div>
-									<Badge tone={prov.enabled ? "success" : "default"}>{prov.enabled ? "enabled" : "disabled"}</Badge>
+									<Badge tone={prov.enabled ? "success" : "default"}>{prov.enabled ? t("views.settings.cpa.enabled") : t("views.settings.cpa.disabled")}</Badge>
 								</div>
-								{prov.apiOverride ? <div className="mt-0.5 text-2xs text-ink-3">API: {prov.apiOverride}</div> : null}
+								{prov.apiOverride ? <div className="mt-0.5 text-2xs text-ink-3">{t("views.settings.cpa.api", { value: prov.apiOverride })}</div> : null}
 								{prov.models && prov.models.length > 0 ? (
 									<div className="mt-1 flex flex-wrap gap-1">
 										{prov.models.slice(0, 8).map((m) => (
 											<span key={m} className="rounded bg-paper-3 px-1.5 py-0.5 font-mono text-2xs text-ink-2">{m}</span>
 										))}
-										{prov.models.length > 8 ? <span className="text-2xs text-ink-3">+{prov.models.length - 8} more</span> : null}
+										{prov.models.length > 8 ? <span className="text-2xs text-ink-3">{t("views.settings.cpa.more", { count: prov.models.length - 8 })}</span> : null}
 									</div>
 								) : null}
 							</div>
@@ -3009,7 +3006,7 @@ function CpaSection() {
 			{/* Actions */}
 			<div>
 				<Button onClick={() => void clearCache()} disabled={clearing} variant="ghost">
-					{clearing ? "Clearing…" : "Clear discovery cache"}
+					{clearing ? t("views.settings.clearing") : t("views.settings.cpa.clearCache")}
 				</Button>
 			</div>
 			{note ? <div className="rounded border border-success/30 bg-success/5 p-2 text-xs text-success">{note}</div> : null}
@@ -3023,6 +3020,7 @@ function CpaSection() {
  * terminal omp and the deck model picker.
  */
 function CustomProvidersSection() {
+	const { t } = useTranslation();
 	const [providers, setProviders] = useState<Array<{ name: string; baseUrl: string; api: string; modelCount: number; hasKey: boolean }>>([]);
 	const [loaded, setLoaded] = useState(false);
 	const [error, setError] = useState<string | undefined>();
@@ -3067,7 +3065,7 @@ function CustomProvidersSection() {
 				models: [{ id: modelId.trim(), ...(modelName.trim() ? { name: modelName.trim() } : {}) }],
 			});
 			setName(""); setBaseUrl(""); setApiKey(""); setModelId(""); setModelName("");
-			setNote(res.reloadRequired ? "Provider saved — start a new session to use it." : "Provider saved.");
+			setNote(res.reloadRequired ? t("views.settings.providerSavedReload") : t("views.settings.providerSaved"));
 			await refresh();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -3086,13 +3084,13 @@ function CustomProvidersSection() {
 		}
 	}
 
-	if (!loaded) return <div className="font-mono text-2xs text-ink-3">Loading custom providers…</div>;
+	if (!loaded) return <div className="font-mono text-2xs text-ink-3">{t("views.settings.customProviders.loading")}</div>;
 
 	return (
 		<div>
-			<h2 className="meta">Custom Providers</h2>
+			<h2 className="meta">{t("views.settings.customProviders.title")}</h2>
 			<p className="mt-1 text-xs text-ink-3">
-				Add any OpenAI-compatible endpoint. Written to omp's models.yml — syncs to both terminal and deck.
+				{t("views.settings.customProviders.intro")}
 			</p>
 			{providers.length > 0 ? (
 				<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3103,11 +3101,11 @@ function CustomProvidersSection() {
 									<div className="text-sm font-medium text-ink">{p.name}</div>
 									<div className="mt-0.5 truncate font-mono text-2xs text-ink-3">{p.baseUrl}</div>
 									<div className="mt-0.5 text-2xs text-ink-3">
-										{p.api} · {p.modelCount} model{p.modelCount !== 1 ? "s" : ""} · {p.hasKey ? "key set" : "no key"}
+										{p.api} · {t("views.settings.customProviders.modelCount", { count: p.modelCount })} · {p.hasKey ? t("views.settings.customProviders.keySet") : t("views.settings.customProviders.noKey")}
 									</div>
 								</div>
 								<Button variant="ghost" className="shrink-0 text-xs text-danger hover:text-danger" onClick={() => setConfirmDelete(p.name)}>
-									Delete
+									{t("views.settings.delete")}
 								</Button>
 							</div>
 						</div>
@@ -3115,10 +3113,10 @@ function CustomProvidersSection() {
 				</div>
 			) : null}
 			<div className="mt-3 rounded border border-line bg-paper-2 p-4">
-				<div className="text-sm font-medium text-ink">Add custom provider</div>
+				<div className="text-sm font-medium text-ink">{t("views.settings.customProviders.addTitle")}</div>
 				<div className="mt-3 grid grid-cols-2 gap-2">
-					<input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Provider name (e.g. my-provider)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
-					<input type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Base URL (https://api.example.com/v1)" className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("views.onboarding.provider.namePlaceholder")} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={t("views.onboarding.provider.baseUrlPlaceholder")} className="field h-8 px-2 font-mono text-xs" autoComplete="off" />
 				</div>
 				<select value={apiType} onChange={(e) => setApiType(e.target.value)} className="field mt-2 h-8 w-full px-2 font-mono text-xs">
 					<option value="openai-completions">openai-completions</option>
@@ -3130,32 +3128,32 @@ function CustomProvidersSection() {
 					<option value="google-vertex">google-vertex</option>
 				</select>
 				{!authNone ? (
-					<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="API key" className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
+					<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={t("views.onboarding.provider.apiKeyPlaceholder")} className="field mt-2 h-8 w-full px-2 font-mono text-xs" autoComplete="off" />
 				) : null}
 				<label className="mt-2 flex items-center gap-1.5 font-mono text-2xs text-ink-3">
 					<input type="checkbox" checked={authNone} onChange={(e) => setAuthNone(e.target.checked)} />
-					No auth (local endpoint without API key)
+					{t("views.onboarding.provider.noAuth")}
 				</label>
 				<div className="mt-2 flex gap-2">
-					<input type="text" value={modelId} onChange={(e) => setModelId(e.target.value)} placeholder="Model ID (e.g. gpt-4o)" className="field h-8 flex-1 px-2 font-mono text-xs" autoComplete="off" />
-					<input type="text" value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="Display name (optional)" className="field h-8 w-40 px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={modelId} onChange={(e) => setModelId(e.target.value)} placeholder={t("views.onboarding.provider.modelIdPlaceholder")} className="field h-8 flex-1 px-2 font-mono text-xs" autoComplete="off" />
+					<input type="text" value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder={t("views.onboarding.provider.displayNamePlaceholder")} className="field h-8 w-40 px-2 font-mono text-xs" autoComplete="off" />
 				</div>
 				<div className="mt-2 flex items-center gap-3">
 					<Button onClick={() => void save()} disabled={saving || !name.trim() || !baseUrl.trim() || !modelId.trim() || (!authNone && !apiKey.trim())} variant="ghost">
-						{saving ? "Saving…" : "Add provider"}
+						{saving ? t("views.settings.saving") : t("views.onboarding.provider.addProvider")}
 					</Button>
 					{note ? <span className="text-xs text-success">{note}</span> : null}
 				</div>
 			</div>
 			<Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} widthClass="max-w-md">
 				<div className="flex flex-col gap-3 p-5">
-					<h2 className="text-base font-semibold text-ink">Delete {confirmDelete}?</h2>
+					<h2 className="text-base font-semibold text-ink">{t("views.settings.customProviders.deleteTitle", { name: confirmDelete })}</h2>
 					<p className="text-xs text-ink-3">
-						The provider and its models will be removed from models.yml. Active sessions may lose access.
+						{t("views.settings.customProviders.deleteDesc")}
 					</p>
 					<div className="flex justify-end gap-2 border-t border-line pt-3">
-						<Button variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-						<Button variant="danger" onClick={() => confirmDelete && void remove(confirmDelete)}>Delete</Button>
+						<Button variant="ghost" onClick={() => setConfirmDelete(null)}>{t("views.settings.cancel")}</Button>
+						<Button variant="danger" onClick={() => confirmDelete && void remove(confirmDelete)}>{t("views.settings.delete")}</Button>
 					</div>
 				</div>
 			</Modal>
@@ -3172,6 +3170,7 @@ function CustomProvidersSection() {
  * deck restart. See docs/oauth-deck-sdk-findings.md for the SDK contract.
  */
 function ProvidersSection() {
+	const { t } = useTranslation();
 	const [providers, setProviders] = useState<ProviderInfo[] | null>(null);
 	const [error, setError] = useState<string | undefined>();
 	const [loading, setLoading] = useState(true);
@@ -3210,7 +3209,7 @@ function ProvidersSection() {
 	}
 
 	if (loading) {
-		return <div className="font-mono text-2xs text-ink-3">Loading providers…</div>;
+		return <div className="font-mono text-2xs text-ink-3">{t("views.settings.providers.loading")}</div>;
 	}
 	if (error) {
 		return (
@@ -3224,10 +3223,9 @@ function ProvidersSection() {
 	return (
 		<div className="flex flex-col gap-4">
 			<div>
-				<h2 className="meta">Providers</h2>
+				<h2 className="meta">{t("views.settings.providers.title")}</h2>
 				<p className="mt-1 text-xs text-ink-3">
-					OAuth sign-in to subscription providers (Claude Pro/Max, ChatGPT Plus/Pro, etc.).
-					API keys live under <strong>Env</strong> — this surface is for browser-flow auth.
+					{t("views.settings.providers.intro")}
 				</p>
 			</div>
 			<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3253,19 +3251,17 @@ function ProvidersSection() {
 			<Modal open={confirmRevoke !== null} onClose={() => setConfirmRevoke(null)} widthClass="max-w-md">
 				<div className="flex flex-col gap-3 p-5">
 					<h2 className="text-base font-semibold text-ink">
-						Sign out of {confirmRevoke?.name}?
+						{t("views.settings.providers.signOutTitle", { name: confirmRevoke?.name })}
 					</h2>
 					<p className="text-xs text-ink-3">
-						The stored credentials will be deleted from <code>auth.db</code>. Token refresh
-						will fail until you log in again. Other deck instances sharing the same
-						<code>OMP_AGENT_DIR</code> will lose access too.
+						{t("views.settings.providers.signOutDesc")}
 					</p>
 					<div className="flex justify-end gap-2 border-t border-line pt-3">
 						<Button variant="ghost" onClick={() => setConfirmRevoke(null)} disabled={revoking}>
-							Cancel
+							{t("views.settings.cancel")}
 						</Button>
 						<Button variant="danger" onClick={revoke} disabled={revoking}>
-							{revoking ? "Signing out…" : "Sign out"}
+							{revoking ? t("views.settings.providers.signingOut") : t("views.settings.providers.signOut")}
 						</Button>
 					</div>
 				</div>
@@ -3283,6 +3279,7 @@ function ProviderCard({
 	onLogin: () => void;
 	onRevoke: () => void;
 }) {
+	const { t } = useTranslation();
 	const tone =
 		info.state === "oauth"
 			? "border-success/40 bg-success/5"
@@ -3291,10 +3288,10 @@ function ProviderCard({
 				: "border-line bg-paper-2/30";
 	const stateLabel =
 		info.state === "oauth"
-			? "OAuth (subscription)"
+			? t("views.settings.providers.stateOauth")
 			: info.state === "api-key"
-				? "API key configured"
-				: "Not configured";
+				? t("views.settings.providers.stateApiKey")
+				: t("views.settings.providers.stateNotConfigured");
 	const stateBadgeTone: "success" | "accent" | "default" =
 		info.state === "oauth" ? "success" : info.state === "api-key" ? "accent" : "default";
 	return (
@@ -3307,25 +3304,25 @@ function ProviderCard({
 			</div>
 			<div className="font-mono text-2xs text-ink-4">
 				{info.id}
-				{info.count > 1 ? <span className="ml-1.5">· {info.count} credentials</span> : null}
+				{info.count > 1 ? <span className="ml-1.5">{t("views.settings.providers.credentials", { count: info.count })}</span> : null}
 			</div>
 			<div className="mt-1 flex gap-2">
 				{info.state === "unconfigured" ? (
 					<Button variant="primary" onClick={onLogin} className="flex-1">
-						Login
+						{t("views.settings.providers.login")}
 					</Button>
 				) : info.state === "oauth" ? (
 					<>
 						<Button variant="outline" onClick={onLogin} className="flex-1">
-							Replace
+							{t("views.settings.providers.replace")}
 						</Button>
 						<Button variant="ghost" onClick={onRevoke}>
-							Sign out
+							{t("views.settings.providers.signOut")}
 						</Button>
 					</>
 				) : (
 					<Button variant="outline" onClick={onLogin} className="flex-1">
-						Login (replaces API key)
+						{t("views.settings.providers.loginReplaceKey")}
 					</Button>
 				)}
 			</div>
@@ -3334,6 +3331,7 @@ function ProviderCard({
 }
 
 function AboutSection() {
+	const { t } = useTranslation();
 	const heartbeat = useStore((s) => s.heartbeat);
 	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 	const [updating, setUpdating] = useState(false);
@@ -3352,9 +3350,9 @@ function AboutSection() {
 		try {
 			const result = await api.runUpdate();
 			if (result.ok) {
-				setUpdateResult(`Update succeeded (${result.installType}). Server restarting…`);
+				setUpdateResult(t("views.settings.about.updateSucceeded", { type: result.installType }));
 			} else {
-				setUpdateResult(result.error ?? "Update failed.");
+				setUpdateResult(result.error ?? t("views.settings.about.updateFailed"));
 			}
 		} catch (e) {
 			setUpdateResult(String(e));
@@ -3370,18 +3368,18 @@ function AboutSection() {
 	return (
 		<div className="mx-auto max-w-2xl space-y-4">
 			<div>
-				<h1 className="text-xl font-semibold tracking-tight">About</h1>
-				<p className="mt-1 text-sm text-ink-3">Version, diagnostics, and self-update.</p>
+				<h1 className="text-xl font-semibold tracking-tight">{t("views.settings.about.title")}</h1>
+				<p className="mt-1 text-sm text-ink-3">{t("views.settings.about.intro")}</p>
 			</div>
 
 			<div className="rounded-md border border-line bg-paper-2 p-4">
-				<div className="meta mb-2">Version</div>
+				<div className="meta mb-2">{t("views.settings.about.version")}</div>
 				<div className="flex items-center gap-3">
 					<span className="font-mono text-sm text-ink">{current}</span>
 					{updateAvailable ? (
-						<Badge tone="warn">update available{latest ? `: ${latest}` : ""}</Badge>
+						<Badge tone="warn">{latest ? t("views.settings.about.updateAvailableWith", { latest }) : t("views.settings.about.updateAvailable")}</Badge>
 					) : (
-						<Badge tone="success">up to date</Badge>
+						<Badge tone="success">{t("views.settings.about.upToDate")}</Badge>
 					)}
 				</div>
 				{updateAvailable ? (
@@ -3393,7 +3391,7 @@ function AboutSection() {
 							onClick={() => void runUpdate()}
 						>
 							<Download className="mr-1 h-3.5 w-3.5" />
-							{updating ? "Updating…" : "Update now"}
+							{updating ? t("views.settings.about.updating") : t("views.settings.about.updateNow")}
 						</Button>
 						<a
 							href={versionInfo?.releaseUrl}
@@ -3401,7 +3399,7 @@ function AboutSection() {
 							rel="noopener noreferrer"
 							className="text-xs text-ink-3 underline hover:text-ink-2"
 						>
-							Release notes
+							{t("views.settings.about.releaseNotes")}
 						</a>
 					</div>
 				) : null}
@@ -3413,32 +3411,32 @@ function AboutSection() {
 			</div>
 
 			<div className="rounded-md border border-line bg-paper-2 p-4">
-				<div className="meta mb-2">Server identity</div>
+				<div className="meta mb-2">{t("views.settings.serverIdentity")}</div>
 				{heartbeat ? (
 					<dl className="space-y-1 text-xs">
 						<div className="flex gap-2">
-							<dt className="w-20 text-ink-3">pid</dt>
+							<dt className="w-20 text-ink-3">{t("views.settings.notifications.pid")}</dt>
 							<dd className="font-mono text-ink">{heartbeat.pid}</dd>
 						</div>
 						<div className="flex gap-2">
-							<dt className="w-20 text-ink-3">version</dt>
+							<dt className="w-20 text-ink-3">{t("views.settings.notifications.version")}</dt>
 							<dd className="font-mono text-ink">{heartbeat.version}</dd>
 						</div>
 						<div className="flex gap-2">
-							<dt className="w-20 text-ink-3">build</dt>
+							<dt className="w-20 text-ink-3">{t("views.settings.notifications.build")}</dt>
 							<dd className="font-mono text-ink">{heartbeat.buildSha?.slice(0, 12) ?? "—"}</dd>
 						</div>
 						<div className="flex gap-2">
-							<dt className="w-20 text-ink-3">started</dt>
+							<dt className="w-20 text-ink-3">{t("views.settings.notifications.started")}</dt>
 							<dd className="font-mono text-ink">{new Date(heartbeat.serverStartedAt).toLocaleString()}</dd>
 						</div>
 						<div className="flex gap-2">
-							<dt className="w-20 text-ink-3">uptime</dt>
+							<dt className="w-20 text-ink-3">{t("views.settings.notifications.uptime")}</dt>
 							<dd className="font-mono text-ink">{Math.round(heartbeat.uptimeSecs)}s</dd>
 						</div>
 					</dl>
 				) : (
-					<div className="text-xs text-ink-3">Waiting for heartbeat…</div>
+					<div className="text-xs text-ink-3">{t("views.settings.notifications.waitingHeartbeat")}</div>
 				)}
 			</div>
 		</div>

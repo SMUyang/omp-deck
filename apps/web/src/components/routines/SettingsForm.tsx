@@ -3,6 +3,7 @@
  * state keys. Lives under the Builder tab's "Settings" subsection.
  */
 import type { RoutineBudget, RoutineConcurrency, RoutineSpec } from "@omp-deck/protocol";
+import { useTranslation } from "react-i18next";
 
 import { Field, NumInput, TagInput, TextInput } from "./form-primitives";
 
@@ -11,18 +12,19 @@ interface Props {
 	onChange: (next: RoutineSpec) => void;
 }
 
-const CONCURRENCY_OPTIONS: ReadonlyArray<{ value: RoutineConcurrency; label: string; help: string }> = [
-	{ value: "skip", label: "skip", help: "Drop new fires while a run is in flight." },
-	{ value: "queue", label: "queue", help: "Queue new fires; run them after the current one." },
-	{
-		value: "cancel-previous",
-		label: "cancel-previous",
-		help: "Abort the in-flight run, start the new one.",
-	},
-	{ value: "parallel", label: "parallel", help: "Run concurrently. Costs add up." },
+const CONCURRENCY_OPTIONS: ReadonlyArray<{
+	value: RoutineConcurrency;
+	label: string;
+	key: string;
+}> = [
+	{ value: "skip", label: "skip", key: "skip" },
+	{ value: "queue", label: "queue", key: "queue" },
+	{ value: "cancel-previous", label: "cancel-previous", key: "cancelPrevious" },
+	{ value: "parallel", label: "parallel", key: "parallel" },
 ];
 
 export function SettingsForm({ spec, onChange }: Props) {
+	const { t } = useTranslation();
 	function patchSpec(p: Partial<RoutineSpec>): void {
 		onChange({ ...spec, ...p });
 	}
@@ -43,10 +45,10 @@ export function SettingsForm({ spec, onChange }: Props) {
 	}
 	return (
 		<div className="space-y-3">
-			<Field label="name">
+			<Field label={t("routines.settingsForm.name")}>
 				<TextInput value={spec.name} onChange={(v) => patchSpec({ name: v })} placeholder="my-routine" mono />
 			</Field>
-			<Field label="description">
+			<Field label={t("routines.settingsForm.description")}>
 				<TextInput
 					value={spec.description ?? ""}
 					onChange={(v) => {
@@ -55,10 +57,10 @@ export function SettingsForm({ spec, onChange }: Props) {
 						else next.description = v;
 						onChange(next);
 					}}
-					placeholder="optional, what this routine does"
+					placeholder={t("routines.settingsForm.descriptionPlaceholder")}
 				/>
 			</Field>
-			<Field label="concurrency">
+			<Field label={t("routines.settingsForm.concurrency")}>
 				<select
 					value={spec.concurrency ?? "skip"}
 					onChange={(e) => patchSpec({ concurrency: e.target.value as RoutineConcurrency })}
@@ -66,12 +68,12 @@ export function SettingsForm({ spec, onChange }: Props) {
 				>
 					{CONCURRENCY_OPTIONS.map((o) => (
 						<option key={o.value} value={o.value}>
-							{o.label} — {o.help}
+							{o.label} — {t(`routines.settingsForm.concurrencyHelp.${o.key}`)}
 						</option>
 					))}
 				</select>
 			</Field>
-			<Field label="timezone (IANA)">
+			<Field label={t("routines.settingsForm.timezone")}>
 				<TextInput
 					value={spec.timezone ?? ""}
 					onChange={(v) => {
@@ -84,7 +86,7 @@ export function SettingsForm({ spec, onChange }: Props) {
 					mono
 				/>
 			</Field>
-			<Field label="tags">
+			<Field label={t("routines.settingsForm.tags")}>
 				<TagInput
 					values={spec.tags ?? []}
 					onChange={(v) => {
@@ -97,9 +99,9 @@ export function SettingsForm({ spec, onChange }: Props) {
 				/>
 			</Field>
 			<div>
-				<div className="meta mb-1.5">Budget</div>
+				<div className="meta mb-1.5">{t("routines.settingsForm.budget")}</div>
 				<div className="grid grid-cols-2 gap-2">
-					<Field label="max_duration_secs">
+					<Field label={t("routines.settingsForm.maxDurationSecs")}>
 						<NumInput
 							value={spec.budget?.max_duration_secs}
 							onChange={(v) =>
@@ -108,7 +110,7 @@ export function SettingsForm({ spec, onChange }: Props) {
 							placeholder="180"
 						/>
 					</Field>
-					<Field label="max_llm_cost_usd">
+					<Field label={t("routines.settingsForm.maxLlmCostUsd")}>
 						<NumInput
 							value={spec.budget?.max_llm_cost_usd}
 							onChange={(v) =>
@@ -117,7 +119,7 @@ export function SettingsForm({ spec, onChange }: Props) {
 							placeholder="0.05"
 						/>
 					</Field>
-					<Field label="max_llm_tokens_input">
+					<Field label={t("routines.settingsForm.maxLlmTokensInput")}>
 						<NumInput
 							value={spec.budget?.max_llm_tokens_input}
 							onChange={(v) =>
@@ -126,7 +128,7 @@ export function SettingsForm({ spec, onChange }: Props) {
 							placeholder="50000"
 						/>
 					</Field>
-					<Field label="max_llm_tokens_output">
+					<Field label={t("routines.settingsForm.maxLlmTokensOutput")}>
 						<NumInput
 							value={spec.budget?.max_llm_tokens_output}
 							onChange={(v) =>
@@ -135,7 +137,7 @@ export function SettingsForm({ spec, onChange }: Props) {
 							placeholder="8000"
 						/>
 					</Field>
-					<Field label="max_steps_executed">
+					<Field label={t("routines.settingsForm.maxStepsExecuted")}>
 						<NumInput
 							value={spec.budget?.max_steps_executed}
 							onChange={(v) =>
@@ -146,7 +148,7 @@ export function SettingsForm({ spec, onChange }: Props) {
 					</Field>
 				</div>
 			</div>
-			<Field label="declared state keys (informational)">
+			<Field label={t("routines.settingsForm.declaredStateKeys")}>
 				<TagInput
 					values={spec.state?.declared_keys ?? []}
 					onChange={(v) => {

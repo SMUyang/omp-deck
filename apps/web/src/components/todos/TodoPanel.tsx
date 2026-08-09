@@ -1,4 +1,5 @@
 import type { TodoPhase, TodoTask } from "@/lib/types";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -22,13 +23,14 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export function TodoPanel({ phases }: Props) {
+	const { t } = useTranslation();
 	const total = phases.reduce((a, p) => a + p.tasks.length, 0);
 
 	if (!phases || phases.length === 0) {
 		return (
 			<section className="border-b border-line px-4 py-4">
-				<div className="meta mb-2">Todos</div>
-				<div className="font-mono text-2xs text-ink-3">No todos.</div>
+				<div className="meta mb-2">{t("tasks.todoPanel.title")}</div>
+				<div className="font-mono text-2xs text-ink-3">{t("tasks.todoPanel.empty")}</div>
 			</section>
 		);
 	}
@@ -36,7 +38,7 @@ export function TodoPanel({ phases }: Props) {
 	return (
 		<section className="border-b border-line px-4 py-4">
 			<div className="meta mb-2 flex items-center justify-between">
-				<span>Todos</span>
+				<span>{t("tasks.todoPanel.title")}</span>
 				<span className="text-ink-3 normal-case tracking-normal">{total}</span>
 			</div>
 			<div className="space-y-3">

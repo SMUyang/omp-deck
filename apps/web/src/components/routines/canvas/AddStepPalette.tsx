@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, Plus } from "lucide-react";
 
 import type { RoutineDeckAction, RoutineStep } from "@omp-deck/protocol";
@@ -25,6 +26,7 @@ interface AddStepPaletteProps {
 }
 
 export function AddStepPalette({ onAdd }: AddStepPaletteProps): JSX.Element {
+	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,11 +71,11 @@ export function AddStepPalette({ onAdd }: AddStepPaletteProps): JSX.Element {
 				onClick={() => setOpen((o) => !o)}
 				aria-expanded={open}
 				aria-haspopup="menu"
-				aria-label="Add a routine step"
+				aria-label={t("routines.addStepPalette.addStepAria")}
 				className="flex h-8 items-center gap-1.5 rounded border border-line bg-paper px-2.5 font-mono text-2xs uppercase tracking-meta text-ink-2 shadow-sm hover:text-ink"
 			>
 				<Plus className="h-3.5 w-3.5 text-accent" />
-				Add step
+				{t("routines.addStepPalette.addStep")}
 				<ChevronDown
 					className={`h-3 w-3 text-ink-3 transition-transform ${open ? "rotate-180" : ""}`}
 				/>
@@ -81,7 +83,7 @@ export function AddStepPalette({ onAdd }: AddStepPaletteProps): JSX.Element {
 			{open ? (
 				<div
 					role="menu"
-					aria-label="Step type"
+					aria-label={t("routines.addStepPalette.menuAria")}
 					className="mt-1 max-h-[70vh] w-[320px] overflow-y-auto rounded border border-line bg-paper shadow-xl"
 				>
 					{STEP_CATEGORIES.map((cat, i) => (
@@ -91,9 +93,11 @@ export function AddStepPalette({ onAdd }: AddStepPaletteProps): JSX.Element {
 						>
 							<div className="bg-paper-2/60 px-2.5 pb-1 pt-1.5">
 								<div className="font-mono text-2xs uppercase tracking-meta text-ink-3">
-									{cat.label}
+									{t(`routines.stepPalette.categories.${cat.key}.label`)}
 								</div>
-								<div className="text-2xs text-ink-4">{cat.tagline}</div>
+								<div className="text-2xs text-ink-4">
+									{t(`routines.stepPalette.categories.${cat.key}.tagline`)}
+								</div>
 							</div>
 							<div className="py-1">
 								{cat.entries.map((entry) => (
@@ -102,14 +106,16 @@ export function AddStepPalette({ onAdd }: AddStepPaletteProps): JSX.Element {
 										type="button"
 										role="menuitem"
 										onClick={() => pick(entry.value, entry.presetAction, entry.presetKind)}
-										aria-label={`Add ${entry.label} step`}
+										aria-label={t("routines.addStepPalette.addEntryAria", {
+											label: t(`routines.stepDescriptors.${entry.key}.label`),
+										})}
 										className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left hover:bg-paper-3"
 									>
 										<span className="shrink-0 pt-px font-mono text-2xs uppercase tracking-meta text-accent">
-											{entry.label}
+											{t(`routines.stepDescriptors.${entry.key}.label`)}
 										</span>
 										<span className="text-2xs leading-snug text-ink-2">
-											{entry.help}
+											{t(`routines.stepDescriptors.${entry.key}.help`)}
 										</span>
 									</button>
 								))}

@@ -1,5 +1,6 @@
 import type { UsageRollup } from "@/lib/types";
 import { formatCost, formatTokens } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 interface Props {
 	usage: UsageRollup;
@@ -7,18 +8,19 @@ interface Props {
 }
 
 export function CostStrip({ usage, turns }: Props) {
+	const { t } = useTranslation();
 	return (
 		<section className="border-b border-line px-4 py-4">
-			<div className="meta mb-2">Usage</div>
+			<div className="meta mb-2">{t("core.costStrip.usage")}</div>
 			<div className="grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-2xs">
-				<Row k="turns" v={String(turns)} />
-				<Row k="cost" v={formatCost(usage.cost)} accent />
-				<Row k="input" v={formatTokens(usage.input)} />
-				<Row k="output" v={formatTokens(usage.output)} />
-				<Row k="cache R" v={formatTokens(usage.cacheRead)} />
-				<Row k="cache W" v={formatTokens(usage.cacheWrite)} />
+				<Row k={t("core.costStrip.turns")} v={String(turns)} />
+				<Row k={t("core.costStrip.cost")} v={formatCost(usage.cost)} accent />
+				<Row k={t("core.costStrip.input")} v={formatTokens(usage.input)} />
+				<Row k={t("core.costStrip.output")} v={formatTokens(usage.output)} />
+				<Row k={t("core.costStrip.cacheRead")} v={formatTokens(usage.cacheRead)} />
+				<Row k={t("core.costStrip.cacheWrite")} v={formatTokens(usage.cacheWrite)} />
 				{usage.reasoningTokens !== undefined ? (
-					<Row k="reason" v={formatTokens(usage.reasoningTokens)} />
+					<Row k={t("core.costStrip.reasoning")} v={formatTokens(usage.reasoningTokens)} />
 				) : null}
 			</div>
 		</section>

@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	ArrowLeft,
 	BookOpen,
@@ -42,6 +43,7 @@ import { KbCommandPalette } from "./KbCommandPalette";
  * Editor (T-36) and graph view (T-37/38) plug into this shell.
  */
 export function KbView() {
+	const { t } = useTranslation();
 	const [params, setParams] = useSearchParams();
 	const currentPath = params.get("path") ?? undefined;
 
@@ -122,7 +124,7 @@ export function KbView() {
 	return (
 		<>
 		<Layout
-			sidebar={{ content: <KbSidebar />, label: "KB Tree" }}
+			sidebar={{ content: <KbSidebar />, label: t("views.kbView.kbTree") }}
 			inspector={{
 				content: (
 					<KbInspector
@@ -137,7 +139,7 @@ export function KbView() {
 						kbChangeCounter={kbChangeCounter}
 					/>
 				),
-				label: "Preview",
+				label: t("views.kbView.preview"),
 			}}
 			main={
 				<div className="flex h-full min-h-0 flex-col">
@@ -278,22 +280,23 @@ function KbTopBar({
 	onViewMode: (v: "file" | "graph") => void;
 	onBack: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-paper px-3">
 			{mobileDetailOpen && viewMode === "file" ? (
 				<button
 					type="button"
 					onClick={onBack}
-					aria-label="Back to tree"
+					aria-label={t("views.kbView.backToTree")}
 					className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-paper-3 hover:text-ink lg:hidden"
 				>
 					<ArrowLeft className="h-4 w-4" />
 				</button>
 			) : null}
 			<BookOpen className="h-4 w-4 text-accent" aria-hidden="true" />
-			<div className="meta">Knowledge</div>
+			<div className="meta">{t("views.kbView.knowledge")}</div>
 			<div className="min-w-0 truncate font-mono text-xs text-ink-3">
-				{viewMode === "graph" ? "graph" : (currentPath ?? "browse")}
+				{viewMode === "graph" ? t("views.kbView.graph") : (currentPath ?? t("views.kbView.browse"))}
 			</div>
 			<div className="ml-auto inline-flex items-center rounded-md border border-line bg-paper-2 p-0.5 text-xs">
 				<button
@@ -303,10 +306,10 @@ function KbTopBar({
 						"inline-flex h-6 items-center gap-1 rounded px-2 transition-colors",
 						viewMode === "file" ? "bg-accent-soft/50 text-ink" : "text-ink-3 hover:text-ink",
 					)}
-					title="File viewer (?view=file)"
+					title={t("views.kbView.fileViewer")}
 				>
 					<FileText className="h-3.5 w-3.5" />
-					File
+					{t("views.kbView.file")}
 				</button>
 				<button
 					type="button"
@@ -315,10 +318,10 @@ function KbTopBar({
 						"inline-flex h-6 items-center gap-1 rounded px-2 transition-colors",
 						viewMode === "graph" ? "bg-accent-soft/50 text-ink" : "text-ink-3 hover:text-ink",
 					)}
-					title="Force-directed graph (?view=graph)"
+					title={t("views.kbView.graphViewer")}
 				>
 					<Network className="h-3.5 w-3.5" />
-					Graph
+					{t("views.kbView.graph")}
 				</button>
 			</div>
 		</div>
@@ -326,25 +329,26 @@ function KbTopBar({
 }
 
 function KbEmpty() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
 			<BookOpen className="h-6 w-6 text-ink-4" />
-			<div className="mt-3 text-sm text-ink-2">Pick a file from the tree.</div>
+			<div className="mt-3 text-sm text-ink-2">{t("views.kbView.pickFile")}</div>
 			<div className="mt-1 max-w-sm text-xs text-ink-3">
-				The KB cockpit reads your wiki at <span className="font-mono text-ink-2">~/kb</span>. Set{" "}
-				<span className="font-mono">OMP_DECK_KB_EXCLUDE_DIRS</span> to hide subtrees if you need to.
+				{t("views.kbView.emptyHint", { path: "~/kb", env: "OMP_DECK_KB_EXCLUDE_DIRS" })}
 			</div>
 		</div>
 	);
 }
 
 function GraphPreviewEmpty() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
 			<Network className="h-5 w-5 text-ink-4" />
-			<div className="mt-3 text-sm text-ink-2">Click a node</div>
+			<div className="mt-3 text-sm text-ink-2">{t("views.kbView.clickNode")}</div>
 			<div className="mt-1 max-w-xs text-xs text-ink-3">
-				The file opens here. The graph stays put so you can keep exploring.
+				{t("views.kbView.graphPreviewHint")}
 			</div>
 		</div>
 	);
@@ -357,6 +361,7 @@ function KbWelcome({
 	status: KbStatusResponse;
 	onInitialized: () => void;
 }) {
+	const { t } = useTranslation();
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | undefined>();
 	const onCreate = useCallback(async () => {
@@ -379,18 +384,15 @@ function KbWelcome({
 			<div className="max-w-lg text-left">
 				<div className="flex items-center gap-2">
 					<BookOpen className="h-5 w-5 text-accent" />
-					<h1 className="text-base font-medium text-ink">Set up your knowledge base</h1>
+					<h1 className="text-base font-medium text-ink">{t("views.kbView.welcome.setup")}</h1>
 				</div>
 				<p className="mt-3 text-sm text-ink-2">
-					omp-deck reads a Karpathy-style llm-wiki from a single folder on disk. The cockpit
-					is currently pointed at{" "}
+					{t("views.kbView.welcome.intro")}{" "}
 					<span className="break-all font-mono text-ink">{status.root}</span>
-					{status.exists ? " (which is empty)" : " (which doesn't exist yet)"}.
+					{status.exists ? t("views.kbView.welcome.empty") : t("views.kbView.welcome.missing")}
 				</p>
 				<p className="mt-2 text-sm text-ink-3">
-					Click below to scaffold a starter <span className="font-mono">README.md</span> at
-					that location. From there you can drop in your own markdown files; the tree, the
-					graph, and the file pane all refresh live as you add content.
+					{t("views.kbView.welcome.scaffoldHint", { file: "README.md" })}
 				</p>
 				<div className="mt-5 flex items-center gap-3">
 					<button
@@ -400,10 +402,10 @@ function KbWelcome({
 						className="btn-primary inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-paper transition-opacity disabled:opacity-60"
 					>
 						{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
-						Create starter README
+						{t("views.kbView.welcome.createStarter")}
 					</button>
 					<span className="text-2xs text-ink-3">
-						Or set <span className="font-mono text-ink-2">OMP_DECK_KB_ROOT</span> and restart the deck.
+						{t("views.kbView.welcome.orSet", { env: "OMP_DECK_KB_ROOT" })}
 					</span>
 				</div>
 				{error ? (
@@ -413,12 +415,10 @@ function KbWelcome({
 				) : null}
 				<div className="mt-6 border-t border-line pt-4 text-xs text-ink-3">
 					<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">
-						What this is NOT
+						{t("views.kbView.welcome.whatNot")}
 					</div>
 					<p className="mt-1">
-						This kb is separate from omp's <span className="font-mono">memory.backend</span>{" "}
-						(rolling session summaries / vector recall). The kb is your hand-tended,
-						long-term notes; omp memory is short-term session context.
+						{t("views.kbView.welcome.whatNotBody", { backend: "memory.backend" })}
 					</p>
 				</div>
 			</div>
@@ -429,18 +429,17 @@ function KbWelcome({
 // ─── Tree ────────────────────────────────────────────────────────────────
 
 function KbSidebar() {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div className="border-b border-line px-3 py-2">
-				<div className="meta">Knowledge</div>
+				<div className="meta">{t("views.kbView.knowledge")}</div>
 				<div className="mt-0.5 text-xs text-ink-3">
-					Filters and tag chips land in T-39. For now, browse the tree on the right.
+					{t("views.kbView.sidebarHint")}
 				</div>
 			</div>
 			<div className="min-h-0 flex-1 px-3 py-2 text-xs text-ink-3">
-				The cockpit reads <span className="font-mono">~/kb</span> via{" "}
-				<span className="font-mono">OMP_DECK_KB_ROOT</span>. Hide subtrees via{" "}
-				<span className="font-mono">OMP_DECK_KB_EXCLUDE_DIRS</span>.
+				{t("views.kbView.sidebarRoot", { path: "~/kb", rootEnv: "OMP_DECK_KB_ROOT", excludeEnv: "OMP_DECK_KB_EXCLUDE_DIRS" })}
 			</div>
 		</div>
 	);
@@ -457,16 +456,17 @@ function KbTree({
 	onOpenSearch: () => void;
 	kbChangeCounter: number;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div className="border-b border-line px-3 py-2">
 				<div className="flex items-center gap-2">
-					<div className="meta">Knowledge</div>
+					<div className="meta">{t("views.kbView.knowledge")}</div>
 					<button
 						type="button"
 						onClick={onOpenSearch}
-						aria-label="Search KB (Ctrl-P)"
-						title="Search (Ctrl-P / ⌘P)"
+						aria-label={t("views.kbView.searchKb")}
+						title={t("views.kbView.searchTitle")}
 						className="ml-auto inline-flex h-7 items-center gap-1 rounded-md border border-line bg-paper-2 px-2 text-2xs text-ink-3 transition-colors hover:bg-paper-3 hover:text-ink"
 					>
 						<Search className="h-3 w-3" />
@@ -474,7 +474,7 @@ function KbTree({
 					</button>
 				</div>
 				<div className="mt-0.5 text-xs text-ink-3">
-					Your Karpathy-style llm-wiki. Click a file to open; wikilinks navigate in-app.
+					{t("views.kbView.treeHint")}
 				</div>
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto py-1">
@@ -501,6 +501,7 @@ function TreeBranch({
 	onSelect: (p: string) => void;
 	kbChangeCounter: number;
 }) {
+	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(expandedDefault);
 	const [data, setData] = useState<KbTreeResponse | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -549,7 +550,7 @@ function TreeBranch({
 			) : null}
 			{loading && !data ? (
 				<div className="px-3 py-1.5 text-xs text-ink-3">
-					<Loader2 className="mr-1 inline-block h-3 w-3 animate-spin" /> loading
+					<Loader2 className="mr-1 inline-block h-3 w-3 animate-spin" /> {t("views.kbView.loading")}
 				</div>
 			) : null}
 			{error ? (
@@ -572,6 +573,7 @@ function TreeDir({
 	onSelect: (p: string) => void;
 	kbChangeCounter: number;
 }) {
+	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(false);
 	const Chevron = expanded ? ChevronDown : ChevronRight;
 	const FolderIcon = expanded ? FolderOpen : Folder;
@@ -589,7 +591,7 @@ function TreeDir({
 				<FolderIcon className="h-3.5 w-3.5 shrink-0 text-ink-3" />
 				<span className="min-w-0 truncate text-ink-2">{entry.name}</span>
 				{entry.symlink ? (
-					<span className="font-mono text-2xs uppercase text-ink-4" title="symlink/junction">→</span>
+					<span className="font-mono text-2xs uppercase text-ink-4" title={t("views.kbView.symlink")}>→</span>
 				) : null}
 				{typeof entry.mdCount === "number" ? (
 					<span className="ml-auto font-mono text-2xs text-ink-4">{entry.mdCount}</span>
@@ -649,6 +651,7 @@ function KbFilePane({
 	onClose?: () => void;
 	kbChangeCounter: number;
 }) {
+	const { t } = useTranslation();
 	const [file, setFile] = useState<KbFileResponse | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | undefined>();
@@ -696,7 +699,7 @@ function KbFilePane({
 	}, [file]);
 
 	const cancelEdit = useCallback(() => {
-		if (dirty && !window.confirm("Discard unsaved changes?")) return;
+		if (dirty && !window.confirm(t("views.kbView.discardChanges"))) return;
 		setDraft(null);
 		setSaveError(undefined);
 	}, [dirty]);
@@ -743,7 +746,7 @@ function KbFilePane({
 			}
 			if (href.startsWith("kb-unresolved:")) {
 				const target = decodeURIComponent(href.slice("kb-unresolved:".length));
-				if (file) void createUnresolved(target, file.path, onNavigate);
+				if (file) void createUnresolved(target, file.path, onNavigate, t);
 				return true;
 			}
 			return false;
@@ -754,7 +757,7 @@ function KbFilePane({
 	if (loading && !file) {
 		return (
 			<div className="flex items-center gap-2 px-4 py-3 text-sm text-ink-3">
-				<Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading {path}…
+				<Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("views.kbView.loadingFile", { path })}
 			</div>
 		);
 	}
@@ -776,7 +779,7 @@ function KbFilePane({
 							{typeof file.frontmatter?.name === "string" && (file.frontmatter.name as string).trim()
 								? (file.frontmatter.name as string)
 								: titleFromPath(file.path)}
-							{dirty ? <span className="ml-1 text-warn" title="unsaved changes">●</span> : null}
+							{dirty ? <span className="ml-1 text-warn" title={t("views.kbView.unsavedChanges")}>●</span> : null}
 						</h1>
 						<div className="mt-1 font-mono text-2xs text-ink-3">{file.path}</div>
 					</div>
@@ -788,19 +791,19 @@ function KbFilePane({
 									onClick={() => void save()}
 									disabled={!dirty || saving}
 									className="btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs disabled:opacity-50"
-									title="Save (Ctrl-S)"
+									title={t("views.kbView.saveTitle")}
 								>
 									{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-									Save
+									{t("views.kbView.save")}
 								</button>
 								<button
 									type="button"
 									onClick={cancelEdit}
 									className="btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs"
-									title="Discard (Esc)"
+									title={t("views.kbView.discardTitle")}
 								>
 									<X className="h-3.5 w-3.5" />
-									Cancel
+									{t("views.kbView.cancel")}
 								</button>
 							</>
 						) : (
@@ -809,18 +812,18 @@ function KbFilePane({
 									type="button"
 									onClick={startEdit}
 									className="btn-ghost inline-flex h-7 items-center gap-1 px-2 text-xs"
-									title="Edit (or click anywhere in the body)"
+									title={t("views.kbView.editTitle")}
 								>
 									<Pencil className="h-3.5 w-3.5" />
-									Edit
+									{t("views.kbView.edit")}
 								</button>
 								{onClose ? (
 									<button
 										type="button"
 										onClick={onClose}
 										className="btn-ghost inline-flex h-7 w-7 items-center justify-center p-0 text-ink-3 hover:text-ink"
-										title="Close preview"
-										aria-label="Close preview"
+										title={t("views.kbView.closePreview")}
+										aria-label={t("views.kbView.closePreview")}
 									>
 										<X className="h-3.5 w-3.5" />
 									</button>
@@ -831,12 +834,12 @@ function KbFilePane({
 				</div>
 				{file.frontmatterError ? (
 					<div className="mt-2 rounded-md border border-warn/30 bg-warn/10 px-2 py-1 font-mono text-2xs text-warn">
-						frontmatter: {file.frontmatterError}
+						{t("views.kbView.frontmatterError", { error: file.frontmatterError })}
 					</div>
 				) : null}
 				{saveError ? (
 					<div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 font-mono text-2xs text-danger">
-						save failed: {saveError}
+						{t("views.kbView.saveFailed", { error: saveError })}
 					</div>
 				) : null}
 			</div>
@@ -862,27 +865,27 @@ function KbFilePane({
  * filename defaults to the bare target (cleaned for filesystem safety);
  * directory defaults to the current file's parent. Cancel = no-op.
  */
-async function createUnresolved(target: string, currentFilePath: string, onNavigate: (p: string) => void): Promise<void> {
+async function createUnresolved(target: string, currentFilePath: string, onNavigate: (p: string) => void, t: (key: string, opts?: Record<string, unknown>) => string): Promise<void> {
 	const currentDir = currentFilePath.includes("/") ? currentFilePath.slice(0, currentFilePath.lastIndexOf("/")) : "";
 	const slug = target.replace(/[\\:*?"<>|]/g, "-").replace(/\.md$/i, "");
 	const defaultPath = currentDir ? `${currentDir}/${slug}.md` : `${slug}.md`;
 	const proposed = window.prompt(
-		`Create a new kb file for unresolved wikilink "${target}"?\nPath (relative to kb root):`,
+		t("views.kbView.createUnresolved", { target }),
 		defaultPath,
 	);
 	if (!proposed) return;
 	const normalized = proposed.trim().replace(/\\/g, "/").replace(/^\/+/, "");
 	if (!normalized.toLowerCase().endsWith(".md")) {
-		window.alert("Path must end in .md");
+		window.alert(t("views.kbView.pathMustEndMd"));
 		return;
 	}
 	const today = new Date().toISOString().slice(0, 10);
 	const stub = `---\ntype: knowledge\ncreated: ${today}\nupdated: ${today}\ntags: []\n---\n\n# ${target}\n\n`;
-	try {
+		try {
 		await kbApi.create(normalized, stub);
 		onNavigate(normalized);
 	} catch (e) {
-		window.alert(`create failed: ${(e as Error).message ?? e}`);
+		window.alert(t("views.kbView.createFailed", { error: (e as Error).message ?? String(e) }));
 	}
 }
 
@@ -897,6 +900,7 @@ function KbInspector({
 	onNavigate: (p: string) => void;
 	kbChangeCounter: number;
 }) {
+	const { t } = useTranslation();
 	const [file, setFile] = useState<KbFileResponse | null>(null);
 	const [backlinks, setBacklinks] = useState<KbBacklink[]>([]);
 	const [backlinksLoading, setBacklinksLoading] = useState(false);
@@ -931,7 +935,7 @@ function KbInspector({
 	}, [currentPath, kbChangeCounter]);
 
 	if (!currentPath) {
-		return <div className="px-3 py-4 text-xs text-ink-3">Pick a file to inspect.</div>;
+		return <div className="px-3 py-4 text-xs text-ink-3">{t("views.kbView.pickFileToInspect")}</div>;
 	}
 
 	const isOrphan = file !== null && !backlinksLoading && backlinks.length === 0;
@@ -939,21 +943,21 @@ function KbInspector({
 	return (
 		<div className="flex h-full flex-col">
 			<div className="border-b border-line px-3 py-2">
-				<div className="meta">Inspector</div>
+				<div className="meta">{t("views.kbView.inspector")}</div>
 				<div className="mt-0.5 text-xs text-ink-3">
-					Frontmatter, outbound, backlinks, tags.
+					{t("views.kbView.inspectorHint")}
 				</div>
 			</div>
 			<div className="space-y-3 overflow-y-auto px-3 py-3 text-xs">
 				{file ? (
 					<>
-						<DefRow k="path" v={<span className="break-all font-mono text-2xs">{file.path}</span>} />
-						<DefRow k="size" v={<span className="font-mono text-2xs">{formatBytes(file.size)}</span>} />
-						<DefRow k="updated" v={<span className="font-mono text-2xs">{formatTime(file.mtime)}</span>} />
+						<DefRow k={t("views.kbView.path")} v={<span className="break-all font-mono text-2xs">{file.path}</span>} />
+						<DefRow k={t("views.kbView.size")} v={<span className="font-mono text-2xs">{formatBytes(file.size)}</span>} />
+						<DefRow k={t("views.kbView.updated")} v={<span className="font-mono text-2xs">{formatTime(file.mtime)}</span>} />
 						{isOrphan ? (
 							<div className="flex items-center gap-1.5 rounded-md border border-warn/30 bg-warn/10 px-2 py-1 font-mono text-2xs text-warn">
 								<Link2Off className="h-3 w-3" />
-								orphan — no backlinks
+								{t("views.kbView.orphan")}
 							</div>
 						) : null}
 						<TagChips fm={file.frontmatter} />
@@ -966,7 +970,7 @@ function KbInspector({
 						/>
 					</>
 				) : (
-					<div className="text-ink-3">loading…</div>
+					<div className="text-ink-3">{t("views.kbView.loadingEllipsis")}</div>
 				)}
 			</div>
 		</div>
@@ -983,13 +987,14 @@ function DefRow({ k, v }: { k: string; v: ReactNode }) {
 }
 
 function FrontmatterBlock({ fm }: { fm: Record<string, unknown> }) {
+	const { t } = useTranslation();
 	const entries = Object.entries(fm).filter(([k]) => k !== "_raw");
 	if (entries.length === 0) {
-		return <div className="text-2xs text-ink-3">no frontmatter</div>;
+		return <div className="text-2xs text-ink-3">{t("views.kbView.noFrontmatter")}</div>;
 	}
 	return (
 		<div>
-			<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">frontmatter</div>
+			<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">{t("views.kbView.frontmatter")}</div>
 			<dl className="mt-1 space-y-0.5 font-mono text-2xs">
 				{entries.map(([k, v]) => (
 					<div key={k} className="flex items-baseline gap-2">
@@ -1009,15 +1014,16 @@ function OutboundBlock({
 	links: KbFileResponse["outgoingLinks"];
 	onNavigate: (p: string) => void;
 }) {
+	const { t } = useTranslation();
 	if (links.length === 0) {
-		return <div className="text-2xs text-ink-3">no outbound links</div>;
+		return <div className="text-2xs text-ink-3">{t("views.kbView.noOutbound")}</div>;
 	}
 	const resolved = links.filter((l) => l.resolved);
 	const unresolved = links.filter((l) => !l.resolved);
 	return (
 		<div>
 			<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">
-				outbound ({links.length})
+				{t("views.kbView.outbound", { count: links.length })}
 			</div>
 			<ul className="mt-1 space-y-0.5 font-mono text-2xs">
 				{resolved.map((l, i) => (
@@ -1057,20 +1063,21 @@ function BacklinksBlock({
 	loading: boolean;
 	onNavigate: (p: string) => void;
 }) {
+	const { t } = useTranslation();
 	if (loading) {
 		return (
 			<div className="text-2xs text-ink-3">
-				<Loader2 className="mr-1 inline-block h-3 w-3 animate-spin" /> loading backlinks…
+				<Loader2 className="mr-1 inline-block h-3 w-3 animate-spin" /> {t("views.kbView.loadingBacklinks")}
 			</div>
 		);
 	}
 	if (backlinks.length === 0) {
-		return <div className="text-2xs text-ink-3">no backlinks</div>;
+		return <div className="text-2xs text-ink-3">{t("views.kbView.noBacklinks")}</div>;
 	}
 	return (
 		<div>
 			<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">
-				backlinks ({backlinks.length})
+				{t("views.kbView.backlinks", { count: backlinks.length })}
 			</div>
 			<ul className="mt-1 space-y-1 font-mono text-2xs">
 				{backlinks.map((b, i) => (
@@ -1097,21 +1104,22 @@ function BacklinksBlock({
 }
 
 function TagChips({ fm }: { fm: Record<string, unknown> }) {
+	const { t } = useTranslation();
 	const tags = Array.isArray(fm.tags)
 		? (fm.tags as unknown[]).filter((t): t is string => typeof t === "string" && t.length > 0)
 		: [];
 	if (tags.length === 0) return null;
 	return (
 		<div>
-			<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">tags</div>
+			<div className="font-mono text-2xs uppercase tracking-meta text-ink-4">{t("views.kbView.tags")}</div>
 			<div className="mt-1 flex flex-wrap gap-1">
-				{tags.map((t) => (
+				{tags.map((tag) => (
 					<span
-						key={t}
+						key={tag}
 						className="rounded bg-paper-3 px-1.5 py-0.5 font-mono text-2xs text-ink-2"
-						title="Click-to-filter lands in T-40"
+						title={t("views.kbView.clickToFilter")}
 					>
-						{t}
+						{tag}
 					</span>
 				))}
 			</div>

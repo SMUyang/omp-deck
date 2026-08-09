@@ -1,6 +1,7 @@
 import type { ToolRendererProps } from "./ToolCallCard";
 import { extractResultText } from "./shared";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 interface Op {
 	op: string;
@@ -21,6 +22,7 @@ const OP_TONE: Record<string, string> = {
 };
 
 export function TodoWriteTool({ args, stream }: ToolRendererProps) {
+	const { t } = useTranslation();
 	const ops = Array.isArray((args as { ops?: Op[] }).ops) ? ((args as { ops: Op[] }).ops) : [];
 	const result = stream?.result;
 	const resultText = result ? extractResultText(result) : "";
@@ -31,7 +33,7 @@ export function TodoWriteTool({ args, stream }: ToolRendererProps) {
 				{ops.map((op, i) => (
 					<li key={i} className="flex items-start gap-2">
 						<span className={cn("min-w-[44px] shrink-0 font-mono text-2xs uppercase tracking-meta", OP_TONE[op.op] ?? "text-ink-3")}>
-							{op.op}
+							{t(`tools.todoWrite.op.${op.op}`, { defaultValue: op.op })}
 						</span>
 						<div className="min-w-0 flex-1">
 							{op.phase ? <span className="text-thinking font-mono text-xs">{op.phase}</span> : null}
