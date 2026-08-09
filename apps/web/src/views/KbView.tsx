@@ -22,7 +22,7 @@ import {
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import { rehypeHighlightLight } from "@/lib/rehype-highlight-light";
 import type { KbBacklink, KbFileResponse, KbTreeEntry, KbTreeResponse } from "@omp-deck/protocol";
 
 import { Layout } from "@/components/Layout";
@@ -1167,7 +1167,7 @@ const KbMarkdown = memo(function KbMarkdown({
 		<div className="markdown text-sm">
 			<ReactMarkdown
 				remarkPlugins={[remarkGfm]}
-				rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+				rehypePlugins={[rehypeHighlightLight]}
 				urlTransform={kbUrlTransform}
 				components={{ pre: CopyablePre, a: Anchor }}
 			>

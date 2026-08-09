@@ -41,8 +41,10 @@ export default defineConfig({
 					"react-vendor": ["react", "react-dom", "react-router-dom"],
 					// State management (~30KB)
 					"state-vendor": ["zustand"],
-					// Markdown rendering (~200KB) — used by Chat, KB, Memory
-					"markdown-vendor": ["react-markdown", "remark-gfm", "rehype-highlight", "highlight.js"],
+					// Markdown parsing core (~60KB) — required on Chat first paint.
+					// Code highlighting (rehype-highlight + 38 langs, ~400KB) is
+					// NOT here — it rides KbView's lazy chunk, not the preload path.
+					"markdown-vendor": ["react-markdown", "remark-gfm"],
 				},
 			},
 		},
