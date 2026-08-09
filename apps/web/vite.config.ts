@@ -11,10 +11,6 @@ const SERVER_WS = `ws://${SERVER_HOST}:${SERVER_PORT}`;
 
 export default defineConfig({
 	plugins: [react()],
-	// Expose `OMP_DECK_*` env vars (in addition to Vite's default `VITE_*`) so
-	// power-user opt-outs like `OMP_DECK_CANVAS_SKIP_PREVIEW=1` are visible to
-	// the client via `import.meta.env` without bouncing through a localStorage
-	// shim.
 	envPrefix: ["VITE_", "OMP_DECK_"],
 	resolve: {
 		alias: {
@@ -31,6 +27,24 @@ export default defineConfig({
 	},
 	build: {
 		outDir: "dist",
-		sourcemap: true,
+		// Disable sourcemaps in production — saves ~4MB download on first load.
+		// Dev mode still has sourcemaps via Vite's dev server.
+		sourcemap: false,
+		// Raise limit — our app is legitimately large; the warning is noise.
+		chunkSizeWarningLimit: 1200,
+		rollupOptions: {
+			output: {
+				// Split vendor libraries into cacheable chunks.
+				// React/zustand/router rarely change between deploys → browser cache hits.
+				manualChunks: {
+					// Core React runtime (~140KB)
+					"react-vendor": ["react", "react-dom", "react-router-dom"],
+					// State management (~30KB)
+					"state-vendor": ["zustand"],
+					// Markdown rendering (~200KB) — used by Chat, KB, Memory
+					"markdown-vendor": ["react-markdown", "remark-gfm", "rehype-highlight", "highlight.js"],
+				},
+			},
+		},
 	},
 });
