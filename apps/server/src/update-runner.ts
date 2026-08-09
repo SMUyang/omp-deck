@@ -14,7 +14,7 @@ import { logger } from "./log.ts";
 
 const log = logger("update-runner");
 
-export type InstallType = "git" | "npm-global" | "unknown";
+export type InstallType = "git" | "npm-global" | "zip" | "unknown";
 
 export interface UpdateStepResult {
 	command: string[];
@@ -43,6 +43,8 @@ interface UpdateOptions {
 export function detectInstallType(sourceRoot: string): InstallType {
 	if (existsSync(path.join(sourceRoot, ".git"))) return "git";
 	if (sourceRoot.includes(path.join("node_modules", "omp-deck"))) return "npm-global";
+	// No .git + has package.json = likely a zip download
+	if (existsSync(path.join(sourceRoot, "package.json"))) return "zip";
 	return "unknown";
 }
 
@@ -82,6 +84,18 @@ export async function runUpdateSteps(
 
 	if (installType === "unknown") {
 		return { ok: false, installType, steps, error: "unsupported install type — update manually" };
+	}
+
+	// Zip installs use the zip-update module
+	if (installType === "zip") {
+		const { runZipUpdate } = await import("./zip-update.ts");
+		const result = await runZipUpdate(sourceRoot);
+		return {
+			ok: result.ok,
+			installType,
+			steps: [{ command: ["zip-update"], exitCode: result.ok ? 0 : 1, stdout: result.ok ? "updated" : "", stderr: result.error ?? "" }],
+			error: result.error,
+		};
 	}
 
 	const stepList: Array<{ cmd: string[]; label: string }> =

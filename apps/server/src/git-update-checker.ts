@@ -116,10 +116,12 @@ export function startGitUpdateChecker(onUpdate?: () => void): void {
 
 	const repoRoot = resolveRepoRoot();
 	if (!existsSync(path.join(repoRoot, ".git"))) {
-		log.info("git update checker skipped (not a git repository — likely a zip download)");
+		// Not a git repo — use zip update checker instead
+		log.info("zip update checker started (not a git repository)");
+		startZipUpdateChecker(repoRoot, onUpdate);
 		return;
 	}
- 	log.info(`git update checker started (interval ${Math.round(intervalMs / 1000)}s)`);
+	log.info(`git update checker started (interval ${Math.round(intervalMs / 1000)}s)`);
 
 	// Initial check after 10s (let server finish booting)
 	setTimeout(() => void checkOnce(repoRoot, onUpdate), 10_000);
@@ -143,4 +145,37 @@ function parseInt10(raw: string | undefined, fallback: number): number {
 	if (!raw) return fallback;
 	const n = Number(raw);
 	return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Zip-based update checker for non-git installations. */
+let zipTimer: ReturnType<typeof setInterval> | null = null;
+
+async function checkZipOnce(repoRoot: string, onUpdate?: () => void): Promise<void> {
+	status.checking = true;
+	try {
+		const { checkZipUpdate } = await import("./zip-update.ts");
+		const result = await checkZipUpdate(repoRoot);
+		status.updateAvailable = result.available;
+		if (result.available) {
+			log.info(`zip update available (sha: ${result.latestSha?.slice(0, 7) ?? "unknown"})`);
+			if (process.env.OMP_DECK_AUTO_UPDATE === "true") {
+				const { runZipUpdate } = await import("./zip-update.ts");
+				const updateResult = await runZipUpdate(repoRoot);
+				if (updateResult.ok && onUpdate) onUpdate();
+			}
+		} else {
+			status.updateAvailable = false;
+		}
+	} catch (err) {
+		status.lastError = err instanceof Error ? err.message : String(err);
+		log.debug(`zip update check: ${status.lastError}`);
+	} finally {
+		status.checking = false;
+	}
+}
+
+function startZipUpdateChecker(repoRoot: string, onUpdate?: () => void): void {
+	const intervalMs = parseInt10(process.env.OMP_DECK_UPDATE_INTERVAL_MS, DEFAULT_INTERVAL_MS);
+	setTimeout(() => void checkZipOnce(repoRoot, onUpdate), 10_000);
+	zipTimer = setInterval(() => void checkZipOnce(repoRoot, onUpdate), intervalMs);
 }

@@ -545,7 +545,7 @@ export interface VersionInfo {
 	disabled: boolean;
 }
 
-export type UpdateInstallType = "git" | "npm-global" | "unknown";
+export type UpdateInstallType = "git" | "npm-global" | "zip" | "unknown";
 
 export interface UpdateStepWire {
 	command: string[];
