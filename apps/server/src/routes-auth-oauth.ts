@@ -34,6 +34,7 @@ import type {
 import { broadcastBus } from "./broadcast-bus.ts";
 import { getDeckAuthStorage, getDeckModelRegistry } from "./auth-singleton.ts";
 import { logger } from "./log.ts";
+import { listCustomProviders } from "./models-store.ts";
 
 /**
  * ES2023-safe deferred helper. `Promise.withResolvers` is ES2024; the deck's
@@ -170,6 +171,20 @@ export function buildAuthOAuthRouter(): Hono {
 				name: p.name,
 				...deriveAuthState(data[String(p.id)]),
 			}));
+		// Merge OpenAI-compatible custom providers from models.yml into the
+		// default provider list so they appear as configured api-key cards
+		// (e.g. deepseek) instead of only living under "Custom providers".
+		// They carry no OAuth flow; state reflects whether a key is set.
+		const sdkIds = new Set(providers.map((p) => p.id));
+		for (const cp of listCustomProviders()) {
+			if (sdkIds.has(cp.name)) continue;
+			providers.push({
+				id: cp.name,
+				name: cp.name,
+				state: cp.hasKey ? "api-key" : "unconfigured",
+				count: cp.hasKey ? 1 : 0,
+			});
+		}
 		const body: ListProvidersResponse = { providers };
 		return c.json(body);
 	});
