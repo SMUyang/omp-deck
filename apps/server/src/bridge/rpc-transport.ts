@@ -8,6 +8,7 @@
 import type { FileSink, Subprocess } from "bun";
 import * as os from "node:os";
 import * as path from "node:path";
+import { buildOmpCommand } from "../runtime-bun.ts";
 import { logger } from "../log.ts";
 
 const log = logger("rpc-transport");
@@ -160,7 +161,7 @@ export class OmpRpcTransport {
 		log.info(`spawning ${this.#bin} ${args.join(" ")} (cwd=${this.#cwd})`);
 
 		this.#proc = Bun.spawn({
-			cmd: [this.#bin, ...args],
+			cmd: [...buildOmpCommand(this.#bin), ...args],
 			cwd: this.#cwd,
 			stdin: "pipe",
 			stdout: "pipe",

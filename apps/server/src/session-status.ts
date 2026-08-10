@@ -1,5 +1,6 @@
 import type { AgentMessageJson, SessionSnapshot } from "@omp-deck/protocol";
 
+import { buildOmpCommand } from "./runtime-bun.ts";
 import { logger } from "./log.ts";
 
 const log = logger("session-status");
@@ -207,19 +208,8 @@ export function renderProviderUsageJson(json: ProviderUsageJson | undefined, cur
 	return lines.join("\n");
 }
 
-async function isBunScript(command: string): Promise<boolean> {
-	try {
-		const firstLine = (await Bun.file(command).slice(0, 256).text()).split(/\r?\n/, 1)[0] ?? "";
-		return /^#!.*\bbun\b/.test(firstLine);
-	} catch {
-		return false;
-	}
-}
-
-export async function buildOmpUsageCommand(ompBin: string): Promise<string[]> {
-	if (!(await isBunScript(ompBin))) return [ompBin, "usage", "--json"];
-	if (process.platform === "win32") return ["bun", ompBin, "usage", "--json"];
-	return ["env", "-S", "bun", ompBin, "usage", "--json"];
+export function buildOmpUsageCommand(ompBin: string): string[] {
+	return [...buildOmpCommand(ompBin), "usage", "--json"];
 }
 
 export async function fetchProviderUsageJson(ompBin: string): Promise<ProviderUsageJson> {

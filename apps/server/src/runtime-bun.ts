@@ -28,7 +28,7 @@
  * isn't going to move during a single deck-server run, and re-checking on
  * every spawn would be wasted IO.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 let cached: string | undefined;
 
@@ -59,4 +59,22 @@ export function resolveBunExecutable(): string {
 /** Test-only: reset the memoized result. */
 export function resetResolvedBunExecutable(): void {
 	cached = undefined;
+}
+
+/**
+ * Build a command for a Bun-backed CLI without relying on its shebang PATH.
+ * Launchd/systemd environments commonly omit the Bun directory from PATH.
+ */
+export function buildOmpCommand(ompBin: string): string[] {
+	if (!isBunScript(ompBin)) return [ompBin];
+	return [resolveBunExecutable(), ompBin];
+}
+
+function isBunScript(command: string): boolean {
+	try {
+		const firstLine = readFileSync(command, "utf8").slice(0, 256).split(/\r?\n/, 1)[0] ?? "";
+		return /^#!.*\bbun\b/.test(firstLine) || command.endsWith("/cli.js");
+	} catch {
+		return command.endsWith("/cli.js");
+	}
 }

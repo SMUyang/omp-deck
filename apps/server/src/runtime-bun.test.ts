@@ -11,10 +11,23 @@
  * exported helper.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { resetResolvedBunExecutable, resolveBunExecutable } from "./runtime-bun.ts";
+import { buildOmpCommand, resetResolvedBunExecutable, resolveBunExecutable } from "./runtime-bun.ts";
 
 afterEach(() => {
 	resetResolvedBunExecutable();
+});
+
+describe("buildOmpCommand", () => {
+	test("runs the global JavaScript CLI through Bun when PATH omits Bun", () => {
+		const command = buildOmpCommand("/Users/hyan/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js");
+		expect(command).toHaveLength(2);
+		expect(command[0]).toBe(process.execPath);
+		expect(command[1]).toContain("/pi-coding-agent/dist/cli.js");
+	});
+
+	test("keeps native omp commands direct", () => {
+		expect(buildOmpCommand("/usr/local/bin/omp")).toEqual(["/usr/local/bin/omp"]);
+	});
 });
 
 describe("resolveBunExecutable", () => {

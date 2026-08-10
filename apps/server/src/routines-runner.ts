@@ -25,7 +25,8 @@ import {
 import { ConcurrencyController } from "./routines/concurrency.ts";
 import { runV1Pipeline } from "./routines/v1-runner.ts";
 import { finalizeRun, insertAbortedRun } from "./db/routine-step-runs.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, resolveOmpBin } from "./config.ts";
+import { buildOmpCommand } from "./runtime-bun.ts";
 
 const log = logger("routines-runner");
 
@@ -246,7 +247,7 @@ async function runV0Action(
 	body: string,
 	cwd: string,
 ): Promise<{ exitCode?: number; stdoutExcerpt: string; stderrExcerpt: string; error?: string }> {
-	const cmd = buildV0Cmd(kind, body);
+	const cmd = buildV0Cmd(kind, body, resolveOmpBin());
 	if (!cmd) {
 		return { error: `unsupported action kind: ${kind}`, stdoutExcerpt: "", stderrExcerpt: "" };
 	}
@@ -274,7 +275,7 @@ async function runV0Action(
 	};
 }
 
-function buildV0Cmd(kind: RoutineActionKind, body: string): string[] | null {
+function buildV0Cmd(kind: RoutineActionKind, body: string, ompBin: string): string[] | null {
 	const isWin = process.platform === "win32";
 	switch (kind) {
 		case "bash":
@@ -285,7 +286,7 @@ function buildV0Cmd(kind: RoutineActionKind, body: string): string[] | null {
 			return parts as string[];
 		}
 		case "prompt":
-			return ["omp", "-p", body];
+			return [...buildOmpCommand(ompBin), "-p", body];
 		default:
 			return null;
 	}

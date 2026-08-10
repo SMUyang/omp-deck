@@ -18,6 +18,8 @@ import { costMicros } from "../budget.ts";
 import { renderString } from "../template.ts";
 import type { RunContext, StepResult } from "../types.ts";
 import { validateRoutineSpec as _vrs } from "@omp-deck/protocol";
+import { resolveOmpBin } from "../../config.ts";
+import { buildOmpCommand } from "../../runtime-bun.ts";
 
 void _vrs; // keep import; unused but ensures protocol re-export typechecks here
 
@@ -93,7 +95,7 @@ async function runAgentAttempt(input: AgentAttemptInput): Promise<StepResult> {
 	}
 
 	try {
-		const proc = Bun.spawn(["omp", ...args], {
+		const proc = Bun.spawn([...buildOmpCommand(resolveOmpBin()), ...args], {
 			cwd: input.defaultCwd,
 			stdin: "ignore",
 			stdout: "pipe",

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
+import { buildOmpCommand } from "./runtime-bun.ts";
 
 export interface Config {
 	host: string;
@@ -74,25 +75,34 @@ function resolveWebDist(): string | undefined {
  * Resolve the omp binary to an absolute path, excluding any
  * node_modules/.bin/omp (embedded old SDK) hit on PATH.
  */
-function resolveOmpBin(): string {
-	// If bun's global bin is on PATH, `which omp` finds the real CLI.
-	// We exclude paths containing "node_modules/.bin" to avoid hitting
-	// the deck's own embedded dependency.
+export function resolveOmpBin(): string {
+	const override = process.env.OMP_DECK_OMP_BIN?.trim();
+	if (override) return override;
+
+	const globalCandidates = [
+		path.join(os.homedir(), ".bun", "bin", "omp"),
+		path.join(os.homedir(), ".bun", "install", "global", "node_modules", "@oh-my-pi", "pi-coding-agent", "dist", "cli.js"),
+		path.join(os.homedir(), ".npm-global", "bin", "omp"),
+		path.join(os.homedir(), ".local", "bin", "omp"),
+	];
+	for (const candidate of globalCandidates) {
+		try {
+			if (fs.statSync(candidate).isFile()) return fs.realpathSync(candidate);
+		} catch {
+			// not found — continue
+		}
+	}
+
 	const pathEnv = process.env.PATH ?? "";
 	for (const dir of pathEnv.split(path.delimiter)) {
 		if (!dir || dir.includes("node_modules") || dir.includes("node_modules/.bin")) continue;
 		const candidate = path.join(dir, "omp");
 		try {
-			if (fs.statSync(candidate).isFile()) {
-				// Resolve symlinks
-				const real = fs.realpathSync(candidate);
-				return real;
-			}
+			if (fs.statSync(candidate).isFile()) return fs.realpathSync(candidate);
 		} catch {
 			// not found — continue
 		}
 	}
-	// Fallback: let Bun spawn "omp" and hope for the best
 	return "omp";
 }
 
@@ -103,7 +113,11 @@ function resolveOmpBin(): string {
 export async function checkOmpAvailable(ompBin: string): Promise<string | null> {
 	try {
 		const result = await new Promise<{ ok: boolean; stderr: string }>((resolve) => {
-			const proc = spawn(ompBin, ["--version"], { stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
+			const command = buildOmpCommand(ompBin);
+			const proc = spawn(command[0]!, [...command.slice(1), "--version"], {
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 5000,
+			});
 			let stderr = "";
 			proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 			proc.on("error", (err) => resolve({ ok: false, stderr: String(err.message ?? err) }));
@@ -155,7 +169,7 @@ export function loadConfig(): Config {
 		),
 		// Set OMP_DECK_AUTO_START="" or "0" to disable, or to any other prompt
 		// string to override the default "/start" slash-command invocation.
-	autoStartCommand: parseAutoStart(process.env.OMP_DECK_AUTO_START),
-	ompBin: process.env.OMP_DECK_OMP_BIN?.trim() || resolveOmpBin(),
-};
+		autoStartCommand: parseAutoStart(process.env.OMP_DECK_AUTO_START),
+		ompBin: process.env.OMP_DECK_OMP_BIN?.trim() || resolveOmpBin(),
+	};
 }
